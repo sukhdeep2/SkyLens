@@ -73,7 +73,10 @@ class Kappa():
                 self.zl=np.logspace(np.log10(max(zl_min,1.e-4)),np.log10(zl_max),n_zl)
             else:
                 self.zl=np.linspace(zl_min,zl_max,n_zl)
-            self.dzl=np.gradient(self.zl)
+        else:
+            self.zl=zl
+        self.dzl=np.gradient(self.zl)
+    
 
         self.zs_bins={}
         if z_bins is None:
