@@ -174,6 +174,9 @@ class Kappa():
 #return c/H*P(k*chi)/chi**2
     def cl_z(self,z=None,pk_params=None,cosmo_h=None,
                     cosmo_params=None,pk_func=None):
+    # """"
+    #     This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts. The shape of the output is l,n_z, where n_z is the number of z bins.
+    # """"
         if cosmo_h is None:
             cosmo_h=self.PS.cosmo_h
         
@@ -191,7 +194,7 @@ class Kappa():
         pk,kh=pk_func(z=z,pk_params=pk_params,cosmo_params=cosmo_params)
         cls=np.zeros((nz,nl),dtype='float32')#*u.Mpc#**2
 
-        Rls=None #pk response functions
+        Rls=None #pk response functions, used for SSV calculations
         RKls=None
         cls_lin=None #cls from linear power spectra, to compute \delta_window for SSV
         if self.do_cov and self.SSV_cov: #things needed to compute SSV cov
