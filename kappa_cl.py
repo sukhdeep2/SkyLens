@@ -17,11 +17,12 @@ class Kappa():
     def __init__(self,silence_camb=False,l=np.arange(2,2001),HT=None,power_spectra_kwargs={},
                 HT_kwargs=None,zs=None,pzs=None,z_bins=None,lens_weight=False,
                 zl=None,n_zl=100,log_zl=True,do_cov=False,SSV_cov=False,tidal_SSV_cov=False,
-                ns=26,sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,
+                ns=26,sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,stack_data=False,
                 bin_xi=False,do_xi=False,theta_bins=None,tracer='kappa'):
         self.PS=Power_Spectra(silence_camb=silence_camb,**power_spectra_kwargs)
         self.l=l
         self.l_bins=l_bins
+        self.stack_data=stack_data
         self.theta_bins=theta_bins
         self.do_xi=do_xi
         self.bin_utils=None
@@ -77,7 +78,6 @@ class Kappa():
             self.zl=zl
         self.dzl=np.gradient(self.zl)
     
-
         self.zs_bins={}
         if z_bins is None:
             self.ns_bins=len(zs.keys()) #pass zs bins as dicts
@@ -292,7 +292,7 @@ class Kappa():
             zs2=self.zs_bins[zs_indx[1]]
             zs3=self.zs_bins[zs_indx[2]]
             zs4=self.zs_bins[zs_indx[3]]
-            sigma_win=clz['sigma_win']
+            sigma_win=clz_dict['sigma_win']
             # sig_cL=np.einsum('ji,ki->i',(p_zs2*dzs2)[:,None]*sigma_c2**2,
             #                 (p_zs1*dzs1)[:,None]*sigma_c1**2*dzl*cH)
             # sig_cL/=(np.sum(p_zs2*dzs2)*np.sum(p_zs1*dzs1))
@@ -301,9 +301,10 @@ class Kappa():
             sig_cL*=np.dot(zs3['pzdz'],zs3['sig_c'])
             sig_cL*=np.dot(zs4['pzdz'],zs4['sig_c'])
 
-            sig_cL*=self.dzl*clz['cH']
+            sig_cL*=self.dzl*clz_dict['cH']
             sig_cL/=self.Om_W**2
             sig_cL*=sigma_win
+            sig_cL/=zs1['Norm']*zs2['Norm']*zs3['Norm']*zs4['Norm']
 
             clr1=clz_dict['clsR']
            
@@ -334,6 +335,9 @@ class Kappa():
             self.set_zs_sigc(cosmo_h=cosmo_h) 
 
         cl=np.zeros((len(l),nbins,nbins))
+        if self.bin_cl:
+            cl_b=np.zeros((len(self.l_bins)-1,nbins,nbins))
+            cov_b={}
         SNij=None
         cov={}
 
@@ -351,12 +355,16 @@ class Kappa():
                                     pk_func=pk_func,return_clz=False)
                 cl[:,i,j]=out['cl']
                 cl[:,j,i]=out['cl']
+                if self.bin_cl:
+                    cl_b[:,i,j]=out['binned']['cl']
+                    cl_b[:,j,i]=out['binned']['cl']
                 if self.do_cov:
                     if i==j:
                         SN[:,i,j]=self.zs_bins[i]['SN']
                     elif self.lens_weight:
                         SN[:,i,j]=self.shape_noise_calc(zs1=self.zs_bins[i],zs2=self.zs_bins[j])
-                        SN[:,i,j]=SN[:,j,i]          
+                        SN[:,i,j]=SN[:,j,i]     
+
 
         if self.do_cov and not self.do_xi: #need large l range for xi which leads to memory issues
             cov={}
@@ -366,7 +374,11 @@ class Kappa():
                     indx=indxs[i]+indxs[j]#np.append(indxs[i],indxs[j])
                     cov[indx]=self.kappa_cl_cov(clz_dict=clz_dict,cls=cl,SN=SN, 
                                         zs_indx=indx)
+                    if self.bin_cl:
+                        cov_b[indx]=cov[indx]['binned']
         out={'l':out['l'],'cl':cl,'SN':SN,'cov':cov}
+        if self.bin_cl:
+            out['binned']={'l':self.cl_bin_utils['bin_center'],'cl':cl_b,'SN':SN,'cov':cov_b}
         if return_clz:
             out['clz_dict']=clz_dict
         if not self.do_xi:
@@ -378,7 +390,6 @@ class Kappa():
         if bin_cl:
             results_b['cl']=self.binning.bin_1d(r=self.l,xi=results['cl'],
                                         r_bins=self.l_bins,r_dim=2,bin_utils=self.cl_bin_utils)
-        cov_b=None
         if bin_cov:
             cov_b={}
             keys=['G','final']
@@ -387,9 +398,9 @@ class Kappa():
                 if self.tidal_SSV_cov:
                     keys=np.append(keys,['SSC_kk','SSC_dk','SSC_kd'])
             for k in keys:
-                cov_b[k]=self.binning.bin_2d(r=l,cov=results[k],r_bins=self.l_bins,r_dim=2
+                cov_b[k]=self.binning.bin_2d(r=self.l,cov=results[k],r_bins=self.l_bins,r_dim=2
                                         ,bin_utils=self.cl_bin_utils)
-        results_b['cov']=cov_b
+            results_b=cov_b
         return results_b
     
     def cut_clz_lxi(self,clz=None,l_xi=None):
@@ -490,6 +501,8 @@ class Kappa():
             d_k=dat[est].keys()
             nD2=len(d_k)
             nX=len(dat[est][d_k[0]])
+        else:
+            nX=len(dat[est])
         D_final=np.zeros(nD*nX*nD2)
         cov_final=np.zeros((nD*nX*nD2,nD*nX*nD2))
         
