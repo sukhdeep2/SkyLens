@@ -54,11 +54,10 @@ class binning():
         return xi_b
 
     def bin_2d(self,r=[],cov=[],r_bins=[],r_dim=2,bin_utils=None):
-        r_dr=bin_utils['r_dr']
+        #r_dr=bin_utils['r_dr']
+        #cov_r_dr=cov*bin_utils['r_dr_m'][2]#np.outer(r_dr,r_dr)
         binning_mat=bin_utils['binning_mat']
-
-        cov_r_dr=cov*np.outer(r_dr,r_dr)
-        cov_b=np.dot(binning_mat.T,np.dot(cov_r_dr,binning_mat))
+        cov_b=np.dot(binning_mat.T, np.dot(cov*bin_utils['r_dr_m'][2],binning_mat) )
         cov_b/=bin_utils['norm_m'][2]
         return cov_b
 
