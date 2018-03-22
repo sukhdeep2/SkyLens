@@ -58,6 +58,29 @@ cosmology: observations
   lensing: weak
 \end{keywords}
 
-\section{Introduction}
+\onecolumn
+\section{Cosmic Shear}
+	\subsection{Power spectra}
+	We compute the shear cross correlation between 2 tomographic bins as
+	\begin{align}
+		C_{\ell}^{ij}=\mean{\gamma_i\gamma_j^*}=&\frac{1}{N}\int dz_{p_i} p(z_{p_i}) \int dz_{s_i} p(z_{s_i}|z_{p_i})\mathcal W(z_{p_i},z_{s_i})
+		\int dz_{p_j} p(z_{p_j})\int dz_{s_j} p(z_{s_j}|z_{p_j})\mathcal W(z_{p_j},z_{s_j})\nonumber\\
+		&\int dz_l \frac{c}{H(z_l)}\frac{\overline{\rho}_m}{\Sigma_c(z_l,z_{s_i})}\frac{\overline{\rho}_m}{\Sigma_c(z_l,z_{s_j})}
+		\frac{1}{f_k(\chi_l)^2}P_{mm}(z_l)\\
+		N=&\int dz_{p_i} p(z_{p_i})\int dz_{s_i} p(z_{s_i}|z_{p_i})\mathcal W(z_{p_i},z_{s_i})\int dz_{p_j} p(z_{p_j})\int dz_{s_j} p(z_{s_j}|z_{p_j})
+			\mathcal W(z_{p_j},z_{s_j})
+	\end{align}
+	Our notation is slightly different from many lensing papers. $z_{p_i}$ denotes the photo-z distribution for sample $i$, $z_{s_i}$ denotes the true 
+	redshift for these source galaxies. $p(z_{p_i})$ is the photometric redshift distribution for these galaxies and $p(z_{s_i}|z_{p_i})$ is the 
+	distribution of true redshift for galaxies with photo-z $z_{p_i}$.
+	We will use subscript $l$ to denote quantities related to the matter (such as $z_l$) that is lensing the 
+	source galaxies. We use 
+	$d\chi_l=dz_l \frac{c}{H(z_l)}$, lensing weight $W_L=\frac{\overline{\rho}_m}{\Sigma_c(z_l,z_{s_2})f_k(\chi_l)}$ where $f_k(\chi_l)$ is the transverse 
+	separation to redshift $z_l$. $P_{mm}(z_l)$ is the matter power spectrum at redshift $z_l$. We use the normalization factor $N$ to correctly normalize 
+	the computed power spectra. 
+	$\mathcal W(z_{p_i},z_{s_i})$ are the weights that are applied to the source galaxies.
+	
+	\sukhdeep{In the code, we assume that $z_{p_i}$ is the true redshift for now and hence there is not integral over $dz_{s_i}$}
+
 
 \end{document}
