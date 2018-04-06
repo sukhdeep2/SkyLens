@@ -24,6 +24,7 @@ class Angular_power_spectra():
         self.DC=None #these should be cosmology depdendent. set to none before when varying cosmology
         self.clz=None
         self.cov_utils=cov_utils
+        self.zl=zl
 
     
     def angular_power_z(self,z=None,pk_params=None,cosmo_h=None,
@@ -31,6 +32,8 @@ class Angular_power_spectra():
     # """"
     #     This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts. The shape of the output is l,n_z, where n_z is the number of z bins.
     # """"
+        if self.clz is not None:
+            return 
         if cosmo_h is None:
             cosmo_h=self.PS.cosmo_h
         
@@ -62,6 +65,9 @@ class Angular_power_spectra():
             fk_int=interp1d(lz,f_k,bounds_error=False,fill_value=0)
             return fk_int(l)
 
+        kh=self.PS.kh
+        pk=self.PS.pk
+        
         for i in np.arange(nz):
             DC_i=cosmo_h.comoving_transverse_distance(z[i]).value#because camb k in h/mpc
             lz=kh*DC_i-0.5
@@ -77,18 +83,3 @@ class Angular_power_spectra():
         if self.SSV_cov:
             self.cov_utils.sigma_win_calc(cls_lin=cls_lin)
             self.clz.update({'clsR':cls*Rls,'clsRK':cls*RKls})
-
-
-    def calc_cl(self,zs1=None,zs2=None):
-        cls=self.clz['cls']
-        f=clz['f']    
-        sc=zs1['sig_c_int']*zs2['sig_c_int']
-        #sc=np.dot(zs1['pzdz'],zs1['sig_c']) #cosmo dependent. cannot be pre-computed
-        #sc*=np.dot(zs2['pzdz'],zs2['sig_c'])
-        cl=np.dot(sc*self.dzl*clz['cH'],cls)
-        # cl_zs_12=np.einsum('ji,ki,il',zs2['sig_c'],zs1['sig_c']*self.dzl*clz['cH'],cls)#integrate over zl..
-        # cl=np.dot(zs2['pzdz'],np.dot(zs1['pzdz'],cl_zs_12))
-
-        cl/=zs2['Norm']*zs1['Norm']
-        cl/=f**2# cl correction from Kilbinger+ 2017
-        return cl

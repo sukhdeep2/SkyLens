@@ -18,7 +18,10 @@ class Lensing_utils():
         #self.ns=ns
         ns=1 #different for different z_source. should be property of z_source
         self.sigma_gamma=sigma_gamma
-        self.SN0=sigma_gamma**2/(ns*3600./d2r**2)        
+        self.SN0=sigma_gamma**2/(ns*3600./d2r**2)   
+        #Gravitaional const to get Rho crit in right units
+        self.G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2) 
+        self.G2*=8*np.pi/3.     
     
     def Rho_crit(self,cosmo_h=None):
         #G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)

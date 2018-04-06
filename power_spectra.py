@@ -26,14 +26,15 @@ class Power_Spectra():
         self.silence_camb=silence_camb
         self.cosmo_h=cosmo.clone(H0=100)
         self.pk_func=self.camb_pk_too_many_z if pk_func is None else pk_func
-        self.do_SSV=do_SSV
+        self.SSV_cov=SSV_cov
+        self.pk=None
 
     def get_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
         if return_s8:
-            self.kh,self.pk,self.s8=self.pk_func(z,cosmo_params=cosmo_params,
+            self.pk,self.kh,self.s8=self.pk_func(z,cosmo_params=cosmo_params,
                             pk_params=pk_params,return_s8=return_s8)
         else:
-            self.kh,self.pk=self.pk_func(z,cosmo_params=cosmo_params,
+            self.pk,self.kh=self.pk_func(z,cosmo_params=cosmo_params,
                             pk_params=pk_params,return_s8=return_s8)
         if self.SSV_cov:
             self.get_SSV_terms(z,cosmo_params=cosmo_params,
@@ -143,7 +144,7 @@ class Power_Spectra():
         else:
             return pk,kh
 
-    def camb_pk_too_many_z(self,z,cosmo_params=None,pk_params=None):
+    def camb_pk_too_many_z(self,z,cosmo_params=None,pk_params=None,return_s8=False):
         i=0
         pk=None #np.array([])
         z_step=140 #camb cannot handle more than 150 redshifts

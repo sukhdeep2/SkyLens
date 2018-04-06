@@ -1,20 +1,14 @@
 import os,sys
 
-from power_spectra import *
-from angular_power_spectra import *
-from hankel_transform import *
-from binning import *
-from astropy.constants import c,G
-from astropy import units as u
 import numpy as np
 from scipy.interpolate import interp1d
 from scipy.integrate import quad as scipy_int1d
+from scipy.special import jn, jn_zeros
 
 d2r=np.pi/180.
 sky_area=np.pi*4/(d2r)**2 #in degrees
-c=c.to(u.km/u.second)
 
-def Cov_utils():
+class Covariance_utils():
     def __init__(self,f_sky=0,l=None):
         self.l=l
         self.f_sky=f_sky
