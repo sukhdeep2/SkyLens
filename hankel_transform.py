@@ -150,14 +150,7 @@ class hankel_transform():
     def corr_matrix(self,cov=[]):
         diag=np.diag(cov)
         return cov/np.sqrt(np.outer(diag,diag))
-        # corr=np.zeros_like(cov)
-        # n_bins=len(cov)
-        # for i in np.arange(n_bins):
-        #     for j in np.arange(n_bins):
-        #         corr[i][j]=cov[i][j]/np.sqrt(cov[i][i]*cov[j][j])
-        # corr=np.nan_to_num(corr)
-        #return corr
-
+        
     def diagonal_err(self,cov=[]):
         return np.sqrt(np.diagonal(cov))
 
