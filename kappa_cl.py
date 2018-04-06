@@ -1,8 +1,11 @@
 import os,sys
 
 from power_spectra import *
+from angular_power_spectra import *
 from hankel_transform import *
 from binning import *
+from cov_utils import *
+from lensing_utils import *
 from astropy.constants import c,G
 from astropy import units as u
 import numpy as np
@@ -10,30 +13,44 @@ from scipy.interpolate import interp1d
 from scipy.integrate import quad as scipy_int1d
 
 d2r=np.pi/180.
-sky_area=np.pi*4/(d2r)**2 #in degrees
 c=c.to(u.km/u.second)
 
 class Kappa():
-    def __init__(self,silence_camb=False,l=np.arange(2,2001),HT=None,power_spectra_kwargs={},
-                HT_kwargs=None,zs=None,pzs=None,z_bins=None,lens_weight=False,
-                zl=None,n_zl=100,log_zl=True,do_cov=False,SSV_cov=False,tidal_SSV_cov=False,
-                ns=26,sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,stack_data=False,
-                bin_xi=False,do_xi=False,theta_bins=None,tracer='kappa'):
-        self.PS=Power_Spectra(silence_camb=silence_camb,**power_spectra_kwargs)
+    def __init__(self,silence_camb=False,l=np.arange(2,2001),HT=None,Ang_PS=None,
+                lensing_utils=None,cov_utils=None,
+                power_spectra_kwargs=None,HT_kwargs=None,zs=None,pzs=None,ns=None,z_bins=None,
+                lens_weight=False,zl=None,n_zl=100,log_zl=True,do_cov=False,SSV_cov=False,
+                tidal_SSV_cov=False,sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,
+                stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,tracer='kappa'):
+
+        self.lens_weight=lens_weight
+        self.lensing_utils=lensing_utils
+        if lensing_utils is None:
+            self.lensing_utils=Lensing_utils(sigma_gamma=sigma_gamma)
+        
+        self.set_ls_zbins(zs=zs,pzs=pzs,z_bins=z_bins,zl=zl,n_zl=n_zl,log_zl=log_zl,ns=ns)
         self.l=l
+        
+        self.cov_utils=cov_utils
+        if cov_utils is None:
+            self.cov_utils=Cov_utils(f_sky=f_sky,l=self.l)
+
+        self.Ang_PS=Ang_PS
+        if Ang_PS is None:
+            self.Ang_PS=Angular_power_spectra(silence_camb=silence_camb,SSV_cov=SSV_cov,l=self.l,
+                        power_spectra_kwargs=power_spectra_kwargs,cov_utils=cov_utils,
+                        zl=self.zl,n_zl=n_zl)
+
+        
         self.l_bins=l_bins
         self.stack_data=stack_data
         self.theta_bins=theta_bins
         self.do_xi=do_xi
         self.bin_utils=None
-        self.HT=HT
         self.tracer=tracer
 
-        #Gravitaional const to get Rho crit in right units
-        self.G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2) 
-        self.G2*=8*np.pi/3.
-
-        if HT is None:
+        self.HT=HT
+        if HT is None and do_xi:
             if HT_kwargs is None:
                 th_min=1./60. if theta_bins is None else np.amin(theta_bins)
                 th_max=5 if theta_bins is None else np.amax(theta_bins)
@@ -41,27 +58,17 @@ class Kappa():
                             'rmin':th_min*d2r,'rmax':th_max*d2r,
                             'n_zeros':2000,'prune_r':2,'j_nu':[0]}
             self.HT=hankel_transform(**HT_kwargs)
-        self.j_nus=self.HT.j_nus
+            self.j_nus=self.HT.j_nus
 
         self.bin_cl=bin_cl
         self.bin_xi=bin_xi
         self.set_bin_params()
-
-        self.f_sky=f_sky
-        self.ns=ns
-        self.sigma_gamma=sigma_gamma
-        self.SN0=sigma_gamma**2/(ns*3600./d2r**2)
+        
         self.do_cov=do_cov
         self.SSV_cov=SSV_cov
         self.tidal_SSV_cov=tidal_SSV_cov
-
-        self.lens_weight=lens_weight
-
-        self.set_ls_zbins(zs=zs,pzs=pzs,z_bins=z_bins,zl=zl,n_zl=n_zl,log_zl=log_zl)
-        self.set_window_params(f_sky=f_sky)
-        self.DC=None #this should be cosmology depdendent. set to none before when varying cosmology
-
-    def set_ls_zbins(self,zs=None,pzs=None,z_bins=None,zl=None,n_zl=10,log_zl=False):
+        
+    def set_ls_zbins(self,zs=None,pzs=None,z_bins=None,zl=None,n_zl=10,log_zl=False,ns=None):
         zl_min=0
         zl_max=np.amax(zs.values()) if isinstance(zs,dict) else np.amax(zs)
 
@@ -82,6 +89,7 @@ class Kappa():
                 self.zs_bins[i]={}
                 self.zs_bins[i]['z']=np.array(zs[k[i]])
                 self.zs_bins[i]['pz']=np.array(pzs[k[i]])
+                self.zs_bins[i]['ns']=np.array(ns[k[i]])
                 self.zs_bins[i]['pz0']=self.zs_bins[i]['pz']
                 self.zs_bins[i]['W']=1.
         else:
@@ -92,7 +100,8 @@ class Kappa():
                 self.zs_bins[i]={}
                 if self.lens_weight:
                     self.zs_bins[i]['z']=zs
-                    self.zs_bins[i]['W']=1./self.sigma_crit(zl=z_bins[i],zs=zs,
+                    self.zs_bins[i]['ns']=ns
+                    self.zs_bins[i]['W']=1./self.lensing_utils.sigma_crit(zl=z_bins[i],zs=zs,
                                                             cosmo_h=self.PS.cosmo_h)
                     self.zs_bins[i]['pz']=pzs*self.zs_bins[i]['W']
                     self.zs_bins[i]['pz0']=pzs
@@ -101,13 +110,14 @@ class Kappa():
                     xi*=zs<z_bins[i+1]
                     self.zs_bins[i]['z']=zs[xi]
                     self.zs_bins[i]['pz']=pzs[xi]
+                    self.zs_bins[i]['ns']=ns[xi]
                     self.zs_bins[i]['pz0']=self.zs_bins[i]['pz']
                     self.zs_bins[i]['W']=1.
         for i in self.zs_bins.keys():
             self.zs_bins[i]['dz']= np.gradient(self.zs_bins[i]['z']) if len(self.zs_bins[i]['z'])>1 else np.array([1])
             self.zs_bins[i]['pzdz']=self.zs_bins[i]['pz']*self.zs_bins[i]['dz']
             self.zs_bins[i]['Norm']=np.sum(self.zs_bins[i]['pzdz'])
-            self.zs_bins[i]['SN']=self.shape_noise_calc(zs1=self.zs_bins[i],zs2=self.zs_bins[i])
+            self.zs_bins[i]['SN']=self.lensing_utils.shape_noise_calc(zs1=self.zs_bins[i],zs2=self.zs_bins[i])
         self.reset_zs()
 
     def set_bin_params(self):
@@ -133,131 +143,18 @@ class Kappa():
         # i.e not repeat for every ij combo
         if cosmo_h is None:
             cosmo_h=self.PS.cosmo_h
-        rho=self.Rho_crit(cosmo_h=cosmo_h)*cosmo_h.Om0 
+        rho=self.lensing_utils.Rho_crit(cosmo_h=cosmo_h)*cosmo_h.Om0 
             
         for i in np.arange(self.ns_bins):
-            self.zs_bins[i]['sig_c']=rho/self.sigma_crit(zl=self.zl,zs=self.zs_bins[i]['z'],
+            self.zs_bins[i]['sig_c']=rho/self.lensing_utils.sigma_crit(zl=self.zl,
+                                                        zs=self.zs_bins[i]['z'],
                                                         cosmo_h=cosmo_h)
             self.zs_bins[i]['sig_c_int']=np.dot(self.zs_bins[i]['pzdz'],self.zs_bins[i]['sig_c'])
-
-    def set_window_params(self,f_sky=0):
-        self.theta_win=np.sqrt(f_sky*sky_area)
-        self.Win=self.window_func(theta_win=self.theta_win,f_sky=f_sky) 
-        self.Om_W=4*np.pi*f_sky
-
-    def Rho_crit(self,cosmo_h=None):
-        #G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)
-        #rc=3*cosmo_h.H0**2/(8*np.pi*G2)
-        rc=cosmo_h.H0**2/(self.G2) #factors of pi etc. absorbed in selg.G2
-        rc=rc.to(u.Msun/u.pc**2/u.Mpc)# unit of Msun/pc^2/mpc
-        return rc.value
-
-    def sigma_crit(self,zl=[],zs=[],cosmo_h=None):
-        ds=cosmo_h.comoving_transverse_distance(zs)
-        dl=cosmo_h.comoving_transverse_distance(zl)
-        ddls=1.-np.multiply.outer(1./ds,dl)#(ds-dl)/ds
-        w=(3./2.)*((cosmo_h.H0/c)**2)*(1+zl)*dl/self.Rho_crit(cosmo_h) 
-        sigma_c=1./(ddls*w)
-        x=ddls<=0 #zs<zl
-        sigma_c[x]=np.inf
-        return sigma_c.value
     
-    def window_func(self,theta_win=10,f_sky=None):
-        l=self.l
-        theta_win*=d2r
-        l_th=l*theta_win
-        W=2*jn(1,l_th)/l_th*4*np.pi*f_sky
-        return W
-
-    def shape_noise_calc(self,zs1=None,zs2=None):
-        if not np.array_equal(zs1['z'],zs2['z']):
-            return 0
-        SN=self.SN0*np.sum(zs1['dz']*zs1['W']*zs2['W']*np.sqrt(zs1['pz0']*zs2['pz0']))
-        SN/=zs1['Norm']*zs2['Norm']
-        return SN
-        # XXX Make sure pzs are properly normalized
-
-#return c/H*P(k*chi)/chi**2
-    def cl_z(self,z=None,pk_params=None,cosmo_h=None,
-                    cosmo_params=None,pk_func=None):
-    # """"
-    #     This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts. The shape of the output is l,n_z, where n_z is the number of z bins.
-    # """"
-        if cosmo_h is None:
-            cosmo_h=self.PS.cosmo_h
-        
-        if pk_func is None:
-            pk_func=self.PS.camb_pk_too_many_z
-
-        l=self.l
-
-        if z is None:
-            z=self.zl
-
-        nz=len(z)
-        nl=len(l)
-
-        pk,kh=pk_func(z=z,pk_params=pk_params,cosmo_params=cosmo_params)
-        cls=np.zeros((nz,nl),dtype='float32')#*u.Mpc#**2
-
-        Rls=None #pk response functions, used for SSV calculations
-        RKls=None
-        cls_lin=None #cls from linear power spectra, to compute \delta_window for SSV
-        if self.do_cov and self.SSV_cov: #things needed to compute SSV cov
-            R=self.PS.R1(k=kh,pk=pk,axis=1)
-            Rk=self.PS.R_K(k=kh,pk=pk,axis=1)
-            Rls=np.zeros((nz,nl),dtype='float32')
-            RKls=np.zeros((nz,nl),dtype='float32')
-
-            pk_params2=self.PS.pk_params.copy()
-            pk_params2['non_linear']=0
-            pk_lin,kh_lin=pk_func(z=z,pk_params=pk_params2)
-            cls_lin=np.zeros((nz,nl),dtype='float32')#*u.Mpc#**2
-
-        cH=c/(cosmo_h.efunc(self.zl)*cosmo_h.H0)
-        cH=cH.value
-
-        def k_to_l(l,lz,f_k): #take func from k to l space
-            fk_int=interp1d(lz,f_k,bounds_error=False,fill_value=0)
-            return fk_int(l)
-
-        for i in np.arange(nz):
-            DC_i=cosmo_h.comoving_transverse_distance(z[i]).value#because camb k in h/mpc
-            lz=kh*DC_i-0.5
-            cls[i][:]+=k_to_l(l,lz,pk[i]/DC_i**2)
-            if self.SSV_cov:
-                Rls[i][:]+=k_to_l(l,lz,R[i]) 
-                RKls[i][:]+=k_to_l(l,lz,Rk[i]) 
-                cls_lin[i][:]+=k_to_l(l,lz,pk_lin[i]/DC_i**2)
-        
-        sigma_win=np.dot(self.Win**2*np.gradient(self.l)*self.l,cls_lin.T) if self.SSV_cov else None
-
-        f=(l+0.5)**2/(l*(l+1.)) # cl correction from Kilbinger+ 2017
-            #cl*=2./np.pi #comparison with CAMB requires this.
-        out={'cls':cls,'l':l,'cH':cH,'f':f}
-        if self.SSV_cov:
-            out.update({'clsR':cls*Rls,'clsRK':cls*RKls,'sigma_win':sigma_win})
-        self.sigma_win=sigma_win
-        return out
-
-    def calc_cl(self,clz=None,zs1=None,zs2=None):
-        cls=clz['cls']
-        f=clz['f']    
-        sc=zs1['sig_c_int']*zs2['sig_c_int']
-        #sc=np.dot(zs1['pzdz'],zs1['sig_c']) #cosmo dependent. cannot be pre-computed
-        #sc*=np.dot(zs2['pzdz'],zs2['sig_c'])
-        cl=np.dot(sc*self.dzl*clz['cH'],cls)
-        # cl_zs_12=np.einsum('ji,ki,il',zs2['sig_c'],zs1['sig_c']*self.dzl*clz['cH'],cls)#integrate over zl..
-        # cl=np.dot(zs2['pzdz'],np.dot(zs1['pzdz'],cl_zs_12))
-
-        cl/=zs2['Norm']*zs1['Norm']
-        cl/=f**2# cl correction from Kilbinger+ 2017
-        return cl
-        
     def kappa_cl(self,clz_dict=None, return_clz=False,zs1_indx=-1, zs2_indx=-1,
                 pk_func=None,pk_params=None,cosmo_h=None,cosmo_params=None,DC=None):
         if cosmo_h is None:
-            cosmo_h=self.PS.cosmo_h
+            cosmo_h=self.A_PS.PS.cosmo_h
         
         l=self.l
         zs1=self.zs_bins[zs1_indx]#.copy() #we will modify these locally
@@ -265,17 +162,17 @@ class Kappa():
         if zs1['sig_c'] is None or zs2['sig_c'] is None:
             self.set_zs_sigc(cosmo_h=cosmo_h)
         
-        if clz_dict is None:
-            clz_dict=self.cl_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
+        if self.Ang_PS.clz is None:
+            self.Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
                                 cosmo_params=cosmo_params)
     
-        cl=self.calc_cl(clz=clz_dict,zs1=zs1,zs2=zs2)
-        out={'l':l,'cl':cl,'clz':clz_dict}
+        cl=self.Ang_PS.calc_cl(clz=clz_dict,zs1=zs1,zs2=zs2)
+        out={'l':l,'cl':cl}
         if self.bin_cl:
             out['binned']=self.bin_kappa_cl(results=out,bin_cl=True)
         return out
 
-    def kappa_cl_cov(self,clz_dict=None,cls=None,SN=None, zs_indx=[]):
+    def kappa_cl_cov(self,cls=None,SN=None, zs_indx=[]):
         cov={}
         l=self.l 
         cov['G1324']=(cls[:,zs_indx[0],zs_indx[2]]+SN[:,zs_indx[0],zs_indx[2]])
@@ -287,22 +184,15 @@ class Kappa():
         cov['final']=0
         if not self.do_xi:
             cov['G']=np.diag(cov['G1423']+cov['G1324'])# this can be expensive with large l
-            cov['G']/=(2.*l+1.)*self.f_sky
+            cov['G']/=(2.*l+1.)*self.cov_utils.f_sky
             cov['final']=cov['G']
         if self.SSV_cov:
-            clz=clz_dict['cls']
+            clz=self.Ang_PS.clz
             zs1=self.zs_bins[zs_indx[0]]
             zs2=self.zs_bins[zs_indx[1]]
             zs3=self.zs_bins[zs_indx[2]]
             zs4=self.zs_bins[zs_indx[3]]
-            sigma_win=clz_dict['sigma_win']
-            # sig_cL=np.einsum('ji,ki->i',(p_zs2*dzs2)[:,None]*sigma_c2**2,
-            #                 (p_zs1*dzs1)[:,None]*sigma_c1**2*dzl*cH)
-            # sig_cL/=(np.sum(p_zs2*dzs2)*np.sum(p_zs1*dzs1))
-            # sig_cL=np.dot(zs1['pzdz'],zs1['sig_c'])
-            # sig_cL*=np.dot(zs2['pzdz'],zs2['sig_c'])
-            # sig_cL*=np.dot(zs3['pzdz'],zs3['sig_c'])
-            # sig_cL*=np.dot(zs4['pzdz'],zs4['sig_c'])
+            sigma_win=clz['sigma_win']
             
             sig_cL=zs1['sig_c_int']*zs2['sig_c_int']*zs3['sig_c_int']*zs4['sig_c_int']
 
@@ -556,7 +446,10 @@ if __name__ == "__main__":
     z=z[x]
     pzs=pzs[x]
 
-    nbins=10
+    ns0=26
+    ns=ns0*pzs
+
+    nbins=3
     zs_bins=np.linspace(0.1,2,nbins+1)
     zl_bins=np.linspace(0.5,1.5,nbins+1)
     lmax_cl=2000
@@ -569,7 +462,7 @@ if __name__ == "__main__":
     do_xi=False
     theta_bins=np.logspace(np.log10(1./60),1,20)
 
-    cProfile.run('kappa_fn = Kappa(zs=z,pzs=pzs,l=l,z_bins=zs_bins,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,bin_xi=bin_xi,theta_bins=theta_bins,do_xi=do_xi)', 'output_stats')
+    cProfile.run('kappa_fn = Kappa(zs=z,pzs=pzs,l=l,z_bins=zs_bins,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,bin_xi=bin_xi,theta_bins=theta_bins,do_xi=do_xi,ns=ns)', 'output_stats')
                                             # globals(), locals()) #runctx
     p = pstats.Stats('output_stats')
     p.sort_stats('tottime').print_stats(2)

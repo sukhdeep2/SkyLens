@@ -18,18 +18,36 @@ cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817
 pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':5000}
 
 class Power_Spectra():
-    def __init__(self,cosmo_params=cosmo_fid,pk_params=pk_params,cosmo=cosmo,cosmo_h=None,
-                 silence_camb=False):
+    def __init__(self,cosmo_params=cosmo_fid,pk_params=pk_params,cosmo=cosmo,
+                 silence_camb=False,pk_func=None,SSV_cov=False):
         self.cosmo_params=cosmo_params
         self.pk_params=pk_params
         self.cosmo=cosmo
         self.silence_camb=silence_camb
+        self.cosmo_h=cosmo.clone(H0=100)
+        self.pk_func=self.camb_pk_too_many_z if pk_func is None else pk_func
+        self.do_SSV=do_SSV
 
-        if not cosmo_h:
-            self.cosmo_h=cosmo.clone(H0=100)
+    def get_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
+        if return_s8:
+            self.kh,self.pk,self.s8=self.pk_func(z,cosmo_params=cosmo_params,
+                            pk_params=pk_params,return_s8=return_s8)
         else:
-            self.cosmo_h=cosmo_h
+            self.kh,self.pk=self.pk_func(z,cosmo_params=cosmo_params,
+                            pk_params=pk_params,return_s8=return_s8)
+        if self.SSV_cov:
+            self.get_SSV_terms(z,cosmo_params=cosmo_params,
+                            pk_params=pk_params)    
 
+    def get_SSV_terms(self,z,cosmo_params=None,pk_params=None):
+        pk_params_lin=self.pk_params.copy() if pk_params is None else pk_params.copy()
+        pk_params_lin['non_linear']=0
+        self.kh,self.pk_lin=self.pk_func(z,cosmo_params=cosmo_params,
+                        pk_params=pk_params_lin,return_s8=False)
+        self.R1=self.R1_calc(k=self.kh,pk=self.pk_lin,axis=1)
+        self.Rk=self.R_K_calc(k=self.kh,pk=self.pk_lin,axis=1)
+
+        
     def DZ_int(self,z=[0],cosmo=None): #linear growth factor.. full integral.. eq 63 in Lahav and suto
         if not cosmo:
             cosmo=self.cosmo
@@ -137,7 +155,7 @@ class Power_Spectra():
             i+=z_step
         return pk,kh
 
-    def R1(self,k=None,pk=None,k_NonLinear=3.2,axis=0): #eq 2.5, R1, Barriera+ 2017
+    def R1_calc(self,k=None,pk=None,k_NonLinear=3.2,axis=0): #eq 2.5, R1, Barriera+ 2017
         G1=26./21.*np.ones_like(k)
         x=k>k_NonLinear
         G1[x]*=k_NonLinear/k[x]
@@ -145,7 +163,7 @@ class Power_Spectra():
         R=1-1./3*dpk+G1
         return R
 
-    def R_K(self,k=None,pk=None,k_NonLinear=3.2,axis=0): #eq 2.5, R1
+    def R_K_calc(self,k=None,pk=None,k_NonLinear=3.2,axis=0): #eq 2.5, R1
         G1=26./21.*np.ones_like(k)
         x=k>k_NonLinear
         G1[x]*=k_NonLinear/k[x]
