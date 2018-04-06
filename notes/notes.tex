@@ -17,7 +17,7 @@
 
 
 \DeclareGraphicsExtensions{.pdf,.png,.jpg,.eps}
-\graphicspath{{dr12_figures/}}
+\graphicspath{{figures/}}
 \input{def.tex}
 
 \usepackage{color}
@@ -82,5 +82,30 @@ cosmology: observations
 	
 	\sukhdeep{In the code, we assume that $z_{p_i}$ is the true redshift for now and hence there is not integral over $dz_{s_i}$}
 
+	\subsection{Gaussian Covariance}
+		\subsubsection{Shape Noise}
+			We begin by writing the estimator for shear-shear correlations, under the assumption that there is no cosmological signal, only 
+			the shape noise, which is un-correlated across different galaxies
+			\begin{align}
+				\mean{\gamma\gamma}=\frac{\sum_i\sum_j \mathcal W_i \mathcal W_j \gamma_i\gamma_j \delta_D(i,j)}{(\sum_i\mathcal W_i)(\sum_j\mathcal W_j)}
+			\end{align}
+			where the summations is carried over the galaxy samples, $i,j$ and the dirac delta $\delta_D(i,j)$, imposes the condition that the
+			shape noise is only correlated when $\gamma_i,\gamma_j$ is from the same galaxy. Thus the shape noise is
+			\begin{align}
+				\mean{\gamma\gamma}=&\frac{\sum_i \mathcal W_i \mathcal W_i \gamma_i^2}{(\sum_i\mathcal W_i)(\sum_j\mathcal W_j)}\\
+									=&\sigma_e^2 \frac{\sum_i \mathcal W_i \mathcal W_i}{(\sum_i\mathcal W_i)(\sum_j\mathcal W_j)}\\
+									=&\sigma_e^2 \frac{n}{n^2}= \frac{\sigma_e^2}{n}
+			\end{align}
+			where $\sigma_e$ is the ensemble average of the ellipticities and in the last equality we assumed $W_i=1$ to get the usual shape noise 
+			expression. We can also write the shape noise as integral over redshift distributions as 
+			\begin{align}
+				\mean{\gamma\gamma}=&\frac{\sigma_e^2}{n}\frac{\int dz_p p(z_p)\int dz_s p(z_s|z_p)W_i(z_s)W_j(z_s)}{N}
+			\end{align}
+			where $N$ is the normalization constant defined earlier. Note that here we have assumed that $p(z_p)$ are normalized and hence we can take 
+			the number density of galaxies $n$ outside of the integrals ($n(z_p)=np(z_p)$).
+	\subsection{Super Sample Covariance}
+		\subsubsection{Tidal SSC}
+	
+	\subsection{Trispectrum Covariance}
 
 \end{document}
