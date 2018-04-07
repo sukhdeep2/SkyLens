@@ -43,7 +43,7 @@ class Power_Spectra():
     def get_SSV_terms(self,z,cosmo_params=None,pk_params=None):
         pk_params_lin=self.pk_params.copy() if pk_params is None else pk_params.copy()
         pk_params_lin['non_linear']=0
-        self.kh,self.pk_lin=self.pk_func(z,cosmo_params=cosmo_params,
+        self.pk_lin,self.kh=self.pk_func(z,cosmo_params=cosmo_params,
                         pk_params=pk_params_lin,return_s8=False)
         self.R1=self.R1_calc(k=self.kh,pk=self.pk_lin,axis=1)
         self.Rk=self.R_K_calc(k=self.kh,pk=self.pk_lin,axis=1)

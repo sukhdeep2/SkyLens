@@ -29,3 +29,8 @@ class Covariance_utils():
 
     def sigma_win_calc(self,cls_lin):
         self.sigma_win=np.dot(self.Win**2*np.gradient(self.l)*self.l,cls_lin.T)
+
+    def corr_matrix(self,cov=[]):
+        diag=np.diag(cov)
+        return cov/np.sqrt(np.outer(diag,diag))
+    

@@ -38,7 +38,7 @@ class Kappa():
         self.Ang_PS=Ang_PS
         if Ang_PS is None:
             self.Ang_PS=Angular_power_spectra(silence_camb=silence_camb,SSV_cov=SSV_cov,l=self.l,
-                        power_spectra_kwargs=power_spectra_kwargs,cov_utils=cov_utils,
+                        power_spectra_kwargs=power_spectra_kwargs,cov_utils=self.cov_utils,
                         zl=self.zl,n_zl=n_zl)
 
         self.set_source_bins(zs=zs,pzs=pzs,z_bins=z_bins,ns=ns)
@@ -238,7 +238,8 @@ class Kappa():
         cov['final']=0
         if not self.do_xi:
             cov['G']=np.diag(cov['G1423']+cov['G1324'])# this can be expensive with large l
-            cov['G']/=(2.*l+1.)*self.cov_utils.f_sky
+            cov['G']/=(2.*l+1.)*self.cov_utils.f_sky*np.gradient(l) #need Delta l here. Even when 
+                                                                    #binning later
             cov['final']=cov['G']
         if self.SSV_cov:
             clz=self.Ang_PS.clz
@@ -246,16 +247,16 @@ class Kappa():
             zs2=self.zs_bins[zs_indx[1]]
             zs3=self.zs_bins[zs_indx[2]]
             zs4=self.zs_bins[zs_indx[3]]
-            sigma_win=clz['sigma_win']
+            sigma_win=self.cov_utils.sigma_win
             
             sig_cL=zs1['sig_c_int']*zs2['sig_c_int']*zs3['sig_c_int']*zs4['sig_c_int']
 
-            sig_cL*=self.dzl*clz_dict['cH']
-            sig_cL/=self.Om_W**2
+            sig_cL*=self.dzl*self.Ang_PS.clz['cH']
+            sig_cL/=self.cov_utils.Om_W**2
             sig_cL*=sigma_win
             sig_cL/=zs1['Norm']*zs2['Norm']*zs3['Norm']*zs4['Norm']
 
-            clr1=clz_dict['clsR']
+            clr1=self.Ang_PS.clz['clsR']
            
             cov['SSC_dd']=np.dot((clr1).T*sig_cL,clr1)
             cov['final']=cov['SSC_dd']+cov['final']
@@ -263,7 +264,7 @@ class Kappa():
         
             if self.tidal_SSV_cov:
                 #sig_cL will be divided by some factors to account for different sigma_win
-                clrk=clz_dict['clsRK']
+                clrk=self.Ang_PS.clz['clsRK']
                 cov['SSC_kk']=np.dot((clrk).T*sig_cL/36.,clrk)
                 cov['SSC_dk']=np.dot((clr1).T*sig_cL/6.,clrk)
                 cov['SSC_kd']=np.dot((clrk).T*sig_cL/6.,clr1)

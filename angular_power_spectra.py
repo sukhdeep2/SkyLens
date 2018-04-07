@@ -29,9 +29,9 @@ class Angular_power_spectra():
     
     def angular_power_z(self,z=None,pk_params=None,cosmo_h=None,
                     cosmo_params=None,pk_func=None):
-    # """"
-    #     This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts. The shape of the output is l,n_z, where n_z is the number of z bins.
-    # """"
+        """
+             This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts. The shape of the output is l,n_z, where n_z is the number of z bins.
+        """
         if self.clz is not None:
             return 
         if cosmo_h is None:

@@ -146,11 +146,7 @@ class hankel_transform():
             taper_f[x]=np.cos((k[x]-low_k_upper)/(low_k_upper-low_k_lower)*np.pi/2.)
             self.taper_f={'taper_f':taper_f,'k':k}
         return self.taper_f
-
-    def corr_matrix(self,cov=[]):
-        diag=np.diag(cov)
-        return cov/np.sqrt(np.outer(diag,diag))
-        
+    
     def diagonal_err(self,cov=[]):
         return np.sqrt(np.diagonal(cov))
 
