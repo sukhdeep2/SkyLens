@@ -1,5 +1,7 @@
 import os,sys
-import pandas as pd
+import dask
+from dask import delayed
+from dask.distributed import Client
 from power_spectra import *
 from angular_power_spectra import *
 from hankel_transform import *
@@ -207,6 +209,7 @@ class Kappa():
         cl/=f**2# cl correction from Kilbinger+ 2017
         return cl
     
+    #@delayed
     def kappa_cl(self,zs1_indx=-1, zs2_indx=-1,
                 pk_func=None,pk_params=None,cosmo_h=None,cosmo_params=None):
         """
@@ -235,6 +238,7 @@ class Kappa():
             #need unbinned cl for covariance
         return out
 
+    #@delayed
     def kappa_cl_cov(self,cls=None, zs_indx=[]):
         """
             Computes the covariance between any two tomographic power spectra.
@@ -315,10 +319,23 @@ class Kappa():
                                         ,bin_utils=self.cl_bin_utils)
             #results_b=cov_b
         return results_b
-    
 
-    def kappa_cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
-                    ):
+    def combine_cl_tomo(self,cl_compute_dict={}):
+        cl=np.zeros((len(self.l),self.ns_bins,self.ns_bins))
+        cl_b=None
+        if self.bin_cl:
+            cl_b=np.zeros((len(self.l_bins)-1,self.ns_bins,self.ns_bins))#we need unbinned cls for covariance
+        for (i,j) in self.corr_indxs:
+            clij=cl_compute_dict[(i,j)]#.compute()
+            cl[:,i,j]=clij['cl']
+            cl[:,j,i]=clij['cl']
+            if self.bin_cl: #need unbinned cl for covariance
+                cl_b[:,i,j]=clij['binned']['cl']
+                cl_b[:,j,i]=clij['binned']['cl']
+        return {'cl':cl,'cl_b':cl_b}
+            
+
+    def kappa_cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None):
         """
          Computes full tomographic power spectra and covariance, including shape noise. output is 
          binned also if needed.
@@ -332,41 +349,44 @@ class Kappa():
         if not self.do_xi: #this should already be set in xi function
             self.set_zs_sigc(cosmo_h=cosmo_h) 
 
-        cl=np.zeros((len(l),nbins,nbins))
-        if self.bin_cl:
-            cl_b=np.zeros((len(self.l_bins)-1,nbins,nbins))#we need unbinned cls for covariance
+        out={}
         cov={}
-
-        # if clz_dict is None:
-        #     clz_dict=self.cl_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
-        #                 cosmo_params=cosmo_params)
-        #following can be parallelized 
-        # for i in np.arange(nbins):
-        #     for j in np.arange(i,nbins): #we assume i,j ==j,i
         for (i,j) in self.corr_indxs:
-                out=self.kappa_cl(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
+                out[(i,j)]=delayed(self.kappa_cl)(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
                                     cosmo_params=cosmo_params,pk_params=pk_params,
                                     pk_func=pk_func)
-                cl[:,i,j]=out['cl']
-                cl[:,j,i]=out['cl']
-                if self.bin_cl: #need unbinned cl for covariance
-                    cl_b[:,i,j]=out['binned']['cl']
-                    cl_b[:,j,i]=out['binned']['cl']
-                
+
+        cl=delayed(self.combine_cl_tomo)(out)
+        cl_b=cl['cl_b']
+        cl=cl['cl']
         if self.do_cov and not self.do_xi: #need large l range for xi which leads to memory issues
-            cov={}
             for i in self.corr_indxs: #np.arange(len(indxs)):
                 for j in self.corr_indxs: #np.arange(i,len(indxs)):
-                    indx=i+j #indxs[i]+indxs[j]#np.append(indxs[i],indxs[j])
-                    cov[indx]=self.kappa_cl_cov(cls=cl, zs_indx=indx)
+                 indx=i+j #indxs[i]+indxs[j]#np.append(indxs[i],indxs[j])
+                 cov[indx]=delayed(self.kappa_cl_cov)(cls=cl, zs_indx=indx)
+        out_stack=delayed(self.stack_dat)({'cov':cov,'cl':cl_b})
+        return {'stack':out_stack,'cl0':cl_b,'cov0':cov}
 
-        cl=cl_b if self.bin_cl else cl
-        l=self.cl_bin_utils['bin_center'] if self.bin_cl else self.l
-        out={'l':l,'cl':cl,'cov':cov}
-        
-        if not self.do_xi:
-            self.reset_zs()
+        # cl,cl_b=self.combine_cl_tomo(out)
+        # if self.do_cov and not self.do_xi: #need large l range for xi which leads to memory issues
+        #     cov=self.kappa_cov_tomo(cl=cl)
+
+        # if not self.do_xi:
+        #     self.reset_zs()
         return out
+
+    def compute_cov_tomo(self,covG):
+        cov={}
+        for i in covG.keys():
+            cov[i]=covG[i].compute()
+        return cov
+
+    def get_kappa_all(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None):
+        cl0=delayed(self.kappa_cl_tomo)(cosmo_h=cosmo_h,cosmo_params=cosmo_params,
+                                        pk_params=pk_params,pk_func=pk_func)
+        cl=delayed(self.combine_cl_tomo)(cl0)
+        cov=delayed(self.kappa_cov_tomo)(cl)
+        return cov
 
     def cut_clz_lxi(self,clz=None,l_xi=None):
         """
@@ -420,8 +440,7 @@ class Kappa():
             power spectra and covariance and then does the hankel transform and  binning.
         """
         self.l=np.sort(np.unique(np.hstack((self.HT.k[i] for i in self.j_nus))))
-        # self.l=np.append(self.l,[20000,50000])
-        # print 'l changed for xi',self.l.shape
+        
         self.set_zs_sigc(cosmo_h=cosmo_h) 
         clz_dict=self.cl_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
                         cosmo_params=cosmo_params)
