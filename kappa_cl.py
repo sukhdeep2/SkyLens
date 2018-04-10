@@ -253,7 +253,7 @@ class Kappa():
         cov['final']=0
         if not self.do_xi:
             cov['G']=np.diag(cov['G1423']+cov['G1324'])# this can be expensive with large l
-            cov['G']/=(2.*l+1.)*self.cov_utils.f_sky*np.gradient(l) #need Delta l here. Even when 
+            cov['G']/=(2.*l+1.)*self.cov_utils.f_sky#*np.gradient(l) #need Delta l here. Even when 
                                                                     #binning later
             cov['final']=cov['G']
         if self.SSV_cov:
