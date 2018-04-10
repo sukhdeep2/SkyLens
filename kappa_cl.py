@@ -1,5 +1,5 @@
 import os,sys
-
+import pandas as pd
 from power_spectra import *
 from angular_power_spectra import *
 from hankel_transform import *
@@ -76,7 +76,7 @@ class Kappa():
             Redshift range here will be from z=0 to max(z_source)
         """
         zl_min=0
-        zl_max=np.amax(zs.values()) if isinstance(zs,dict) else np.amax(zs)
+        zl_max=max((zs.values())) if isinstance(zs,dict) else np.amax(zs)
 
         if zl is None:
             if log_zl:#bins for z_lens.
@@ -101,7 +101,7 @@ class Kappa():
         self.zs_bins={}
         if z_bins is None:
             self.ns_bins=len(zs.keys()) #pass zs bins as dicts
-            k=zs.keys()
+            k=list(zs.keys())
             for i in np.arange(self.ns_bins):
                 self.zs_bins[i]={}
                 self.zs_bins[i]['z']=np.array(zs[k[i]])
@@ -217,6 +217,7 @@ class Kappa():
         out={'l':l,'cl':cl}
         if self.bin_cl:
             out['binned']=self.bin_kappa_cl(results=out,bin_cl=True)
+            #need unbinned cl for covariance
         return out
 
     def kappa_cl_cov(self,cls=None,SN=None, zs_indx=[]):
@@ -329,15 +330,17 @@ class Kappa():
         #     clz_dict=self.cl_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
         #                 cosmo_params=cosmo_params)
         
+        indxs=[j for j in itertools.combinations_with_replacement(np.arange(nbins),2)]
         #following can be parallelized 
-        for i in np.arange(nbins):
-            for j in np.arange(i,nbins): #we assume i,j ==j,i
+        # for i in np.arange(nbins):
+        #     for j in np.arange(i,nbins): #we assume i,j ==j,i
+        for (i,j) in indxs:
                 out=self.kappa_cl(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
                                     cosmo_params=cosmo_params,pk_params=pk_params,
                                     pk_func=pk_func)
                 cl[:,i,j]=out['cl']
                 cl[:,j,i]=out['cl']
-                if self.bin_cl:
+                if self.bin_cl: #need unbinned cl for covariance
                     cl_b[:,i,j]=out['binned']['cl']
                     cl_b[:,j,i]=out['binned']['cl']
                 if self.do_cov:
@@ -345,14 +348,13 @@ class Kappa():
                         SN[:,i,j]=self.zs_bins[i]['SN']
                     elif self.lens_weight:
                         SN[:,i,j]=self.lensing_utils.shape_noise_calc(zs1=self.zs_bins[i],zs2=self.zs_bins[j])
-                        SN[:,i,j]=SN[:,j,i]     
+                    SN[:,j,i]=SN[:,i,j]     
 
         if self.do_cov and not self.do_xi: #need large l range for xi which leads to memory issues
             cov={}
-            indxs=[j for j in itertools.combinations_with_replacement(np.arange(nbins),2)]
-            for i in np.arange(len(indxs)):
-                for j in np.arange(i,len(indxs)):
-                    indx=indxs[i]+indxs[j]#np.append(indxs[i],indxs[j])
+            for i in indxs:#np.arange(len(indxs)):
+                for j in indxs:#np.arange(i,len(indxs)):
+                    indx=i+j #indxs[i]+indxs[j]#np.append(indxs[i],indxs[j])
                     cov[indx]=self.kappa_cl_cov(cls=cl,SN=SN, zs_indx=indx)
 
         cl=cl_b if self.bin_cl else cl

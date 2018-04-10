@@ -1,5 +1,6 @@
-import camb
-from camb import model, initialpower
+# import camb
+# from camb import model, initialpower
+import pyccl
 import os,sys
 #import pyccl
 
@@ -25,7 +26,8 @@ class Power_Spectra():
         self.cosmo=cosmo
         self.silence_camb=silence_camb
         self.cosmo_h=cosmo.clone(H0=100)
-        self.pk_func=self.camb_pk_too_many_z if pk_func is None else pk_func
+        #self.pk_func=self.camb_pk_too_many_z if pk_func is None else pk_func
+        self.pk_func=self.ccl_pk if pk_func is None else pk_func
         self.SSV_cov=SSV_cov
         self.pk=None
 
@@ -63,7 +65,7 @@ class Power_Spectra():
         Dz*=(2.5*cosmo.Om0*cosmo.H0.value**2)
         return Dz/Dz[0]
 
-    def ccl_pk(self,z,cosmo_params=None,pk_params=None):
+    def ccl_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
         if not cosmo_params:
             cosmo_params=self.cosmo_params
         if not pk_params:

@@ -91,7 +91,7 @@ class binning():
 
 
 
-#simpler binning code for testing.
+#more basic binning code for testing.
 def bin_cov(r=[],cov=[],r_bins=[]):
     bin_center=np.sqrt(r_bins[1:]*r_bins[:-1])
     n_bins=len(bin_center)
@@ -109,7 +109,7 @@ def bin_cov(r=[],cov=[],r_bins=[]):
             xj=bin_idx==j
             norm_ij=np.sum(r_dr[xi])*np.sum(r_dr[xj])
             if i==j:
-                print i,j,norm_ij
+                print( i,j,norm_ij)
             if norm_ij==0:
                 continue
             cov_int[i][j]=np.sum(cov_r_dr[xi,:][:,xj])/norm_ij
