@@ -43,7 +43,7 @@ class Lensing_utils():
     def shape_noise_calc(self,zs1=None,zs2=None):
         if not np.array_equal(zs1['z'],zs2['z']):
             return 0
-        SN=self.SN0*np.sum(zs1['dz']*zs1['W']*zs2['W']*np.sqrt(zs1['pz0']*zs2['pz0']))
+        SN=self.SN0*np.sum(zs1['dz']*zs1['W']*zs2['W']*zs1['pz0']) #FIXME: this is probably wrong.
         SN/=zs1['Norm']*zs2['Norm']
         SN/=zs1['ns']
         return SN

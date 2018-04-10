@@ -25,6 +25,10 @@ class Kappa():
 
         self.lens_weight=lens_weight
         self.lensing_utils=lensing_utils
+        self.do_cov=do_cov
+        self.SSV_cov=SSV_cov
+        self.tidal_SSV_cov=tidal_SSV_cov
+
         if lensing_utils is None:
             self.lensing_utils=Lensing_utils(sigma_gamma=sigma_gamma)
         
@@ -64,9 +68,7 @@ class Kappa():
         self.bin_xi=bin_xi
         self.set_bin_params()
         
-        self.do_cov=do_cov
-        self.SSV_cov=SSV_cov
-        self.tidal_SSV_cov=tidal_SSV_cov
+        
     
     def set_lens_bins(self,zs=None,z_bins=None,zl=None,n_zl=10,log_zl=False):
         """
@@ -117,11 +119,11 @@ class Kappa():
                 self.zs_bins[i]={}
                 if self.lens_weight:
                     self.zs_bins[i]['z']=zs
-                    self.zs_bins[i]['ns']=np.sum(ns)
                     self.zs_bins[i]['W']=1./self.lensing_utils.sigma_crit(zl=z_bins[i],zs=zs,
                                                             cosmo_h=self.Ang_PS.PS.cosmo_h)
                     self.zs_bins[i]['pz']=pzs*self.zs_bins[i]['W']
                     self.zs_bins[i]['pz0']=pzs
+                    self.zs_bins[i]['ns']=np.sum(ns)
                 else:
                     xi=zs>z_bins[i]
                     xi*=zs<z_bins[i+1]
@@ -130,12 +132,25 @@ class Kappa():
                     self.zs_bins[i]['ns']=np.sum(ns[xi])
                     self.zs_bins[i]['pz0']=self.zs_bins[i]['pz']
                     self.zs_bins[i]['W']=1.
+        self.SN=np.zeros((1,self.ns_bins,self.ns_bins)) if self.do_cov else None
+                
         for i in self.zs_bins.keys():
             self.zs_bins[i]['dz']= np.gradient(self.zs_bins[i]['z']) if len(self.zs_bins[i]['z'])>1 else np.array([1])
             self.zs_bins[i]['pzdz']=self.zs_bins[i]['pz']*self.zs_bins[i]['dz']
             self.zs_bins[i]['Norm']=np.sum(self.zs_bins[i]['pzdz'])
             self.zs_bins[i]['SN']=self.lensing_utils.shape_noise_calc(zs1=self.zs_bins[i],zs2=self.zs_bins[i])
+            self.SN[:,i,i]=self.zs_bins[i]['SN']
         self.reset_zs()
+        self.corr_indxs=[j for j in itertools.combinations_with_replacement(np.arange(self.ns_bins),
+                                                                                        2)]
+        if self.lens_weight:
+            self.corr_indxs=[(i,i) for i in np.arange(self.ns_bins)]
+            for i in np.arange(self.ns_bins):
+                for j in np.arange(i,self.ns_bins):
+                    self.SN[:,i,j]=self.lensing_utils.shape_noise_calc(zs1=self.zs_bins[i],
+                                                                        zs2=self.zs_bins[j])
+                    self.SN[:,j,i]=self.SN[:,i,j]    
+                    #FIXME: this shape noise calc is probably wrong 
 
     def set_bin_params(self):
         """
@@ -220,21 +235,20 @@ class Kappa():
             #need unbinned cl for covariance
         return out
 
-    def kappa_cl_cov(self,cls=None,SN=None, zs_indx=[]):
+    def kappa_cl_cov(self,cls=None, zs_indx=[]):
         """
             Computes the covariance between any two tomographic power spectra.
             cls: tomographic cls already computed before calling this function
-            SN: Shape noise for tomographic bins. Also computed before calling this function
             zs_indx: 4-d array, noting the indices of the source bins involved in the tomographic 
                     cls for which covariance is computed. For ex. covariance between 12, 56 tomographic cross correlations involve 1,2,5,6 source bins
         """
         cov={}
         l=self.l 
-        cov['G1324']=(cls[:,zs_indx[0],zs_indx[2]]+SN[:,zs_indx[0],zs_indx[2]])
-        cov['G1324']*=(cls[:,zs_indx[1],zs_indx[3]]+SN[:,zs_indx[1],zs_indx[3]])
+        cov['G1324']=(cls[:,zs_indx[0],zs_indx[2]]+self.SN[:,zs_indx[0],zs_indx[2]])
+        cov['G1324']*=(cls[:,zs_indx[1],zs_indx[3]]+self.SN[:,zs_indx[1],zs_indx[3]])
 
-        cov['G1423']=(cls[:,zs_indx[0],zs_indx[3]]+SN[:,zs_indx[0],zs_indx[3]])
-        cov['G1423']*=(cls[:,zs_indx[1],zs_indx[2]]+SN[:,zs_indx[1],zs_indx[2]])
+        cov['G1423']=(cls[:,zs_indx[0],zs_indx[3]]+self.SN[:,zs_indx[0],zs_indx[3]])
+        cov['G1423']*=(cls[:,zs_indx[1],zs_indx[2]]+self.SN[:,zs_indx[1],zs_indx[2]])
 
         cov['final']=0
         if not self.do_xi:
@@ -321,20 +335,15 @@ class Kappa():
         cl=np.zeros((len(l),nbins,nbins))
         if self.bin_cl:
             cl_b=np.zeros((len(self.l_bins)-1,nbins,nbins))#we need unbinned cls for covariance
-        SNij=None
         cov={}
-
-        SN=np.zeros((1,nbins,nbins)) if self.do_cov else None
 
         # if clz_dict is None:
         #     clz_dict=self.cl_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
         #                 cosmo_params=cosmo_params)
-        
-        indxs=[j for j in itertools.combinations_with_replacement(np.arange(nbins),2)]
         #following can be parallelized 
         # for i in np.arange(nbins):
         #     for j in np.arange(i,nbins): #we assume i,j ==j,i
-        for (i,j) in indxs:
+        for (i,j) in self.corr_indxs:
                 out=self.kappa_cl(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
                                     cosmo_params=cosmo_params,pk_params=pk_params,
                                     pk_func=pk_func)
@@ -343,23 +352,17 @@ class Kappa():
                 if self.bin_cl: #need unbinned cl for covariance
                     cl_b[:,i,j]=out['binned']['cl']
                     cl_b[:,j,i]=out['binned']['cl']
-                if self.do_cov:
-                    if i==j:
-                        SN[:,i,j]=self.zs_bins[i]['SN']
-                    elif self.lens_weight:
-                        SN[:,i,j]=self.lensing_utils.shape_noise_calc(zs1=self.zs_bins[i],zs2=self.zs_bins[j])
-                    SN[:,j,i]=SN[:,i,j]     
-
+                
         if self.do_cov and not self.do_xi: #need large l range for xi which leads to memory issues
             cov={}
-            for i in indxs:#np.arange(len(indxs)):
-                for j in indxs:#np.arange(i,len(indxs)):
+            for i in self.corr_indxs: #np.arange(len(indxs)):
+                for j in self.corr_indxs: #np.arange(i,len(indxs)):
                     indx=i+j #indxs[i]+indxs[j]#np.append(indxs[i],indxs[j])
-                    cov[indx]=self.kappa_cl_cov(cls=cl,SN=SN, zs_indx=indx)
+                    cov[indx]=self.kappa_cl_cov(cls=cl, zs_indx=indx)
 
         cl=cl_b if self.bin_cl else cl
         l=self.cl_bin_utils['bin_center'] if self.bin_cl else self.l
-        out={'l':l,'cl':cl,'SN':SN,'cov':cov}
+        out={'l':l,'cl':cl,'cov':cov}
         
         if not self.do_xi:
             self.reset_zs()
@@ -454,13 +457,13 @@ class Kappa():
                 if j_nu==0 and self.tracer=='shear':
                     j_nu2=4
 
-                indxs=[j for j in itertools.combinations_with_replacement(np.arange(nbins),2)]
-                ni=len(indxs)
-                for i in np.arange(ni):
-                    for j in np.arange(i,ni):
-                        indx=indxs[i]+indxs[j]
+                #ndxs=[j for j in itertools.combinations_with_replacement(np.arange(nbins),2)]
+                ni=len(self.corr_indxs)
+                for i in self.corr_indxs: #np.arange(ni):
+                    for j in self.corr_indxs:#np.arange(i,ni):
+                        indx=i+j #indxs[i]+indxs[j]
                         cov_cl_i=self.kappa_cl_cov(clz_dict=cls_tomo_nu,cls=cls_tomo_nu['cl'],
-                                                SN=cls_tomo_nu['SN'],zs_indx=indx)
+                                                zs_indx=indx)
                         cov_xi[j_nu][indx]=self.xi_cov(cov=cov_cl_i,j_nu=j_nu,j_nu2=j_nu2)
         out={}
         out['xi']=xi
@@ -476,7 +479,7 @@ class Kappa():
             handle things such as binning, hankel transforms etc. We will keep this structure for now.
         """
         nbins=self.ns_bins
-        nD=np.int64(nbins*(nbins-1.)/2.+nbins)
+        nD=len(self.corr_indxs) #np.int64(nbins*(nbins-1.)/2.+nbins)
         nD2=1
         est='cl'
         if self.do_xi:
@@ -488,23 +491,24 @@ class Kappa():
             nX=len(dat[est])
         D_final=np.zeros(nD*nX*nD2)
         cov_final=np.zeros((nD*nX*nD2,nD*nX*nD2))
-        
+        # print( D_final.shape)
         ij=0
         for iD2 in np.arange(nD2):
             dat2=dat[est]
             if self.do_xi:
                 dat2=dat[est][d_k[iD2]]
-            indxs=itertools.combinations_with_replacement(np.arange(nbins),2)
-            D_final[nD*nX*iD2:nD*nX*(iD2+1)]=np.hstack((dat2[:,i,j] for (i,j) in indxs))
+            # indxs=itertools.combinations_with_replacement(np.arange(nbins),2)
+            D_final[nD*nX*iD2:nD*nX*(iD2+1)]=np.hstack((dat2[:,i,j] for (i,j) in self.corr_indxs))
 
             dat2=dat['cov']
             if self.do_xi:
                 dat2=dat['cov'][d_k[iD2]]
-            indxs=[j for j in itertools.combinations_with_replacement(np.arange(nbins),2)]
+            # indxs=[j for j in itertools.combinations_with_replacement(np.arange(nbins),2)]
             i_indx=0
-            for i in np.arange(len(indxs)):
-                for j in np.arange(i,len(indxs)):
-                    indx=indxs[i]+indxs[j]
+            for i in np.arange(len(self.corr_indxs)):
+                for j in np.arange(i,len(self.corr_indxs)):
+                    indx=self.corr_indxs[i]+self.corr_indxs[j]
+                    #print(indx,self.corr_indxs[i],self.corr_indxs[j])
                     cov_final[ i*nX : (i+1)*nX , j*nX : (j+1)*nX] = dat2[indx]['final']
                     cov_final[ j*nX : (j+1)*nX , i*nX : (i+1)*nX] = dat2[indx]['final']
         out={'cov':cov_final}
