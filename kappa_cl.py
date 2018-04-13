@@ -346,8 +346,7 @@ class Kappa():
         nbins=self.ns_bins
         l=self.l 
         
-        if not self.do_xi: #this should already be set in xi function
-            self.set_zs_sigc(cosmo_h=cosmo_h) 
+        self.set_zs_sigc(cosmo_h=cosmo_h) 
 
         out={}
         cov={}
@@ -357,15 +356,20 @@ class Kappa():
                                     pk_func=pk_func)
 
         cl=delayed(self.combine_cl_tomo)(out)
-        cl_b=cl['cl_b']
-        cl=cl['cl']
-        if self.do_cov and not self.do_xi: #need large l range for xi which leads to memory issues
-            for i in self.corr_indxs: #np.arange(len(indxs)):
-                for j in self.corr_indxs: #np.arange(i,len(indxs)):
-                 indx=i+j #indxs[i]+indxs[j]#np.append(indxs[i],indxs[j])
-                 cov[indx]=delayed(self.kappa_cl_cov)(cls=cl, zs_indx=indx)
-        out_stack=delayed(self.stack_dat)({'cov':cov,'cl':cl_b})
-        return {'stack':out_stack,'cl0':cl_b,'cov0':cov}
+        if self.do_xi:
+            return cl.compute()
+        else:     
+            cl_b=cl['cl_b']
+            cl=cl['cl']
+            if self.do_cov: 
+            #need large l range for xi which leads to memory issues.. donot do cov here for xi
+                for i in self.corr_indxs: #np.arange(len(indxs)):
+                    for j in self.corr_indxs: #np.arange(i,len(indxs)):
+                        indx=i+j #indxs[i]+indxs[j]#np.append(indxs[i],indxs[j])
+                        cov[indx]=delayed(self.kappa_cl_cov)(cls=cl, zs_indx=indx)
+            out_stack=delayed(self.stack_dat)({'cov':cov,'cl':cl_b})
+            return {'stack':out_stack,'cl0':cl_b,'cov0':cov}
+        
 
         # cl,cl_b=self.combine_cl_tomo(out)
         # if self.do_cov and not self.do_xi: #need large l range for xi which leads to memory issues
@@ -373,19 +377,11 @@ class Kappa():
 
         # if not self.do_xi:
         #     self.reset_zs()
-        return out
 
     def compute_cov_tomo(self,covG):
         cov={}
         for i in covG.keys():
             cov[i]=covG[i].compute()
-        return cov
-
-    def get_kappa_all(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None):
-        cl0=delayed(self.kappa_cl_tomo)(cosmo_h=cosmo_h,cosmo_params=cosmo_params,
-                                        pk_params=pk_params,pk_func=pk_func)
-        cl=delayed(self.combine_cl_tomo)(cl0)
-        cov=delayed(self.kappa_cov_tomo)(cl)
         return cov
 
     def cut_clz_lxi(self,clz=None,l_xi=None):
@@ -434,60 +430,62 @@ class Kappa():
                 cov_xi['final']+=cov_xi[k]
         return cov_xi
 
+    def combine_xi_tomo(self,cl=[],j_nu=0):
+        xi=np.zeros((len(self.theta_bins)-1,self.ns_bins,self.ns_bins))
+        l_nu=self.HT.k[j_nu]
+        for (i,j) in self.corr_indxs:
+            th,xi_ij=self.HT.projected_correlation(k_pk=l_nu,j_nu=j_nu,pk=cl[:,i,j])
+            xi[:,i,j]=self.binning.bin_1d(r=th/d2r,xi=xi_ij,
+                                        r_bins=self.theta_bins,r_dim=2,
+                                        bin_utils=self.xi_bin_utils[j_nu])
+            xi[:,j,i]=xi[:,i,j]
+        return xi
+
+    def xi_tomo_cov(self,cl=[],j_nu1=0,j_nu2=0):
+        cov_xi={}
+        for i in self.corr_indxs: #np.arange(ni):
+            for j in self.corr_indxs:#np.arange(i,ni):
+                indx=i+j #indxs[i]+indxs[j]
+                cov_cl_i=delayed(self.kappa_cl_cov)(cls=cl,zs_indx=indx)
+                                        #need large l range for xi which leads to memory issues
+                cov_xi[indx]=delayed(self.xi_cov)(cov=cov_cl_i,j_nu=j_nu1,j_nu2=j_nu2)
+        return cov_xi
+
     def kappa_xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None):
         """
             Computed tomographic angular correlation functions. First calls the tomographic 
             power spectra and covariance and then does the hankel transform and  binning.
         """
         self.l=np.sort(np.unique(np.hstack((self.HT.k[i] for i in self.j_nus))))
-        
-        self.set_zs_sigc(cosmo_h=cosmo_h) 
-        clz_dict=self.cl_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
-                        cosmo_params=cosmo_params)
+                
         nbins=self.ns_bins
         cov_xi={}
         xi={}
-        
+        out={}
         for j_nu in [0]: #self.j_nus:
             l_nu=self.HT.k[j_nu]
-            xi[j_nu]=np.zeros((len(self.theta_bins)-1,nbins,nbins))
-            cls_tomo_nu=clz_dict.copy()
-            cls_tomo_nu=self.cut_clz_lxi(clz=clz_dict,l_xi=l_nu)
             self.l=l_nu
+            self.Ang_PS.l=l_nu
 
-            cls_tomo_nu=self.kappa_cl_tomo(cosmo_h=cosmo_h,cosmo_params=cosmo_params,
-                                    pk_params=pk_params,pk_func=pk_func,
-                                    clz_dict=cls_tomo_nu,return_clz=False)
+            cls_tomo_nu=delayed(self.kappa_cl_tomo)(cosmo_h=cosmo_h,cosmo_params=cosmo_params,
+                                                     pk_params=pk_params,pk_func=pk_func)
 
-
-            for i in np.arange(nbins):
-                for j in np.arange(i,nbins): # we assume i,j==j,i
-                    th,xi_ij=self.HT.projected_correlation(k_pk=l_nu,j_nu=j_nu,
-                                                            pk=cls_tomo_nu['cl'][:,i,j])
-                    xi[j_nu][:,i,j]=self.binning.bin_1d(r=th/d2r,xi=xi_ij,
-                                        r_bins=self.theta_bins,r_dim=2,
-                                        bin_utils=self.xi_bin_utils[j_nu])
-                    xi[j_nu][:,j,i]=xi[j_nu][:,i,j]
+            #cl=delayed(self.combine_cl_tomo)(cls_tomo_nu)
+            #cl=cl['cl']
+            cl=cls_tomo_nu['cl']
+            xi[j_nu]=delayed(self.combine_xi_tomo)(cl=cl,j_nu=j_nu)
 
             if self.do_cov:
-                cov_xi[j_nu]={}
-
                 j_nu2=j_nu
                 if j_nu==0 and self.tracer=='shear':
                     j_nu2=4
+                cov_xi[j_nu]=delayed(self.xi_tomo_cov)(cl=cl,j_nu1=0,j_nu2=0)
 
-                #ndxs=[j for j in itertools.combinations_with_replacement(np.arange(nbins),2)]
-                ni=len(self.corr_indxs)
-                for i in self.corr_indxs: #np.arange(ni):
-                    for j in self.corr_indxs:#np.arange(i,ni):
-                        indx=i+j #indxs[i]+indxs[j]
-                        cov_cl_i=self.kappa_cl_cov(clz_dict=cls_tomo_nu,cls=cls_tomo_nu['cl'],
-                                                zs_indx=indx)
-                        cov_xi[j_nu][indx]=self.xi_cov(cov=cov_cl_i,j_nu=j_nu,j_nu2=j_nu2)
-        out={}
+            out[j_nu]={}
+            out[j_nu]['stack']=delayed(self.stack_dat)({'cov':cov_xi[j_nu],'xi':xi[j_nu]})        
         out['xi']=xi
         out['cov']=cov_xi
-        self.reset_zs()
+        
         return out
 
     def stack_dat(self,dat):
@@ -503,31 +501,29 @@ class Kappa():
         est='cl'
         if self.do_xi:
             est='xi'
-            d_k=dat[est].keys()
-            nD2=len(d_k)
-            nX=len(dat[est][d_k[0]])
-        else:
-            nX=len(dat[est])
+        
+        nX=len(dat[est])
         D_final=np.zeros(nD*nX*nD2)
         cov_final=np.zeros((nD*nX*nD2,nD*nX*nD2))
         # print( D_final.shape)
         ij=0
         for iD2 in np.arange(nD2):
             dat2=dat[est]
-            if self.do_xi:
-                dat2=dat[est][d_k[iD2]]
-            # indxs=itertools.combinations_with_replacement(np.arange(nbins),2)
+            # if self.do_xi:
+            #     dat2=dat[est][d_k[iD2]]
+            
             D_final[nD*nX*iD2:nD*nX*(iD2+1)]=np.hstack((dat2[:,i,j] for (i,j) in self.corr_indxs))
 
             dat2=dat['cov']
-            if self.do_xi:
-                dat2=dat['cov'][d_k[iD2]]
-            # indxs=[j for j in itertools.combinations_with_replacement(np.arange(nbins),2)]
+            # if self.do_xi:
+            #     dat2=dat['cov'][d_k[iD2]]
+            
             i_indx=0
             for i in np.arange(len(self.corr_indxs)):
                 for j in np.arange(i,len(self.corr_indxs)):
                     indx=self.corr_indxs[i]+self.corr_indxs[j]
                     #print(indx,self.corr_indxs[i],self.corr_indxs[j])
+                    print(dat2[indx]['final'])
                     cov_final[ i*nX : (i+1)*nX , j*nX : (j+1)*nX] = dat2[indx]['final']
                     cov_final[ j*nX : (j+1)*nX , i*nX : (i+1)*nX] = dat2[indx]['final']
         out={'cov':cov_final}
