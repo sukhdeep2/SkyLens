@@ -2,6 +2,7 @@
 # from camb import model, initialpower
 import pyccl
 import os,sys
+from classy import Class
 #import pyccl
 
 import numpy as np
@@ -30,6 +31,9 @@ class Power_Spectra():
         self.pk_func=self.ccl_pk if pk_func is None else pk_func
         self.SSV_cov=SSV_cov
         self.pk=None
+        if not pk_params is None:
+            self.kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),
+            pk_params['nk'])
 
     def get_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
         if return_s8:
@@ -157,6 +161,37 @@ class Power_Spectra():
             pk=np.vstack((pk,pki)) if pk is not None else pki
             i+=z_step
         return pk,kh
+
+    def class_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
+        cosmoC=Class()
+        h=cosmo_params['h']
+        class_params={'h':h,'omega_b'=cosmo_params['Omb']*h**2,
+                            'omega_cdm'=(cosmo_params['Om']-cosmo_params['Omb'])*h**2,
+                            'A_s':cosmo_params['As'],'ns':cosmo_params['ns'],
+                            'output': 'mPk','z_max_pk':max(z)+0.1,
+                            'P_k_max_1/Mpc':pk_params['kmax']*h,
+                    }
+        if pk_params['non_linear']==1:
+            class_params['non linear']='halofit'
+
+        class_params['N_ur']=3.04 #ultra relativistic species... neutrinos
+        if cosmo_params['mnu']!=0:
+            class_params['N_ur']-=1 #one massive neutrino
+            class_params['m_ncdm']=cosmo_fid['mnu']
+        class_params['N_ncdm']=3.04-class_params['N_ur']
+
+        cosmoC=Class() 
+        cosmoC.set(class_params)
+        cosmoC.compute()
+
+        k=self.kh*h
+        pkC=np.array([[cosmoC.pk(ki,zj) for ki in k ]for zj in z])
+        pkC*=h**3
+        s8=cosmoC.sigma8()
+        if return_s8:
+            return pk,self.kh,s8
+        else:
+            return pk,self.kh
 
     def R1_calc(self,k=None,pk=None,k_NonLinear=3.2,axis=0): #eq 2.5, R1, Barriera+ 2017
         G1=26./21.*np.ones_like(k)
