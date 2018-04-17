@@ -165,8 +165,8 @@ class Power_Spectra():
     def class_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
         cosmoC=Class()
         h=cosmo_params['h']
-        class_params={'h':h,'omega_b'=cosmo_params['Omb']*h**2,
-                            'omega_cdm'=(cosmo_params['Om']-cosmo_params['Omb'])*h**2,
+        class_params={'h':h,'omega_b':cosmo_params['Omb']*h**2,
+                            'omega_cdm':(cosmo_params['Om']-cosmo_params['Omb'])*h**2,
                             'A_s':cosmo_params['As'],'ns':cosmo_params['ns'],
                             'output': 'mPk','z_max_pk':max(z)+0.1,
                             'P_k_max_1/Mpc':pk_params['kmax']*h,
