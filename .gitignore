@@ -6,3 +6,6 @@
 *.log
 *.out
 *.synctex.gz
+
+*dask-worker-space/*
+*mydask.png*
