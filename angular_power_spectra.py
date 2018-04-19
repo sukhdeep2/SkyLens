@@ -83,3 +83,7 @@ class Angular_power_spectra():
         if self.SSV_cov:
             self.cov_utils.sigma_win_calc(cls_lin=cls_lin)
             self.clz.update({'clsR':cls*Rls,'clsRK':cls*RKls})
+
+    def reset(self):
+        self.clz=None
+        self.PS.reset()

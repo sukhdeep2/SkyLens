@@ -16,7 +16,8 @@ cosmo_h=cosmo.clone(H0=100)
 #c=c.to(u.km/u.second)
 
 cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817,'Om':cosmo.Om0,
-                'As':2.12e-09,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965})
+                'As':2.12e-09,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
+                'w':-1})
 pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':5000}
 
 class Power_Spectra():
@@ -28,7 +29,8 @@ class Power_Spectra():
         self.silence_camb=silence_camb
         self.cosmo_h=cosmo.clone(H0=100)
         #self.pk_func=self.camb_pk_too_many_z if pk_func is None else pk_func
-        self.pk_func=self.ccl_pk if pk_func is None else pk_func
+        #self.pk_func=self.ccl_pk if pk_func is None else pk_func
+        self.pk_func=self.class_pk if pk_func is None else pk_func
         self.SSV_cov=SSV_cov
         self.pk=None
         if not pk_params is None:
@@ -75,8 +77,10 @@ class Power_Spectra():
         if not pk_params:
             pk_params=self.pk_params
 
-        cosmo_ccl=pyccl.Cosmology(h=cosmo_params['h'],Omega_c=cosmo_params['Omd'],Omega_b=cosmo_params['Omb'],
-                              A_s=cosmo_params['As'],n_s=cosmo_params['ns'],m_nu=cosmo_params['mnu'])
+        cosmo_ccl=pyccl.Cosmology(h=cosmo_params['h'],Omega_c=cosmo_params['Omd'],
+                                Omega_b=cosmo_params['Omb'],
+                                A_s=cosmo_params['As'],n_s=cosmo_params['ns'],
+                                m_nu=cosmo_params['mnu'])
         kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),pk_params['nk'])
         nz=len(z)
         ps=np.zeros((nz,pk_params['nk']))
@@ -112,6 +116,9 @@ class Power_Spectra():
                             omch2=(cosmo_params['Om']-cosmo_params['Omb'])*h**2,
                             mnu=cosmo_params['mnu'],tau=cosmo_params['tau']
                             ) #    omk=cosmo_params['Omk'], )
+
+        if cosmo_params['w']!=-1:
+            pars.set_dark_energy(cosmo_params['w'])
 
         #stdout=np.copy(sys.stdout)
         #sys.stdout = open(os.devnull, 'w')
@@ -163,11 +170,15 @@ class Power_Spectra():
         return pk,kh
 
     def class_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
+        if not cosmo_params:
+            cosmo_params=self.cosmo_params
+        if not pk_params:
+            pk_params=self.pk_params
         cosmoC=Class()
         h=cosmo_params['h']
         class_params={'h':h,'omega_b':cosmo_params['Omb']*h**2,
                             'omega_cdm':(cosmo_params['Om']-cosmo_params['Omb'])*h**2,
-                            'A_s':cosmo_params['As'],'ns':cosmo_params['ns'],
+                            'A_s':cosmo_params['As'],'n_s':cosmo_params['ns'],
                             'output': 'mPk','z_max_pk':max(z)+0.1,
                             'P_k_max_1/Mpc':pk_params['kmax']*h,
                     }
@@ -177,8 +188,12 @@ class Power_Spectra():
         class_params['N_ur']=3.04 #ultra relativistic species... neutrinos
         if cosmo_params['mnu']!=0:
             class_params['N_ur']-=1 #one massive neutrino
-            class_params['m_ncdm']=cosmo_fid['mnu']
+            class_params['m_ncdm']=cosmo_params['mnu']
         class_params['N_ncdm']=3.04-class_params['N_ur']
+
+        if cosmo_params['w']!=-1:
+            class_params['Omega_fld']=cosmo_params['Oml']
+            class_params['w0_fld']=cosmo_params['w']
 
         cosmoC=Class() 
         cosmoC.set(class_params)
@@ -189,9 +204,9 @@ class Power_Spectra():
         pkC*=h**3
         s8=cosmoC.sigma8()
         if return_s8:
-            return pk,self.kh,s8
+            return pkC,self.kh,s8
         else:
-            return pk,self.kh
+            return pkC,self.kh
 
     def R1_calc(self,k=None,pk=None,k_NonLinear=3.2,axis=0): #eq 2.5, R1, Barriera+ 2017
         G1=26./21.*np.ones_like(k)
@@ -208,6 +223,10 @@ class Power_Spectra():
         dpk=np.gradient(np.log(pk),axis=axis)/np.gradient(np.log(k),axis=0)
         R=12./13*G1-dpk
         return R
+
+    def reset(self):
+        self.pk=None
+        self.s8=None
 
 if __name__ == "__main__":
     PS=Power_Spectra()

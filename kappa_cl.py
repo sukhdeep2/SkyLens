@@ -111,6 +111,7 @@ class Kappa():
                 self.zs_bins[i]['z']=np.array(zs[k[i]])
                 self.zs_bins[i]['pz']=np.array(pzs[k[i]])
                 self.zs_bins[i]['ns']=np.sum(np.array(ns[k[i]]))
+                self.zs_bins[i]['nz']=np.array(ns[k[i]])
                 self.zs_bins[i]['pz0']=self.zs_bins[i]['pz']
                 self.zs_bins[i]['W']=1.
         else:
@@ -125,12 +126,17 @@ class Kappa():
                                                             cosmo_h=self.Ang_PS.PS.cosmo_h)
                     self.zs_bins[i]['pz']=pzs*self.zs_bins[i]['W']
                     self.zs_bins[i]['pz0']=pzs
-                    self.zs_bins[i]['ns']=np.sum(ns)
+                    self.zs_bins[i]['nz']=ns
+
+                    dz= np.gradient(self.zs_bins[i]['z']) if len(self.zs_bins[i]['z'])>1 else np.array([1])
+                    self.zs_bins[i]['ns']=np.sum(ns*self.zs_bins[i]['W'])
+                    self.zs_bins[i]['ns']/=np.sum(self.zs_bins[i]['pz']*dz)/np.sum(pzs*dz) #Assumption: ns(z) is already multiplied with pzs*dz
                 else:
                     xi=zs>z_bins[i]
                     xi*=zs<z_bins[i+1]
                     self.zs_bins[i]['z']=zs[xi]
                     self.zs_bins[i]['pz']=pzs[xi]
+                    self.zs_bins[i]['nz']=ns[xi]
                     self.zs_bins[i]['ns']=np.sum(ns[xi])
                     self.zs_bins[i]['pz0']=self.zs_bins[i]['pz']
                     self.zs_bins[i]['W']=1.
@@ -514,6 +520,9 @@ class Kappa():
             
             D_final[nD*nX*iD2:nD*nX*(iD2+1)]=np.hstack((dat2[:,i,j] for (i,j) in self.corr_indxs))
 
+            if not self.do_cov:
+                cov_final=None
+                continue
             dat2=dat['cov']
             # if self.do_xi:
             #     dat2=dat['cov'][d_k[iD2]]
@@ -523,7 +532,7 @@ class Kappa():
                 for j in np.arange(i,len(self.corr_indxs)):
                     indx=self.corr_indxs[i]+self.corr_indxs[j]
                     #print(indx,self.corr_indxs[i],self.corr_indxs[j])
-                    print(dat2[indx]['final'])
+                    # print(dat2[indx]['final'])
                     cov_final[ i*nX : (i+1)*nX , j*nX : (j+1)*nX] = dat2[indx]['final']
                     cov_final[ j*nX : (j+1)*nX , i*nX : (i+1)*nX] = dat2[indx]['final']
         out={'cov':cov_final}
