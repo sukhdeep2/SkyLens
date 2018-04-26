@@ -4,6 +4,7 @@ from dask import delayed
 from dask.distributed import Client
 from power_spectra import *
 from angular_power_spectra import *
+from lsst_utils import *
 from hankel_transform import *
 from binning import *
 from cov_utils import *
@@ -12,7 +13,6 @@ from astropy.constants import c,G
 from astropy import units as u
 import numpy as np
 from scipy.interpolate import interp1d
-from scipy.integrate import quad as scipy_int1d
 
 d2r=np.pi/180.
 c=c.to(u.km/u.second)
@@ -20,12 +20,13 @@ c=c.to(u.km/u.second)
 class Kappa():
     def __init__(self,silence_camb=False,l=np.arange(2,2001),HT=None,Ang_PS=None,
                 lensing_utils=None,cov_utils=None,
-                power_spectra_kwargs={},HT_kwargs=None,zs=None,pzs=None,ns=None,z_bins=None,
-                lens_weight=False,zl=None,n_zl=100,log_zl=True,do_cov=False,SSV_cov=False,
-                tidal_SSV_cov=False,sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,
+                power_spectra_kwargs={},HT_kwargs=None,zs_bins=None,cross_PS=True,
+                zl=None,n_zl=100,log_zl=True,zl_max=None,
+                do_cov=False,SSV_cov=False,tidal_SSV_cov=False,
+                sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,tracer='kappa'):
 
-        self.lens_weight=lens_weight
+        self.cross_PS=cross_PS
         self.lensing_utils=lensing_utils
         self.do_cov=do_cov
         self.SSV_cov=SSV_cov
@@ -34,7 +35,7 @@ class Kappa():
         if lensing_utils is None:
             self.lensing_utils=Lensing_utils(sigma_gamma=sigma_gamma)
         
-        self.set_lens_bins(zs=zs,z_bins=z_bins,zl=zl,n_zl=n_zl,log_zl=log_zl)
+        self.set_lens_bins(zl=zl,n_zl=n_zl,log_zl=log_zl,zl_max=zl_max)
         self.l=l
         
         self.cov_utils=cov_utils
@@ -47,7 +48,8 @@ class Kappa():
                         power_spectra_kwargs=power_spectra_kwargs,cov_utils=self.cov_utils,
                         zl=self.zl,n_zl=n_zl)
 
-        self.set_source_bins(zs=zs,pzs=pzs,z_bins=z_bins,ns=ns)
+        self.zs_bins=zs_bins
+        self.set_shape_noise()
         self.l_bins=l_bins
         self.stack_data=stack_data
         self.theta_bins=theta_bins
@@ -69,10 +71,18 @@ class Kappa():
         self.bin_cl=bin_cl
         self.bin_xi=bin_xi
         self.set_bin_params()
+        self.cov_indxs=[]
+        if self.cross_PS:
+            self.corr_indxs=[j for j in itertools.combinations_with_replacement(np.arange(self.zs_bins  ['n_bins']),2)]
+        else:
+            self.corr_indxs=[(i,i) for i in np.arange(self.zs_bins['n_bins'])]
+            if self.do_cov:
+                self.cov_indxs=[j for j in itertools.combinations(np.arange(self.zs_bins['n_bins']),2)]
+            #need cross terms when doing covariance
         
         
     
-    def set_lens_bins(self,zs=None,z_bins=None,zl=None,n_zl=10,log_zl=False):
+    def set_lens_bins(self,zl=None,n_zl=10,log_zl=False,zl_max=None):
         """
             Lens bins are the redshifts where we compute the matter power spectra.
             These can be input when intializing the class or set here.
@@ -80,7 +90,8 @@ class Kappa():
             Redshift range here will be from z=0 to max(z_source)
         """
         zl_min=0
-        zl_max=max((zs.values())) if isinstance(zs,dict) else np.amax(zs)
+        if zl_max is None:
+            zl_max=3
 
         if zl is None:
             if log_zl:#bins for z_lens.
@@ -91,7 +102,7 @@ class Kappa():
             self.zl=zl
         self.dzl=np.gradient(self.zl)
     
-    def set_source_bins(self,zs=None,pzs=None,z_bins=None,ns=None):
+    def set_shape_noise(self):
         """
             Setting source redshift bins in the format used in code. 
             Need 
@@ -102,57 +113,14 @@ class Kappa():
                     tomography is based on lens redshift, then this arrays contains those redshifts.
             ns: The number density for each bin to compute shape noise.
         """
-        self.zs_bins={}
-        if z_bins is None:
-            self.ns_bins=len(zs.keys()) #pass zs bins as dicts
-            k=list(zs.keys())
-            for i in np.arange(self.ns_bins):
-                self.zs_bins[i]={}
-                self.zs_bins[i]['z']=np.array(zs[k[i]])
-                self.zs_bins[i]['pz']=np.array(pzs[k[i]])
-                self.zs_bins[i]['ns']=np.sum(np.array(ns[k[i]]))
-                self.zs_bins[i]['nz']=np.array(ns[k[i]])
-                self.zs_bins[i]['pz0']=self.zs_bins[i]['pz']
-                self.zs_bins[i]['W']=1.
-        else:
-            self.ns_bins=len(z_bins)-1
-            if self.lens_weight:
-                self.ns_bins=len(z_bins)
-            for i in np.arange(self.ns_bins):
-                self.zs_bins[i]={}
-                if self.lens_weight:
-                    self.zs_bins[i]['z']=zs
-                    self.zs_bins[i]['W']=1./self.lensing_utils.sigma_crit(zl=z_bins[i],zs=zs,
-                                                            cosmo_h=self.Ang_PS.PS.cosmo_h)
-                    self.zs_bins[i]['pz']=pzs*self.zs_bins[i]['W']
-                    self.zs_bins[i]['pz0']=pzs
-                    self.zs_bins[i]['nz']=ns
-
-                    dz= np.gradient(self.zs_bins[i]['z']) if len(self.zs_bins[i]['z'])>1 else np.array([1])
-                    self.zs_bins[i]['ns']=np.sum(ns*self.zs_bins[i]['W'])
-                    self.zs_bins[i]['ns']/=np.sum(self.zs_bins[i]['pz']*dz)/np.sum(pzs*dz) #Assumption: ns(z) is already multiplied with pzs*dz
-                else:
-                    xi=zs>z_bins[i]
-                    xi*=zs<z_bins[i+1]
-                    self.zs_bins[i]['z']=zs[xi]
-                    self.zs_bins[i]['pz']=pzs[xi]
-                    self.zs_bins[i]['nz']=ns[xi]
-                    self.zs_bins[i]['ns']=np.sum(ns[xi])
-                    self.zs_bins[i]['pz0']=self.zs_bins[i]['pz']
-                    self.zs_bins[i]['W']=1.
+        self.ns_bins=self.zs_bins['n_bins']
         self.SN=np.zeros((1,self.ns_bins,self.ns_bins)) if self.do_cov else None
                 
-        for i in self.zs_bins.keys():
-            self.zs_bins[i]['dz']= np.gradient(self.zs_bins[i]['z']) if len(self.zs_bins[i]['z'])>1 else np.array([1])
-            self.zs_bins[i]['pzdz']=self.zs_bins[i]['pz']*self.zs_bins[i]['dz']
-            self.zs_bins[i]['Norm']=np.sum(self.zs_bins[i]['pzdz'])
+        for i in np.arange(self.ns_bins):
             self.zs_bins[i]['SN']=self.lensing_utils.shape_noise_calc(zs1=self.zs_bins[i],zs2=self.zs_bins[i])
             self.SN[:,i,i]=self.zs_bins[i]['SN']
-        self.reset_zs()
-        self.corr_indxs=[j for j in itertools.combinations_with_replacement(np.arange(self.ns_bins),
-                                                                                        2)]
-        if self.lens_weight:
-            self.corr_indxs=[(i,i) for i in np.arange(self.ns_bins)]
+        
+        if not self.cross_PS: # if we are not computing cross_PS, then we assume that sources overlap in different bins. Hence we need to compute the cross shape noise
             for i in np.arange(self.ns_bins):
                 for j in np.arange(i,self.ns_bins):
                     self.SN[:,i,j]=self.lensing_utils.shape_noise_calc(zs1=self.zs_bins[i],
@@ -199,6 +167,7 @@ class Kappa():
                                                         zs=self.zs_bins[i]['z'],
                                                         cosmo_h=cosmo_h)
             self.zs_bins[i]['sig_c_int']=np.dot(self.zs_bins[i]['pzdz'],self.zs_bins[i]['sig_c'])
+            self.zs_bins[i]['sig_c_int']/=self.zs_bins[i]['Norm']
 
     def calc_cl(self,zs1=None,zs2=None):
         """
@@ -209,9 +178,10 @@ class Kappa():
         cls=clz['cls']
         f=clz['f']    
         sc=zs1['sig_c_int']*zs2['sig_c_int']
-        cl=np.dot(sc*self.dzl*clz['cH'],cls)
+
+        cl=np.dot(sc*clz['dchi'],cls)
         
-        cl/=zs2['Norm']*zs1['Norm']
+        # cl/=zs2['Norm']*zs1['Norm'] #absorbed into sig_c_int
         cl/=f**2# cl correction from Kilbinger+ 2017
         return cl
     
@@ -256,14 +226,16 @@ class Kappa():
         l=self.l 
         cov['G1324']=(cls[:,zs_indx[0],zs_indx[2]]+self.SN[:,zs_indx[0],zs_indx[2]])
         cov['G1324']*=(cls[:,zs_indx[1],zs_indx[3]]+self.SN[:,zs_indx[1],zs_indx[3]])
+        cov['G1324']/=self.cov_utils.gaussian_cov_norm
 
         cov['G1423']=(cls[:,zs_indx[0],zs_indx[3]]+self.SN[:,zs_indx[0],zs_indx[3]])
         cov['G1423']*=(cls[:,zs_indx[1],zs_indx[2]]+self.SN[:,zs_indx[1],zs_indx[2]])
+        cov['G1423']/=self.cov_utils.gaussian_cov_norm
 
-        cov['final']=0
+        cov['final']=None
         if not self.do_xi:
             cov['G']=np.diag(cov['G1423']+cov['G1324'])# this can be expensive with large l
-            cov['G']/=(2.*l+1.)*self.cov_utils.f_sky#*np.gradient(l) #need Delta l here. Even when 
+            # cov['G']/=(2.*l+1.)*self.cov_utils.f_sky#*np.gradient(l) #need Delta l here. Even when 
                                                                     #binning later
             cov['final']=cov['G']
         if self.SSV_cov:
@@ -276,27 +248,32 @@ class Kappa():
             
             sig_cL=zs1['sig_c_int']*zs2['sig_c_int']*zs3['sig_c_int']*zs4['sig_c_int']
 
-            sig_cL*=self.dzl*self.Ang_PS.clz['cH']
-            sig_cL/=self.cov_utils.Om_W**2
+            sig_cL*=self.Ang_PS.clz['dchi']
             sig_cL*=sigma_win
-            sig_cL/=zs1['Norm']*zs2['Norm']*zs3['Norm']*zs4['Norm']
 
             clr1=self.Ang_PS.clz['clsR']
            
             cov['SSC_dd']=np.dot((clr1).T*sig_cL,clr1)
-            cov['final']=cov['SSC_dd']+cov['final']
-            #print np.all(np.isclose(cov['SSC_dd2'],cov['SSC_dd']))
+            # cov['SSC_dd']=np.einsum('i,jki->jk',sig_cL,clr1)
+            cov['final']+=cov['SSC_dd']
         
             if self.tidal_SSV_cov:
                 #sig_cL will be divided by some factors to account for different sigma_win
                 clrk=self.Ang_PS.clz['clsRK']
+                # clRrk=self.Ang_PS.clz['clsR_RK']
+
+                # cov['SSC_kk']=np.einsum('i,jki->jk',sig_cL,clrk)
+                # cov['SSC_dk']=np.einsum('i,jki->jk',sig_cL,clRrk)
                 cov['SSC_kk']=np.dot((clrk).T*sig_cL/36.,clrk)
                 cov['SSC_dk']=np.dot((clr1).T*sig_cL/6.,clrk)
-                cov['SSC_kd']=np.dot((clrk).T*sig_cL/6.,clr1)
-
-                cov['SSC_tidal']=cov['SSC_kd']+cov['SSC_dk']+cov['SSC_kk']    
-            
-                cov['final']+=cov['SSC_tidal']
+                
+                # #cov['SSC_kd']=np.dot((clrk).T*sig_cL/6.,clr1)
+                # print(np.all(np.isclose(cov['SSC_dk'],cov['SSC_kd'])))
+                
+                # cov['SSC_tidal']=cov['SSC_kd']+cov['SSC_dk']+cov['SSC_kk']    
+                # cov['final']+=cov['SSC_tidal']
+                
+                cov['final']+=cov['SSC_kk']+cov['SSC_dk']*2. #+cov['SSC_kd']    
         if self.bin_cl:
             cov=self.bin_kappa_cl(results=cov,bin_cov=True)
         return cov
@@ -319,7 +296,7 @@ class Kappa():
             if self.SSV_cov:
                 keys=np.append(keys,'SSC_dd')
                 if self.tidal_SSV_cov:
-                    keys=np.append(keys,['SSC_kk','SSC_dk','SSC_kd'])
+                    keys=np.append(keys,['SSC_kk','SSC_dk']) #SSC_kd
             for k in keys:
                 results_b[k]=self.binning.bin_2d(r=self.l,cov=results[k],r_bins=self.l_bins,r_dim=2
                                         ,bin_utils=self.cl_bin_utils)
@@ -328,16 +305,18 @@ class Kappa():
 
     def combine_cl_tomo(self,cl_compute_dict={}):
         cl=np.zeros((len(self.l),self.ns_bins,self.ns_bins))
-        cl_b=None
-        if self.bin_cl:
-            cl_b=np.zeros((len(self.l_bins)-1,self.ns_bins,self.ns_bins))#we need unbinned cls for covariance
-        for (i,j) in self.corr_indxs:
+        for (i,j) in self.corr_indxs+self.cov_indxs:#we need unbinned cls for covariance
             clij=cl_compute_dict[(i,j)]#.compute()
             cl[:,i,j]=clij['cl']
             cl[:,j,i]=clij['cl']
-            if self.bin_cl: #need unbinned cl for covariance
+            
+        if self.bin_cl:
+            cl_b=np.zeros((len(self.l_bins)-1,self.ns_bins,self.ns_bins))
+            for (i,j) in self.corr_indxs+self.cov_indxs:
                 cl_b[:,i,j]=clij['binned']['cl']
                 cl_b[:,j,i]=clij['binned']['cl']
+        else:
+            cl_b=cl
         return {'cl':cl,'cl_b':cl_b}
             
 
@@ -356,10 +335,15 @@ class Kappa():
 
         out={}
         cov={}
-        for (i,j) in self.corr_indxs:
-                out[(i,j)]=delayed(self.kappa_cl)(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
+        for (i,j) in self.corr_indxs+self.cov_indxs:
+            out[(i,j)]=delayed(self.kappa_cl)(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
                                     cosmo_params=cosmo_params,pk_params=pk_params,
                                     pk_func=pk_func)
+        # if self.do_cov and not self.cross_PS:
+        #     for (i,j) in self.cov_indxs:
+        #         out[(i,j)]=delayed(self.kappa_cl)(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
+        #                             cosmo_params=cosmo_params,pk_params=pk_params,
+        #                             pk_func=pk_func)
 
         cl=delayed(self.combine_cl_tomo)(out)
         if self.do_xi:
@@ -539,12 +523,6 @@ class Kappa():
         out[est]=D_final
         return out
             
-
-def lsst_zsource(alpha=1.24,z0=0.51,beta=1.01,z=[]):
-    pzs=z**alpha*np.exp(-(z/z0)**beta)
-    pzs/=np.sum(np.gradient(z)*pzs)
-    return pzs
-
 if __name__ == "__main__":
     import cProfile
     import pstats

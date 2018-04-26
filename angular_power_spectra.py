@@ -25,6 +25,7 @@ class Angular_power_spectra():
         self.clz=None
         self.cov_utils=cov_utils
         self.zl=zl
+        self.dzl=np.gradient(self.zl)
 
     
     def angular_power_z(self,z=None,pk_params=None,cosmo_h=None,
@@ -39,8 +40,7 @@ class Angular_power_spectra():
         
         l=self.l
 
-        if z is None:
-            z=self.zl
+        z=self.zl
 
         nz=len(z)
         nl=len(l)
@@ -79,10 +79,14 @@ class Angular_power_spectra():
         
         f=(l+0.5)**2/(l*(l+1.)) # cl correction from Kilbinger+ 2017
             #cl*=2./np.pi #comparison with CAMB requires this.
-        self.clz={'cls':cls,'l':l,'cH':cH,'f':f}
+        self.clz={'cls':cls,'l':l,'cH':cH,'f':f,'dchi':cH*self.dzl}
         if self.SSV_cov:
             self.cov_utils.sigma_win_calc(cls_lin=cls_lin)
             self.clz.update({'clsR':cls*Rls,'clsRK':cls*RKls})
+            # clsR=np.einsum('ji,jk->ikj',cls*Rls,cls*Rls)
+            # clsRK=np.einsum('ji,jk->ikj',cls*RKls,cls*RKls)/36.
+            # clsR_RK=np.einsum('ji,jk->ikj',cls*Rls,cls*RKls)/6.
+            # self.clz.update({'clsR':clsR,'clsRK':clsRK,'clsR_RK':clsR_RK})
 
     def reset(self):
         self.clz=None

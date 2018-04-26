@@ -26,7 +26,7 @@ class Lensing_utils():
     def Rho_crit(self,cosmo_h=None):
         #G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)
         #rc=3*cosmo_h.H0**2/(8*np.pi*G2)
-        rc=cosmo_h.H0**2/(self.G2) #factors of pi etc. absorbed in selg.G2
+        rc=cosmo_h.H0**2/(self.G2) #factors of pi etc. absorbed in self.G2
         rc=rc.to(u.Msun/u.pc**2/u.Mpc)# unit of Msun/pc^2/mpc
         return rc.value
 
@@ -46,11 +46,8 @@ class Lensing_utils():
         if np.any(np.isinf(zs1['nz'])) or np.any(np.isinf(zs2['nz'])):
             return 0
         SN=self.SN0*np.sum(zs1['W']*zs2['W']*zs1['nz']) #FIXME: this is probably wrong.
-        #Assumption: ns(z) is already multiplied with pzs*dz
-        # SN/=zs1['Norm']*zs2['Norm']
-        SN/=np.sum(zs1['nz']*zs1['W'])#/np.sum(zs1['pz']*zs1['dz'])*np.sum(zs1['pz0']*zs1['dz']) 
-        SN/=np.sum(zs2['nz']*zs2['W'])#/np.sum(zs2['pz']*zs2['dz'])*np.sum(zs2['pz0']*zs2['dz']) 
-        # SN/=zs1['ns']
-        # SN/=zs2['ns']
+        #Assumption: ns(z)=ns*pzs*dzs
+        SN/=np.sum(zs1['nz']*zs1['W'])
+        SN/=np.sum(zs2['nz']*zs2['W'])
         return SN
         # XXX Make sure pzs are properly normalized

@@ -14,11 +14,15 @@ class Covariance_utils():
         self.f_sky=f_sky
         self.set_window_params(f_sky=self.f_sky)
         self.window_func(theta_win=self.theta_win,f_sky=self.f_sky)
+
+        self.gaussian_cov_norm=(2.*l+1.)*f_sky*np.gradient(l) #need Delta l here. Even when 
+                                                                    #binning later
         
     def set_window_params(self,f_sky=None):
         self.theta_win=np.sqrt(f_sky*sky_area)
         self.Win=self.window_func(theta_win=self.theta_win,f_sky=f_sky) 
         self.Om_W=4*np.pi*f_sky
+        self.Win/=self.Om_W
 
     def window_func(self,theta_win=None,f_sky=None):
         l=self.l

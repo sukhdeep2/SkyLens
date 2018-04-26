@@ -1,4 +1,4 @@
-from kappa_cl import *
+from lensing_lensing import *
 
 def fisher():
   def __init__(self,):
@@ -50,4 +50,64 @@ def fisher():
     out={'fisher':fisher,'derivs':derivs}
     out['cov']=np.linalg.inv(fisher)
     out['error']=np.sqrt(np.diag(out['cov']))
+    return out
+
+
+def fisher_calc(params=['As'],Nx=3,dx_max=0.01,do_log=False,kappa_class=None):
+    cosmo_fid=kappa_class.Ang_PS.PS.cosmo_params.copy()
+    
+    cl0G=kappa_class.kappa_cl_tomo()
+    cl_t=cl0G['stack'].compute()
+    cov=cl_t['cov']
+    kappa_class.Ang_PS.reset()
+    kappa_class.do_cov=False
+
+    Dx=np.linspace((1-dx_max),(1+dx_max),Nx)
+    ndim=len(params)
+    
+    x_vars={}
+    models={}
+    model_derivs={}
+    covs={}
+    for p in params:
+        x0=cosmo_fid[p]
+        if do_log:
+            x0=np.absolute(x0)
+            x_vars[p]=x0**Dx
+            if x0==1:
+                x_vars[p]=(2.**Dx)/2. # 1**x=1
+            x_vars[p]*=np.sign(cosmo_fid[p])
+        else:
+            x_vars[p]=x0*Dx #np.linspace(x0*(1-dx_max),x0*(1+dx_max),Nx)
+        
+        models[p]={}
+#         covs[p]={}
+        model_derivs[p]={}
+        for i in np.arange(Nx):
+            cosmo_t=cosmo_fid.copy()
+            cosmo_t[p]=x_vars[p][i]
+            cl0G=kappa_class.kappa_cl_tomo(cosmo_params=cosmo_t)
+            cl_t=cl0G['stack'].compute()
+            models[p][i]=cl_t['cl']
+#             covs[p][i]=cl_t['cov']
+            kappa_class.Ang_PS.reset()
+        model_derivs[p]=models[p][Nx-1]-models[p][0]
+        if do_log:
+            model_derivs[p]/=np.log(x_vars[p][Nx-1]/x_vars[p][0])
+        else:
+            model_derivs[p]/=(x_vars[p][Nx-1]-x_vars[p][0])
+#     cov=covs[p][1]
+    cov_inv=np.linalg.inv(cov)
+    cov_p_inv=np.zeros([ndim]*2)
+    i1=0
+    for p1 in params:
+        i2=0
+        for p2 in params:
+            cov_p_inv[i1,i2]=np.dot(model_derivs[p1],np.dot(cov_inv,model_derivs[p2]))
+            i2+=1
+        i1+=1
+    print (cov_p_inv)
+    out={}
+    out['cov_p']=np.linalg.inv(cov_p_inv)
+    out['error']=np.sqrt(np.diag(out['cov_p']))
     return out
