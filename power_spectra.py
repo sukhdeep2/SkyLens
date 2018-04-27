@@ -203,6 +203,7 @@ class Power_Spectra():
         pkC=np.array([[cosmoC.pk(ki,zj) for ki in k ]for zj in z])
         pkC*=h**3
         s8=cosmoC.sigma8()
+        cosmoC.struct_cleanup()
         if return_s8:
             return pkC,self.kh,s8
         else:
