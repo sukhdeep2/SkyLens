@@ -7,7 +7,7 @@ class binning():
                  j_nu=[0],prune_r=0,prune_log_space=True):
         pass
     
-    def bin_utils(self,r=[],r_bins=[],r_dim=2,mat_dims=None):
+    def bin_utils(self,r=[],r_bins=[],r_dim=2,wt=1,mat_dims=None):
         bu={}
         bu['bin_center']=np.sqrt(r_bins[1:]*r_bins[:-1])
         bu['n_bins']=len(r_bins)-1
@@ -25,6 +25,7 @@ class binning():
         r2_idx=[i for i in np.arange(len(r2)) if r2[i] in r]
         dr=dr[r2_idx]
         bu['r_dr']=r**(r_dim-1)*dr
+        bu['r_dr']*=wt
         bu['norm']=np.dot(bu['r_dr'],binning_mat)
 
         x=np.logical_or(r_bins[1:]<=np.amin(r),r_bins[:-1]>=np.amax(r))
