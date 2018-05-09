@@ -8,6 +8,7 @@ from lsst_utils import *
 from hankel_transform import *
 from binning import *
 from cov_utils import *
+from galaxy_utils import *
 from lensing_utils import *
 from astropy.constants import c,G
 from astropy import units as u
@@ -17,26 +18,23 @@ from scipy.interpolate import interp1d
 d2r=np.pi/180.
 c=c.to(u.km/u.second)
 
-class Kappa():
+class galaxy_galaxy():
     def __init__(self,silence_camb=False,l=np.arange(2,2001),HT=None,Ang_PS=None,
-                lensing_utils=None,cov_utils=None,
-                power_spectra_kwargs={},HT_kwargs=None,zs_bins=None,cross_PS=True,
-                z_PS=None,nz_PS=100,log_z_PS=True,z_PS_max=None,
+                lensing_utils=None,cov_utils=None,galaxy_utils=None,
+                power_spectra_kwargs={},HT_kwargs=None,zs_bins=None,zl_bins=None,
+                zl=None,n_zl=100,log_zl=True,zl_max=None,
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,
                 sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,tracer='kappa'):
-
-        self.cross_PS=cross_PS
         self.lensing_utils=lensing_utils
         self.do_cov=do_cov
         self.SSV_cov=SSV_cov
         self.tidal_SSV_cov=tidal_SSV_cov
 
         if lensing_utils is None:
-            self.lensing_utils=Lensing_utils(sigma_gamma=sigma_gamma,zs_bins=zs_bins,
-                                            )
+            self.lensing_utils=Lensing_utils(sigma_gamma=sigma_gamma,zs_bins=zs_bins)
         
-        # self.set_lens_bins(zl=zl,n_zl=n_zl,log_zl=log_zl,zl_max=zl_max)
+        self.set_lens_bins(zl=zl,n_zl=n_zl,log_zl=log_zl,zl_max=zl_max)
         self.l=l
         
         self.cov_utils=cov_utils
@@ -47,11 +45,9 @@ class Kappa():
         if Ang_PS is None:
             self.Ang_PS=Angular_power_spectra(silence_camb=silence_camb,SSV_cov=SSV_cov,l=self.l,
                         power_spectra_kwargs=power_spectra_kwargs,cov_utils=self.cov_utils,
-                        z_PS=z_PS,nz_PS=nz_PS,log_z_PS=log_z_PS,z_PS_max=z_PS_max) 
-                        #FIXME: Need a dict for these args
+                        zl=self.zl,n_zl=n_zl)
 
         self.zs_bins=self.lensing_utils.zs_bins
-        self.ns_bins=self.zs_bins['n_bins']
         self.l_bins=l_bins
         self.stack_data=stack_data
         self.theta_bins=theta_bins
@@ -74,16 +70,8 @@ class Kappa():
         self.bin_xi=bin_xi
         self.set_bin_params()
         self.cov_indxs=[]
-        if self.cross_PS:
-            self.corr_indxs=[j for j in itertools.combinations_with_replacement(np.arange(self.zs_bins  ['n_bins']),2)]
-        else:
-            self.corr_indxs=[(i,i) for i in np.arange(self.zs_bins['n_bins'])]
-            if self.do_cov:
-                self.cov_indxs=[j for j in itertools.combinations(np.arange(self.zs_bins['n_bins']),2)]
-            self.lensing_utils.set_shape_noise(cross_PS=self.cross_PS)
-            #need cross terms when doing covariance
+        self.corr_indxs=[j for j in itertools.combinations_with_replacement(np.arange(self.zs_bins  ['n_bins']),2)]
         
-    
     def set_bin_params(self):
         """
             Setting up the binning functions to be used in binning the data
@@ -99,44 +87,47 @@ class Kappa():
                                                     r_bins=self.theta_bins,
                                                     r_dim=2,mat_dims=[1,2])
 
-    def calc_lens_lens_cl(self,zs1=None,zs2=None):
+    def calc_galaxy_lens_cl(self,zs=None,zg=None):
         """
             Compute the angular power spectra, Cl between two source bins
             zs1, zs2: Source bins. Dicts containing information about the source bins
         """
         clz=self.Ang_PS.clz
         cls=clz['cls']
-        f=self.Ang_PS.cl_f
-        sc=zs1['sig_c_int']*zs2['sig_c_int']
+        f=clz['f']    
+        sc=zs1['sig_c_int']*zg['dndz_int']
 
         cl=np.dot(sc*clz['dchi'],cls)
         
-        cl/=self.Ang_PS.cl_f**2# cl correction from Kilbinger+ 2017
+        # cl/=zs2['Norm']*zs1['Norm'] #absorbed into sig_c_int
+        cl/=f**2# cl correction from Kilbinger+ 2017
         return cl
     
     #@delayed
-    def kappa_cl(self,zs1_indx=-1, zs2_indx=-1,
+    def galaxy_kappa_cl(self,zs_indx=-1, zg_indx=-1,
                 pk_func=None,pk_params=None,cosmo_h=None,cosmo_params=None):
         """
             Wrapper for calc_lens_lens_cl. Checks to make sure quantities such as power spectra and cosmology 
             are available otherwise sets them to some default values.
             zs1_indx, zs2_indx: Indices of the source bins to be correlated.
-            Others are arguments to be passed to power spectra function if it needs to be computed
+            Others are arguments to be passed to power spectra function is it needs to be computed
         """
         if cosmo_h is None:
             cosmo_h=self.Ang_PS.PS.cosmo_h
         
         l=self.l
-        zs1=self.zs_bins[zs1_indx]#.copy() #we will modify these locally
-        zs2=self.zs_bins[zs2_indx]#.copy()
-        if zs1['sig_c'] is None or zs2['sig_c'] is None:
+        zs=self.zs_bins[zs1_indx]#.copy() #we will modify these locally
+        zg=self.zg_bins[zg_indx]#.copy()
+        if zs1['sig_c'] is None: 
             self.lensing_utils.set_zs_sigc(cosmo_h=cosmo_h,zl=self.Ang_PS.z)
+        if zg['dndz'] is None:
+            self.galaxy_utils.set_zs_sigc(cosmo_h=cosmo_h,zl=self.Ang_PS.z)
         
         if self.Ang_PS.clz is None:
             self.Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
                                 cosmo_params=cosmo_params)
     
-        cl=self.calc_lens_lens_cl(zs1=zs1,zs2=zs2)
+        cl=self.calc_galaxy_lens_cl(zs1=zs1,zg=zg)
         out={'l':l,'cl':cl}
         if self.bin_cl:
             out['binned']=self.bin_kappa_cl(results=out,bin_cl=True)
@@ -144,7 +135,7 @@ class Kappa():
         return out
 
     #@delayed
-    def kappa_cl_cov(self,cls=None, zs_indx=[]):
+    def galaxy_kappa_cl_cov(self,cls=None, zs_indx=[],zg_indx=[]):
         """
             Computes the covariance between any two tomographic power spectra.
             cls: tomographic cls already computed before calling this function
@@ -153,12 +144,14 @@ class Kappa():
         """
         cov={}
         l=self.l 
-        cov['G1324']=(cls[:,zs_indx[0],zs_indx[2]]+self.lensing_utils.SN[:,zs_indx[0],zs_indx[2]])
-        cov['G1324']*=(cls[:,zs_indx[1],zs_indx[3]]+self.lensing_utils.SN[:,zs_indx[1],zs_indx[3]])
+
+        #galaxy-galaxy*lensing-lensing XXX: need galaxy-galaxy and lensing-lensing auto correlations
+        cov['G1324']=(cls_g[:,zg_indx[0],zg_indx[1]]+self.galaxy_utils.SN[:,zg_indx[0],zg_indx[1]]) 
+        cov['G1324']*=(cls_s[:,zs_indx[0],zs_indx[1]]+self.lensing_utils.SN[:,zs_indx[0],zs_indx[1]])
         cov['G1324']/=self.cov_utils.gaussian_cov_norm
 
-        cov['G1423']=(cls[:,zs_indx[0],zs_indx[3]]+self.lensing_utils.SN[:,zs_indx[0],zs_indx[3]])
-        cov['G1423']*=(cls[:,zs_indx[1],zs_indx[2]]+self.lensing_utils.SN[:,zs_indx[1],zs_indx[2]])
+        cov['G1423']=(cls[:,zg_indx[0],zs_indx[1]])  #galaxy-lensing term
+        cov['G1423']*=(cls[:,zg_indx[1],zs_indx[0]])
         cov['G1423']/=self.cov_utils.gaussian_cov_norm
 
         cov['final']=None
@@ -167,15 +160,16 @@ class Kappa():
             # cov['G']/=(2.*l+1.)*self.cov_utils.f_sky#*np.gradient(l) #need Delta l here. Even when 
                                                                     #binning later
             cov['final']=cov['G']
-        if self.SSV_cov:
+        if self.SSV_cov: #FIXME: Need the correct formalism for g-l correlations
             clz=self.Ang_PS.clz
             zs1=self.zs_bins[zs_indx[0]]
             zs2=self.zs_bins[zs_indx[1]]
-            zs3=self.zs_bins[zs_indx[2]]
-            zs4=self.zs_bins[zs_indx[3]]
+            zg1=self.zg_bins[zg_indx[0]]
+            zg2=self.zg_bins[zg_indx[1]]
             sigma_win=self.cov_utils.sigma_win
             
-            sig_cL=zs1['sig_c_int']*zs2['sig_c_int']*zs3['sig_c_int']*zs4['sig_c_int']
+            sig_cL=zs1['sig_c_int']*zs2['sig_c_int']
+            sig_cL*=zg1['dndz_int']*zg2['dndz_int']
 
             sig_cL*=self.Ang_PS.clz['dchi']
             sig_cL*=sigma_win
@@ -250,11 +244,8 @@ class Kappa():
         """
         nbins=self.ns_bins
         l=self.l 
-
-        if cosmo_h is None:
-            cosmo_h=self.Ang_PS.PS.cosmo_h
         
-        self.lensing_utils.set_zs_sigc(cosmo_h=cosmo_h,zl=self.Ang_PS.z) 
+        self.set_zs_sigc(cosmo_h=cosmo_h,set_zs_sigc) 
 
         out={}
         cov={}
@@ -262,12 +253,7 @@ class Kappa():
             out[(i,j)]=delayed(self.kappa_cl)(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
                                     cosmo_params=cosmo_params,pk_params=pk_params,
                                     pk_func=pk_func)
-        # if self.do_cov and not self.cross_PS:
-        #     for (i,j) in self.cov_indxs:
-        #         out[(i,j)]=delayed(self.kappa_cl)(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
-        #                             cosmo_params=cosmo_params,pk_params=pk_params,
-        #                             pk_func=pk_func)
-
+        
         cl=delayed(self.combine_cl_tomo)(out)
         if self.do_xi:
             return cl.compute()
@@ -281,7 +267,8 @@ class Kappa():
                         indx=i+j #indxs[i]+indxs[j]#np.append(indxs[i],indxs[j])
                         cov[indx]=delayed(self.kappa_cl_cov)(cls=cl, zs_indx=indx)
             out_stack=delayed(self.stack_dat)({'cov':cov,'cl':cl_b})
-            return {'stack':out_stack,'cl':cl_b,'cov':cov,'cl0':cl}
+            return {'stack':out_stack,'cl0':cl_b,'cov0':cov}
+        
 
     def compute_cov_tomo(self,covG):
         cov={}
@@ -361,10 +348,6 @@ class Kappa():
             Computed tomographic angular correlation functions. First calls the tomographic 
             power spectra and covariance and then does the hankel transform and  binning.
         """
-
-        if cosmo_h is None:
-            cosmo_h=self.Ang_PS.PS.cosmo_h
-
         self.l=np.sort(np.unique(np.hstack((self.HT.k[i] for i in self.j_nus))))
                 
         nbins=self.ns_bins
@@ -446,61 +429,4 @@ if __name__ == "__main__":
     import cProfile
     import pstats
 
-    # kappa_fn=Kappa(zs={0:[1100]},pzs={0:[1]})
-    #         #    l,cl=PS.kappa_cl(n_zl=140,log_zl=True,zl_min=1.e-4,zl_max=1100) #camb
-    # cl2=kappa_fn.kappa_cl(zs1_indx=0, zs2_indx=0) #pk_func=kappa_fn.PS.ccl_pk)
-    # fname='kappa_cl_cmb'
-    #         #np.savetxt(fname+'_camb.dat',np.column_stack((l,cl)))
-    #         #    np.savetxt(fname+'_ccl.dat',np.column_stack((l,cl2)))
-
-    z=np.linspace(0,5,200)
-    pzs=lsst_zsource(z=z)
-    x=z<2
-    z=z[x]
-    pzs=pzs[x]
-
-    ns0=26
-    ns=ns0*pzs*np.gradient(z)
-
-    nbins=3
-    zs_bins=np.linspace(0.1,2,nbins+1)
-    zl_bins=np.linspace(0.5,1.5,nbins+1)
-    lmax_cl=2000
-    lmin_cl=2
-    l=np.arange(lmin_cl,lmax_cl)
-    l_bins=np.int64(np.logspace(np.log10(lmin_cl),np.log10(lmax_cl),20))
-    do_cov=True
-    bin_cl=True
-    bin_xi=True
-    do_xi=True
-    theta_bins=np.logspace(np.log10(1./60),1,20)
-
-    cProfile.run('kappa_fn = Kappa(zs=z,pzs=pzs,l=l,z_bins=zs_bins,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,bin_xi=bin_xi,theta_bins=theta_bins,do_xi=do_xi,ns=ns)', 'output_stats')
-                                            # globals(), locals()) #runctx
-    p = pstats.Stats('output_stats')
-    p.sort_stats('tottime').print_stats(2)
-
-    cProfile.run('clS=kappa_fn.kappa_cl_tomo()','output_stats2')
-    p2 = pstats.Stats('output_stats2')
-    p2.sort_stats('tottime').print_stats(10)
     
-    # cProfile.run('clS=kappa_fn.stack_dat(clS)','output_stats3')
-    # p2 = pstats.Stats('output_stats3')
-    # p2.sort_stats('tottime').print_stats(10)
-
-    bin_cl=True
-
-    cProfile.run('kappa_fn = Kappa(zs=z,pzs=pzs,l=l,z_bins=zl_bins,lens_weight=True,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,ns=ns)', 'output_statsL')
-                                            # globals(), locals()) #runctx
-    p = pstats.Stats('output_statsL')
-    p.sort_stats('tottime').print_stats(2)
-
-    cProfile.run('clL=kappa_fn.kappa_cl_tomo()','output_statsL2')
-    p2 = pstats.Stats('output_statsL2')
-    p2.sort_stats('tottime').print_stats(10)
-
-    # kappa_fn=Kappa(zs=z,pzs=pzs,l=l,z_bins=zl_bins,lens_weight=True)
-    # clL=kappa_fn.kappa_cl_many_bins()
-
-    #kappa_fn=Kappa(zs=z,pzs=pzs,l=l,z_bins=zs_bins)
-    #clS=kappa_fn.kappa_cl_many_bins()

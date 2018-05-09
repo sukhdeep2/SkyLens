@@ -98,8 +98,6 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     zs_bins['z_lens_kernel']=zl_kernel
     return zs_bins
 
-
-
 def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
                         zp_sigma=None,cosmo_h=None,z_bins=None):
     """
@@ -152,3 +150,58 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
     zs_bins['z_bins']=z_bins
     return zs_bins
 
+
+def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bias=None,
+                    zp_sigma=None,zg=None):
+    """
+        Setting source redshift bins in the format used in code. 
+        Need 
+        zg (array): redshift bins for every galaxy bin. if z_bins is none, then dictionary with 
+                    with values for each bin
+        p_zs: redshift distribution. same format as zs
+        z_bins: if zg and p_zg are for whole survey, then bins to divide the sample. If 
+                tomography is based on lens redshift, then this arrays contains those redshifts.
+        ns: The number density for each bin to compute shot noise.
+    """
+    z_bins={}
+
+    if nz_bins is None:
+        nz_bins=1
+    z_bins=np.linspace(min(zp)-0.0001,max(zp)+0.0001,nz_bins+1)
+
+    if zg is None:
+        zg=np.linspace(0,1.5,100)
+    dzg=np.gradient(zg)
+    dzp=np.gradient(zp) if len(zp)>1 else [1]
+    zp=np.array(zp)
+
+    zl_kernel=np.linspace(0,2,50)
+    lu=Lensing_utils()
+    cosmo_h=cosmo_h_PL
+
+    for i in np.arange(nz_bins):
+        zg_bins[i]={}
+        indx=zp.searchsorted(z_bins[i:i+2])
+        
+        if ztrue_func is None:
+            if indx[0]==indx[1]:
+                indx[1]=-1
+            zg=zp[indx[0]:indx[1]]
+            p_zg=p_zp[indx[0]:indx[1]]
+            nz=ns*p_zg*dzp[indx[0]:indx[1]]
+            print(indx,zg,z_bins)
+        else:
+            ns_i=ns*np.sum(p_zp[indx[0]:indx[1]]*dzp[indx[0]:indx[1]])
+            zg,p_zg,nz=ztrue_func(zp=zp[indx[0]:indx[1]],p_zp=p_zp[indx[0]:indx[1]],
+                            bias=zp_bias[indx[0]:indx[1]],
+                            sigma=zp_sigma[indx[0]:indx[1]],zg=zg,ns=ns_i)
+        x= p_zg>1.e-10
+        zg_bins[i]['z']=zg[x]
+        zg_bins[i]['dz']=np.gradient(zg_bins[i]['z']) if len(zg_bins[i]['z'])>1 else 1
+        zg_bins[i]['nz']=nz[x]
+        zg_bins[i]['W']=1.
+        zg_bins[i]['pz']=p_zg[x]*zg_bins[i]['W']
+        zg_bins[i]['pzdz']=zg_bins[i]['pz']*zg_bins[i]['dz']
+        zg_bins[i]['Norm']=np.sum(zg_bins[i]['pzdz'])
+    zg_bins['n_bins']=nz_bins #easy to remember the counts
+    return zg_bins
