@@ -22,7 +22,7 @@ cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817
                 'As':2.12e-09,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
                 'w':-1,'wa':0})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
-pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':5000}
+pk_params={'non_linear':0,'kmax':30,'kmin':3.e-4,'nk':5000}
 
 # baryonic scenario option:
 # "owls_AGN","owls_DBLIMFV1618","owls_NOSN","owls_NOSN_NOZCOOL","owls_NOZCOOL","owls_REF","owls_WDENS"
@@ -51,6 +51,19 @@ zbin_logPkR = {"owls_AGN":Bins_z_OWLS,
                "HzAGN":Bins_z_HzAGN
               }
 
+
+class_accuracy_settings={ #from Vanessa. To avoid class errors due to compiler issues. 
+                          #https://github.com/lesgourg/class_public/issues/193
+            "k_min_tau0":0.002, #you could try change this
+            "k_max_tau0_over_l_max":3., #you can also try 5 here
+            "k_step_sub":0.015,
+            "k_step_super":0.0001,
+            "k_step_super_reduction":0.1,
+            'k_per_decade_for_pk': 20,
+            'perturb_sampling_stepsize':0.01,
+            'tol_perturb_integration':1.e-6,
+            'halofit_k_per_decade': 3000. #you could try change this
+            }
 
 class Power_Spectra():
     def __init__(self,cosmo_params=cosmo_fid,pk_params=pk_params,cosmo=cosmo,
@@ -229,6 +242,10 @@ class Power_Spectra():
             class_params['Omega_fld']=cosmo_params['Oml']
             class_params['w0_fld']=cosmo_params['w']
             class_params['wa_fld']=cosmo_params['wa']
+            
+        
+        for ke in class_accuracy_settings.keys():
+            class_params[ke]=class_accuracy_settings[ke]
 
         cosmoC=Class() 
         cosmoC.set(class_params)
