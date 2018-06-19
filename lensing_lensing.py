@@ -1,6 +1,7 @@
 import os,sys
 import dask
 from dask import delayed
+from numba import jit,njit
 from dask.distributed import Client
 from power_spectra import *
 from angular_power_spectra import *
@@ -118,7 +119,7 @@ class Kappa():
         cl/=self.Ang_PS.cl_f**2# cl correction from Kilbinger+ 2017
         return cl
 
-    #@delayed
+#     @jit
     def kappa_cl(self,zs1_indx=-1, zs2_indx=-1,
                 pk_func=None,pk_params=None,cosmo_h=None,cosmo_params=None):
         """
@@ -147,30 +148,23 @@ class Kappa():
             #need unbinned cl for covariance
         return out
 
-    #@delayed
+#     @jit#(nopython=True)
     def kappa_cl_cov(self,cls=None, zs_indx=[]):
         """
             Computes the covariance between any two tomographic power spectra.
             cls: tomographic cls already computed before calling this function
             zs_indx: 4-d array, noting the indices of the source bins involved in the tomographic
-                    cls for which covariance is computed. For ex. covariance between 12, 56 tomographic cross correlations involve 1,2,5,6 source bins
-        """
+                    cls for which covariance is computed. For ex. covariance between 12, 56 tomographic cross correlations 
+                    involve 1,2,5,6 source bins
+        """                
         cov={}
-        l=self.l
-        cov['G1324']=(cls[:,zs_indx[0],zs_indx[2]]+self.lensing_utils.SN[:,zs_indx[0],zs_indx[2]])
-        cov['G1324']*=(cls[:,zs_indx[1],zs_indx[3]]+self.lensing_utils.SN[:,zs_indx[1],zs_indx[3]])
-        cov['G1324']/=self.cov_utils.gaussian_cov_norm
-
-        cov['G1423']=(cls[:,zs_indx[0],zs_indx[3]]+self.lensing_utils.SN[:,zs_indx[0],zs_indx[3]])
-        cov['G1423']*=(cls[:,zs_indx[1],zs_indx[2]]+self.lensing_utils.SN[:,zs_indx[1],zs_indx[2]])
-        cov['G1423']/=self.cov_utils.gaussian_cov_norm
-
         cov['final']=None
-        if not self.do_xi:
-            cov['G']=np.diag(cov['G1423']+cov['G1324'])# this can be expensive with large l
-            # cov['G']/=(2.*l+1.)*self.cov_utils.f_sky#*np.gradient(l) #need Delta l here. Even when
-                                                                    #binning later
-            cov['final']=cov['G']
+        l=self.l
+        cov['G'],cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,self.lensing_utils.SN,zs_indx,self.do_xi)
+        
+        cov['final']=cov['G']
+         
+
         if self.SSV_cov:
             clz=self.Ang_PS.clz
             zs1=self.zs_bins[zs_indx[0]]
@@ -187,7 +181,6 @@ class Kappa():
             clr1=self.Ang_PS.clz['clsR']
 
             cov['SSC_dd']=np.dot((clr1).T*sig_cL,clr1)
-            # cov['SSC_dd']=np.einsum('i,jki->jk',sig_cL,clr1)
             cov['final']+=cov['SSC_dd']
 
             if self.tidal_SSV_cov:
@@ -259,6 +252,10 @@ class Kappa():
             cosmo_h=self.Ang_PS.PS.cosmo_h
 
         self.lensing_utils.set_zs_sigc(cosmo_h=cosmo_h,zl=self.Ang_PS.z)
+        if self.Ang_PS.clz is None:
+            self.Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
+                                cosmo_params=cosmo_params)
+
 
         out={}
         cov={}
@@ -315,15 +312,19 @@ class Kappa():
         Norm= self.Om_W
         th0,cov_xi['G1423']=self.HT.projected_covariance(k_pk=self.l,j_nu=j_nu,
                                                      pk1=cov_cl['G1423'],pk2=cov_cl['G1423'])
+                                                    #G1423 and G1324 need to be computed spearately
 
         th2,cov_xi['G1324']=self.HT.projected_covariance(k_pk=self.l,j_nu=j_nu2,
                                                         pk1=cov_cl['G1324'],pk2=cov_cl['G1324'],)
 
-        cov_xi['G1423']=self.binning.bin_2d(r=th0,cov=cov_xi['G1423'],r_bins=self.theta_bins,
+#         cov_xi['G1423']=self.binning.bin_2d(r=th0,cov=cov_xi['G1423'],r_bins=self.theta_bins,
+#                                                 r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
+#         cov_xi['G1324']=self.binning.bin_2d(r=th2,cov=cov_xi['G1324'],r_bins=self.theta_bins,
+#                                                 r_dim=2,bin_utils=self.xi_bin_utils[j_nu2])
+#         cov_xi['G']=cov_xi['G1423']+cov_xi['G1324']
+        cov_xi['G']=self.binning.bin_2d(r=th0,cov=cov_xi['G1423']+cov_xi['G1324'],r_bins=self.theta_bins,
                                                 r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
-        cov_xi['G1324']=self.binning.bin_2d(r=th2,cov=cov_xi['G1324'],r_bins=self.theta_bins,
-                                                r_dim=2,bin_utils=self.xi_bin_utils[j_nu2])
-        cov_xi['G']=cov_xi['G1423']+cov_xi['G1324']
+
         cov_xi['G']/=Norm
         cov_xi['final']=cov_xi['G']
         if self.SSV_cov:
@@ -403,7 +404,8 @@ class Kappa():
 
     def stack_dat(self,dat):
         """
-            outputs from tomographic caluclations are dictionaries. This fucntion stacks them such that the cl or xi is a long 1-d array and the covariance is N X N array.
+            outputs from tomographic caluclations are dictionaries. This fucntion stacks them such that the cl or xi is a long 
+            1-d array and the covariance is N X N array.
             dat: output from tomographic calculations.
             XXX: reason that outputs tomographic bins are distionaries is that it make is easier to
             handle things such as binning, hankel transforms etc. We will keep this structure for now.
@@ -446,9 +448,16 @@ class Kappa():
         out[est]=D_final
         return out
 
+    
 if __name__ == "__main__":
     import cProfile
     import pstats
+
+    import dask,dask.multiprocessing
+    dask.config.set(scheduler='processes')
+#     dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler.. 
+                                            # Works as usual single threaded worload. Useful for profiling.
+
     
     zs_bin1=source_tomo_bins(zp=[1],p_zp=np.array([1]),ns=26)
     
@@ -456,13 +465,14 @@ if __name__ == "__main__":
     lmin_cl=2
     l_step=3 #choose odd number
     
-    l=np.arange(lmin_cl,lmax_cl,step=l_step) #use fewer ell if lmax_cl is too large
+#     l=np.arange(lmin_cl,lmax_cl,step=l_step) #use fewer ell if lmax_cl is too large
     l0=np.arange(lmin_cl,lmax_cl)
     
     lmin_clB=lmin_cl+10
     lmax_clB=lmax_cl-10
     Nl_bins=40
     l_bins=np.int64(np.logspace(np.log10(lmin_clB),np.log10(lmax_clB),Nl_bins))
+    l=np.unique(np.int64(np.logspace(np.log10(lmin_cl),np.log10(lmax_cl),Nl_bins*30)))
     
     bin_xi=True
     theta_bins=np.logspace(np.log10(1./60),1,20)
@@ -471,7 +481,7 @@ if __name__ == "__main__":
     do_cov=True
     bin_cl=True
     do_xi=False
-    SSV_cov=True
+    SSV_cov=False
     tidal_SSV_cov=True
     stack_data=True
     
@@ -484,9 +494,10 @@ if __name__ == "__main__":
     cov=cl0['cov']
     
     p = pstats.Stats('output_stats_1bin')
-    p.sort_stats('tottime').print_stats(2)
+    p.sort_stats('tottime').print_stats(10)
     
-    
+#     print(gaussian_cov.inspect_types())
+
 ##############################################################
     zmin=0.3
     zmax=2
@@ -497,22 +508,22 @@ if __name__ == "__main__":
     z=z[x]
     pzs=pzs[x]
 
-    ns0=26#+np.inf
-    nbins=3
+    ns0=26#+np.inf # Total (cumulative) number density of source galaxies, arcmin^-2.. setting to inf turns off shape noise
+    nbins=5 #number of tomographic bins
     z_sigma=0.01
     zs_bins=source_tomo_bins(zp=z,p_zp=pzs,ns=ns0,nz_bins=nbins,
                              ztrue_func=ztrue_given_pz_Gaussian,zp_bias=np.zeros_like(z),
                             zp_sigma=z_sigma*np.ones_like(z))
     
     
-    kappaS = Kappa(zs_bins=zs_bins,l=l0,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,stack_data=stack_data,
+    kappaS = Kappa(zs_bins=zs_bins,l=l,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,stack_data=stack_data,
                    SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,do_xi=do_xi,bin_xi=bin_xi,theta_bins=theta_bins)#ns=np.inf)
 
     clSG=kappaS.kappa_cl_tomo()#make the compute graph
-    cProfile.run("cl0=clSG['stack'].compute()",'output_stats_3bins')
+    cProfile.run("cl0=clSG['stack'].compute(num_workers=4)",'output_stats_3bins')
     cl=cl0['cl']
     cov=cl0['cov']
     
     p = pstats.Stats('output_stats_3bins')
-    p.sort_stats('tottime').print_stats(2)
+    p.sort_stats('tottime').print_stats(10)
     

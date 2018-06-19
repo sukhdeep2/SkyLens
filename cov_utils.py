@@ -5,8 +5,10 @@ from scipy.interpolate import interp1d
 from scipy.integrate import quad as scipy_int1d
 from scipy.special import jn, jn_zeros
 
+
 d2r=np.pi/180.
 sky_area=np.pi*4/(d2r)**2 #in degrees
+
 
 class Covariance_utils():
     def __init__(self,f_sky=0,l=None):
@@ -37,4 +39,18 @@ class Covariance_utils():
     def corr_matrix(self,cov=[]):
         diag=np.diag(cov)
         return cov/np.sqrt(np.outer(diag,diag))
+    
+    
+    def gaussian_cov_auto(self,cls,SN,z_indx,do_xi):
+        G1324= ( cls[:,z_indx[0], z_indx[2] ] + SN[:,z_indx[0], z_indx[2] ] )
+        G1324*=( cls[:,z_indx[1], z_indx[3] ] + SN[:,z_indx[1], z_indx[3] ] )
+
+        G1423= ( cls[:,z_indx[0], z_indx[3] ] + SN[:,z_indx[0], z_indx[3] ] )
+        G1423*=( cls[:,z_indx[1], z_indx[2] ] + SN[:,z_indx[1], z_indx[2] ] )
+
+        G=None
+        if not do_xi:
+            G=np.diag(G1423+G1324)
+            G/=self.gaussian_cov_norm
+        return G,G1324,G1423
     

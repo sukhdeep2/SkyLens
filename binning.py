@@ -30,6 +30,7 @@ class binning():
 
         x=np.logical_or(r_bins[1:]<=np.amin(r),r_bins[:-1]>=np.amax(r))
         bu['norm'][x]=np.inf
+#         print(bu['norm'])
 
         if mat_dims is not None:
             bu['r_dr_m']={}
