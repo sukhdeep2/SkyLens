@@ -1,6 +1,8 @@
 import os,sys
 import dask
 from dask import delayed
+import dask.array as DA
+import pandas
 from numba import jit,njit
 from dask.distributed import Client
 from power_spectra import *
@@ -40,6 +42,19 @@ class Kappa():
 
         # self.set_lens_bins(zl=zl,n_zl=n_zl,log_zl=log_zl,zl_max=zl_max)
         self.l=l
+        self.HT=HT
+        if HT is None and do_xi:
+            if HT_kwargs is None:
+                th_min=1./60. if theta_bins is None else np.amin(theta_bins)
+                th_max=5 if theta_bins is None else np.amax(theta_bins)
+                HT_kwargs={'kmin':min(l),'kmax':max(l),
+                            'rmin':th_min*d2r,'rmax':th_max*d2r,
+                            'n_zeros':2000,'prune_r':2,'j_nu':[0]}
+            self.HT=hankel_transform(**HT_kwargs)
+            self.j_nus=self.HT.j_nus
+            print('Done HT config')
+        if do_xi:
+            self.l=np.sort(np.unique(np.hstack((self.HT.k[i] for i in self.j_nus))))
 
         self.cov_utils=cov_utils
         if cov_utils is None:
@@ -52,7 +67,7 @@ class Kappa():
                                 power_spectra_kwargs=power_spectra_kwargs,
                                 cov_utils=self.cov_utils,
                                 z_PS=z_PS,nz_PS=nz_PS,log_z_PS=log_z_PS,
-                                z_PS_max=z_PS_max) 
+                                z_PS_max=z_PS_max)
                         #FIXME: Need a dict for these args
 
         self.zs_bins=self.lensing_utils.zs_bins
@@ -63,17 +78,6 @@ class Kappa():
         self.do_xi=do_xi
         self.bin_utils=None
         self.tracer=tracer
-
-        self.HT=HT
-        if HT is None and do_xi:
-            if HT_kwargs is None:
-                th_min=1./60. if theta_bins is None else np.amin(theta_bins)
-                th_max=5 if theta_bins is None else np.amax(theta_bins)
-                HT_kwargs={'kmin':min(l),'kmax':max(l),
-                            'rmin':th_min*d2r,'rmax':th_max*d2r,
-                            'n_zeros':2000,'prune_r':2,'j_nu':[0]}
-            self.HT=hankel_transform(**HT_kwargs)
-            self.j_nus=self.HT.j_nus
 
         self.bin_cl=bin_cl
         self.bin_xi=bin_xi
@@ -142,11 +146,11 @@ class Kappa():
                                 cosmo_params=cosmo_params)
 
         cl=self.calc_lens_lens_cl(zs1=zs1,zs2=zs2)
-        out={'l':l,'cl':cl}
-        if self.bin_cl:
-            out['binned']=self.bin_kappa_cl(results=out,bin_cl=True)
+        # out={'l':l,'cl':cl}
+        # if self.bin_cl:
+        #     out['binned']=self.bin_kappa_cl(results=out,bin_cl=True)
             #need unbinned cl for covariance
-        return out
+        return cl #out
 
 #     @jit#(nopython=True)
     def kappa_cl_cov(self,cls=None, zs_indx=[]):
@@ -154,16 +158,17 @@ class Kappa():
             Computes the covariance between any two tomographic power spectra.
             cls: tomographic cls already computed before calling this function
             zs_indx: 4-d array, noting the indices of the source bins involved in the tomographic
-                    cls for which covariance is computed. For ex. covariance between 12, 56 tomographic cross correlations 
+                    cls for which covariance is computed. For ex. covariance between 12, 56 tomographic cross correlations
                     involve 1,2,5,6 source bins
-        """                
+        """
         cov={}
         cov['final']=None
         l=self.l
-        cov['G'],cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,self.lensing_utils.SN,zs_indx,self.do_xi)
-        
+        cov['G'],cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,
+                                        self.lensing_utils.SN,zs_indx,self.do_xi)
+
         cov['final']=cov['G']
-         
+
 
         if self.SSV_cov:
             clz=self.Ang_PS.clz
@@ -192,10 +197,11 @@ class Kappa():
 
                 cov['final']+=cov['SSC_kk']+cov['SSC_dk']*2. #+cov['SSC_kd']
         if self.bin_cl:
-            cov=self.bin_kappa_cl(results=cov,bin_cov=True)
+            for k in cov.keys():
+                cl_none,cov[k]=self.bin_kappa_cl(cov=cov[k],bin_cov=True)
         return cov
 
-    def bin_kappa_cl(self,results=None,bin_cl=False,bin_cov=False):
+    def bin_kappa_cl(self,cl=None,cov=None,bin_cl=False,bin_cov=False):
         """
             bins the tomographic power spectra
             results: Either cl or covariance
@@ -203,38 +209,33 @@ class Kappa():
             bin_cov: if true, then results has cov to be binned
             Both bin_cl and bin_cov can be true simulatenously.
         """
-        results_b={}
+        # results_b={}
+        cl_b=None
+        cov_b=None
         if bin_cl:
-            results_b['cl']=self.binning.bin_1d(r=self.l,xi=results['cl'],
+            cl_b=self.binning.bin_1d(r=self.l,xi=cl,
                                         r_bins=self.l_bins,r_dim=2,bin_utils=self.cl_bin_utils)
         if bin_cov:
-            keys=['final']
-            keys=['G','final']
-            if self.SSV_cov:
-                keys=np.append(keys,'SSC_dd')
-                if self.tidal_SSV_cov:
-                    keys=np.append(keys,['SSC_kk','SSC_dk']) #SSC_kd
-            for k in keys:
-                results_b[k]=self.binning.bin_2d(r=self.l,cov=results[k],r_bins=self.l_bins,r_dim=2
-                                        ,bin_utils=self.cl_bin_utils)
-            #results_b=cov_b
-        return results_b
+             cov_b=self.binning.bin_2d(r=self.l,cov=cov,r_bins=self.l_bins,r_dim=2
+                                            ,bin_utils=self.cl_bin_utils)
+        return cl_b,cov_b
 
     def combine_cl_tomo(self,cl_compute_dict={}):
-        cl=np.zeros((len(self.l),self.ns_bins,self.ns_bins))
-        for (i,j) in self.corr_indxs+self.cov_indxs:#we need unbinned cls for covariance
-            clij=cl_compute_dict[(i,j)]#.compute()
-            cl[:,i,j]=clij['cl']
-            cl[:,j,i]=clij['cl']
-
-        if self.bin_cl:
-            cl_b=np.zeros((len(self.l_bins)-1,self.ns_bins,self.ns_bins))
+        # cl=np.zeros((len(self.l),self.ns_bins,self.ns_bins))
+        # for (i,j) in self.corr_indxs+self.cov_indxs:#we need unbinned cls for covariance
+        #     clij=cl_compute_dict[(i,j)]#.compute()
+        #     cl[:,i,j]=clij
+        #     cl[:,j,i]=clij
+        # cl_b=None
+        # if self.bin_cl:
+            cl_b={}
             for (i,j) in self.corr_indxs+self.cov_indxs:
-                cl_b[:,i,j]=clij['binned']['cl']
-                cl_b[:,j,i]=clij['binned']['cl']
-        else:
-            cl_b=cl
-        return {'cl':cl,'cl_b':cl_b}
+                clij=cl_compute_dict[(i,j)]
+                cl_b[(i,j)],cov_none=self.bin_kappa_cl(cl=clij,cov=None,bin_cl=True,
+                                        bin_cov=False)#clij['binned']['cl']
+                # cl_b[:,j,i]=cl_b[:,i,j]
+
+            return cl_b# {'cl':cl,'cl_b':cl_b}
 
 
     def kappa_cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None):
@@ -258,31 +259,27 @@ class Kappa():
 
 
         out={}
+        cl={}
         cov={}
         for (i,j) in self.corr_indxs+self.cov_indxs:
-            out[(i,j)]=delayed(self.kappa_cl)(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
+            # out[(i,j)]
+            cl[(i,j)]=delayed(self.kappa_cl)(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
                                     cosmo_params=cosmo_params,pk_params=pk_params,
                                     pk_func=pk_func)
-        # if self.do_cov and not self.cross_PS:
-        #     for (i,j) in self.cov_indxs:
-        #         out[(i,j)]=delayed(self.kappa_cl)(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
-        #                             cosmo_params=cosmo_params,pk_params=pk_params,
-        #                             pk_func=pk_func)
+            cl[(j,i)]=cl[(i,j)]
+        if bin_cl:
+            cl_b=delayed(self.combine_cl_tomo)(cl)
 
-        cl=delayed(self.combine_cl_tomo)(out)
-        if self.do_xi:
-            return cl.compute()
-        else:
-            cl_b=cl['cl_b']
-            cl=cl['cl']
-            if self.do_cov:
-            #need large l range for xi which leads to memory issues.. donot do cov here for xi
-                for i in self.corr_indxs: #np.arange(len(indxs)):
-                    for j in self.corr_indxs: #np.arange(i,len(indxs)):
-                        indx=i+j #indxs[i]+indxs[j]#np.append(indxs[i],indxs[j])
-                        cov[indx]=delayed(self.kappa_cl_cov)(cls=cl, zs_indx=indx)
-            out_stack=delayed(self.stack_dat)({'cov':cov,'cl':cl_b})
-            return {'stack':out_stack,'cl':cl_b,'cov':cov,'cl0':cl}
+        # cl_b=cl['cl_b']
+        # cl=cl['cl']
+        if self.do_cov:
+        #need large l range for xi which leads to memory issues.. donot do cov here for xi
+            for i in self.corr_indxs: #np.arange(len(indxs)):
+                for j in self.corr_indxs: #np.arange(i,len(indxs)):
+                    indx=i+j #indxs[i]+indxs[j]#np.append(indxs[i],indxs[j])
+                    cov[indx]=delayed(self.kappa_cl_cov)(cls=cl, zs_indx=indx)
+        out_stack=delayed(self.stack_dat2)({'cov':cov,'cl':cl_b})
+        return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl}
 
     def compute_cov_tomo(self,covG):
         cov={}
@@ -309,7 +306,7 @@ class Kappa():
         """
         #FIXME: Implement the cross covariance
         cov_xi={}
-        Norm= self.Om_W
+        Norm= self.cov_utils.Om_W
         th0,cov_xi['G1423']=self.HT.projected_covariance(k_pk=self.l,j_nu=j_nu,
                                                      pk1=cov_cl['G1423'],pk2=cov_cl['G1423'])
                                                     #G1423 and G1324 need to be computed spearately
@@ -317,11 +314,6 @@ class Kappa():
         th2,cov_xi['G1324']=self.HT.projected_covariance(k_pk=self.l,j_nu=j_nu2,
                                                         pk1=cov_cl['G1324'],pk2=cov_cl['G1324'],)
 
-#         cov_xi['G1423']=self.binning.bin_2d(r=th0,cov=cov_xi['G1423'],r_bins=self.theta_bins,
-#                                                 r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
-#         cov_xi['G1324']=self.binning.bin_2d(r=th2,cov=cov_xi['G1324'],r_bins=self.theta_bins,
-#                                                 r_dim=2,bin_utils=self.xi_bin_utils[j_nu2])
-#         cov_xi['G']=cov_xi['G1423']+cov_xi['G1324']
         cov_xi['G']=self.binning.bin_2d(r=th0,cov=cov_xi['G1423']+cov_xi['G1324'],r_bins=self.theta_bins,
                                                 r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
 
@@ -330,7 +322,7 @@ class Kappa():
         if self.SSV_cov:
             keys=['SSC_dd']
             if self.tidal_SSV_cov:
-                keys=np.append(keys,['SSC_kk','SSC_dk','SSC_kd'])
+                keys=np.append(keys,['SSC_kk','SSC_dk'])
             for k in keys:
                 th,cov_xi[k]=self.HT.projected_covariance2(k_pk=self.l,j_nu=j_nu,
                                                             pk_cov=cov_cl[k])
@@ -340,23 +332,27 @@ class Kappa():
                 cov_xi['final']+=cov_xi[k]
         return cov_xi
 
+    def get_xi(self,cl=[],j_nu=0):
+        th,xi=self.HT.projected_correlation(k_pk=self.l,j_nu=j_nu,pk=cl)
+        xi_b=self.binning.bin_1d(r=th/d2r,xi=xi,
+                                    r_bins=self.theta_bins,r_dim=2,
+                                    bin_utils=self.xi_bin_utils[j_nu])
+        return xi_b
+
     def combine_xi_tomo(self,cl=[],j_nu=0):
         xi=np.zeros((len(self.theta_bins)-1,self.ns_bins,self.ns_bins))
-        l_nu=self.HT.k[j_nu]
+        cl=cl.compute()
         for (i,j) in self.corr_indxs:
-            th,xi_ij=self.HT.projected_correlation(k_pk=l_nu,j_nu=j_nu,pk=cl[:,i,j])
-            xi[:,i,j]=self.binning.bin_1d(r=th/d2r,xi=xi_ij,
-                                        r_bins=self.theta_bins,r_dim=2,
-                                        bin_utils=self.xi_bin_utils[j_nu])
+            xi[:,i,j]=self.get_xi(cl=cl[:,i,j],j_nu=j_nu)
             xi[:,j,i]=xi[:,i,j]
         return xi
 
-    def xi_tomo_cov(self,cl=[],j_nu1=0,j_nu2=0):
+    def xi_tomo_cov(self,cov_cl=[],j_nu1=0,j_nu2=0):
         cov_xi={}
         for i in self.corr_indxs: #np.arange(ni):
             for j in self.corr_indxs:#np.arange(i,ni):
                 indx=i+j #indxs[i]+indxs[j]
-                cov_cl_i=delayed(self.kappa_cl_cov)(cls=cl,zs_indx=indx)
+                cov_cl_i=cov_cl[indx] #delayed(self.kappa_cl_cov)(cls=cl,zs_indx=indx)
                                         #need large l range for xi which leads to memory issues
                 cov_xi[indx]=delayed(self.xi_cov)(cov=cov_cl_i,j_nu=j_nu1,j_nu2=j_nu2)
         return cov_xi
@@ -370,8 +366,6 @@ class Kappa():
         if cosmo_h is None:
             cosmo_h=self.Ang_PS.PS.cosmo_h
 
-        self.l=np.sort(np.unique(np.hstack((self.HT.k[i] for i in self.j_nus))))
-
         nbins=self.ns_bins
         cov_xi={}
         xi={}
@@ -384,16 +378,22 @@ class Kappa():
             cls_tomo_nu=delayed(self.kappa_cl_tomo)(cosmo_h=cosmo_h,cosmo_params=cosmo_params,
                                                      pk_params=pk_params,pk_func=pk_func)
 
-            #cl=delayed(self.combine_cl_tomo)(cls_tomo_nu)
-            #cl=cl['cl']
             cl=cls_tomo_nu['cl']
             xi[j_nu]=delayed(self.combine_xi_tomo)(cl=cl,j_nu=j_nu)
 
             if self.do_cov:
+                cov_cl=cls_tomo_nu['cov'].compute()
                 j_nu2=j_nu
                 if j_nu==0 and self.tracer=='shear':
                     j_nu2=4
-                cov_xi[j_nu]=delayed(self.xi_tomo_cov)(cl=cl,j_nu1=0,j_nu2=0)
+                # cov_xi[j_nu]=delayed(self.xi_tomo_cov)(cov_cl=cov_cl,j_nu1=0,j_nu2=0)
+
+                cov_xi[j_nu]={}
+                for i in self.corr_indxs: #np.arange(ni):
+                    for j in self.corr_indxs:#np.arange(i,ni):
+                        indx=i+j #indxs[i]+indxs[j]
+                        cov_xi[j_nu][indx]=delayed(self.xi_cov)(cov_cl=cov_cl[indx],
+                                                        j_nu=j_nu,j_nu2=j_nu2)
 
             out[j_nu]={}
             out[j_nu]['stack']=delayed(self.stack_dat)({'cov':cov_xi[j_nu],'xi':xi[j_nu]})
@@ -402,9 +402,16 @@ class Kappa():
 
         return out
 
+    def stack_dat2(self,dat):
+        stack={}
+        for k in dat.keys():
+            stack[k]=pandas.DataFrame(dat[k])
+        return stack
+
+
     def stack_dat(self,dat):
         """
-            outputs from tomographic caluclations are dictionaries. This fucntion stacks them such that the cl or xi is a long 
+            outputs from tomographic caluclations are dictionaries. This fucntion stacks them such that the cl or xi is a long
             1-d array and the covariance is N X N array.
             dat: output from tomographic calculations.
             XXX: reason that outputs tomographic bins are distionaries is that it make is easier to
@@ -448,54 +455,54 @@ class Kappa():
         out[est]=D_final
         return out
 
-    
+
 if __name__ == "__main__":
     import cProfile
     import pstats
 
     import dask,dask.multiprocessing
     dask.config.set(scheduler='processes')
-#     dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler.. 
+#     dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler..
                                             # Works as usual single threaded worload. Useful for profiling.
 
-    
+
     zs_bin1=source_tomo_bins(zp=[1],p_zp=np.array([1]),ns=26)
-    
+
     lmax_cl=2000
     lmin_cl=2
     l_step=3 #choose odd number
-    
+
 #     l=np.arange(lmin_cl,lmax_cl,step=l_step) #use fewer ell if lmax_cl is too large
     l0=np.arange(lmin_cl,lmax_cl)
-    
+
     lmin_clB=lmin_cl+10
     lmax_clB=lmax_cl-10
     Nl_bins=40
     l_bins=np.int64(np.logspace(np.log10(lmin_clB),np.log10(lmax_clB),Nl_bins))
     l=np.unique(np.int64(np.logspace(np.log10(lmin_cl),np.log10(lmax_cl),Nl_bins*30)))
-    
+
     bin_xi=True
     theta_bins=np.logspace(np.log10(1./60),1,20)
-    
-    
+
+
     do_cov=True
-    bin_cl=True
     do_xi=False
-    SSV_cov=False
+    bin_cl=~do_xi
+    SSV_cov=True
     tidal_SSV_cov=True
     stack_data=True
-    
+
     kappa0=Kappa(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0,
                stack_data=stack_data,SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,)
-    
+
     cl_G=kappa0.kappa_cl_tomo() #make the compute graph
     cProfile.run("cl0=cl_G['stack'].compute()",'output_stats_1bin')
     cl=cl0['cl']
     cov=cl0['cov']
-    
+
     p = pstats.Stats('output_stats_1bin')
     p.sort_stats('tottime').print_stats(10)
-    
+
 #     print(gaussian_cov.inspect_types())
 
 ##############################################################
@@ -512,18 +519,25 @@ if __name__ == "__main__":
     nbins=5 #number of tomographic bins
     z_sigma=0.01
     zs_bins=source_tomo_bins(zp=z,p_zp=pzs,ns=ns0,nz_bins=nbins,
-                             ztrue_func=ztrue_given_pz_Gaussian,zp_bias=np.zeros_like(z),
+                             ztrue_func=ztrue_given_pz_Gaussian,
+                             zp_bias=np.zeros_like(z),
                             zp_sigma=z_sigma*np.ones_like(z))
-    
-    
-    kappaS = Kappa(zs_bins=zs_bins,l=l,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,stack_data=stack_data,
-                   SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,do_xi=do_xi,bin_xi=bin_xi,theta_bins=theta_bins)#ns=np.inf)
 
-    clSG=kappaS.kappa_cl_tomo()#make the compute graph
-    cProfile.run("cl0=clSG['stack'].compute(num_workers=4)",'output_stats_3bins')
-    cl=cl0['cl']
-    cov=cl0['cov']
-    
+
+    kappaS = Kappa(zs_bins=zs_bins,l=l,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,
+                    stack_data=stack_data,SSV_cov=SSV_cov,
+                    tidal_SSV_cov=tidal_SSV_cov,do_xi=do_xi,bin_xi=bin_xi,
+                    theta_bins=theta_bins)#ns=np.inf)
+
+    if not do_xi:
+        clSG=kappaS.kappa_cl_tomo()#make the compute graph
+        cProfile.run("cl0=clSG['stack'].compute(num_workers=4)",'output_stats_3bins')
+        cl=cl0['cl']
+        cov=cl0['cov']
+    else:
+        xiSG=kappaS.kappa_xi_tomo()#make the compute graph
+        cProfile.run("xi0=xiSG[0]['stack'].compute(num_workers=4)",'output_stats_3bins')
+
+
     p = pstats.Stats('output_stats_3bins')
     p.sort_stats('tottime').print_stats(10)
-    
