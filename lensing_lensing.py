@@ -1,10 +1,6 @@
 import os,sys
 import dask
 from dask import delayed
-import dask.array as DA
-import pandas
-from numba import jit,njit
-from dask.distributed import Client
 from power_spectra import *
 from angular_power_spectra import *
 from lsst_utils import *
@@ -148,11 +144,8 @@ class Kappa():
                                 cosmo_params=cosmo_params)
 
         cl=self.calc_lens_lens_cl(zs1=zs1,zs2=zs2)
-        # out={'l':l,'cl':cl}
-        # if self.bin_cl:
-        #     out['binned']=self.bin_kappa_cl(results=out,bin_cl=True)
-            #need unbinned cl for covariance
-        return cl #out
+
+        return cl
 
 #     @jit#(nopython=True)
     def kappa_cl_cov(self,cls=None, zs_indx=[]):
@@ -224,21 +217,13 @@ class Kappa():
         return cl_b,cov_b
 
     def combine_cl_tomo(self,cl_compute_dict={}):
-        # cl=np.zeros((len(self.l),self.ns_bins,self.ns_bins))
-        # for (i,j) in self.corr_indxs+self.cov_indxs:#we need unbinned cls for covariance
-        #     clij=cl_compute_dict[(i,j)]#.compute()
-        #     cl[:,i,j]=clij
-        #     cl[:,j,i]=clij
-        # cl_b=None
-        # if self.bin_cl:
-            cl_b={}
-            for (i,j) in self.corr_indxs+self.cov_indxs:
-                clij=cl_compute_dict[(i,j)]
-                cl_b[(i,j)],cov_none=self.bin_kappa_cl(cl=clij,cov=None,bin_cl=True,
-                                        bin_cov=False)#clij['binned']['cl']
-                # cl_b[:,j,i]=cl_b[:,i,j]
 
-            return cl_b# {'cl':cl,'cl_b':cl_b}
+        cl_b={}
+        for (i,j) in self.corr_indxs+self.cov_indxs:
+            clij=cl_compute_dict[(i,j)]
+            cl_b[(i,j)],cov_none=self.bin_kappa_cl(cl=clij,cov=None,bin_cl=True,
+                                    bin_cov=False)
+        return cl_b
 
 
     def kappa_cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None):
@@ -260,7 +245,6 @@ class Kappa():
             self.Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
                                 cosmo_params=cosmo_params)
 
-
         out={}
         cl={}
         cov={}
@@ -273,15 +257,15 @@ class Kappa():
             cl[(j,i)]=cl[(i,j)]
         if self.bin_cl:
             cl_b=delayed(self.combine_cl_tomo)(cl)
+        else:
+            cl_b=cl
 
-        # cl_b=cl['cl_b']
-        # cl=cl['cl']
         if self.do_cov:
-        #need large l range for xi which leads to memory issues.. donot do cov here for xi
-            for i in self.corr_indxs: #np.arange(len(indxs)):
-                for j in self.corr_indxs: #np.arange(i,len(indxs)):
-                    indx=i+j #indxs[i]+indxs[j]#np.append(indxs[i],indxs[j])
+            for i in self.corr_indxs:
+                for j in self.corr_indxs:
+                    indx=i+j
                     cov[indx]=delayed(self.kappa_cl_cov)(cls=cl, zs_indx=indx)
+
         out_stack=delayed(self.stack_dat)({'cov':cov,'cl':cl_b})
         return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl}
 
@@ -339,8 +323,6 @@ class Kappa():
         return xi_b
 
     def combine_xi_tomo(self,cl=[],j_nu=0):
-        # xi=np.zeros((len(self.theta_bins)-1,self.ns_bins,self.ns_bins))
-        # cl=cl.compute()
         xi={}
         for (i,j) in self.corr_indxs:
             xi[(i,j)]=self.get_xi(cl=cl[(i,j)],j_nu=j_nu)
@@ -381,8 +363,6 @@ class Kappa():
                                                      pk_params=pk_params,pk_func=pk_func)
 
             cl=cls_tomo_nu['cl']
-            print('Got cl',cl)
-            # xi[j_nu]=delayed(self.combine_xi_tomo)(cl=cl,j_nu=j_nu)
             xi[j_nu]={}
             for (i,j) in self.corr_indxs:
                 xi[j_nu][(i,j)]=delayed(self.get_xi)(cl=cl[(i,j)]#.compute()
@@ -390,10 +370,6 @@ class Kappa():
             if self.do_cov:
                 cov_cl=cls_tomo_nu['cov']#.compute()
                 j_nu2=j_nu
-                print('doing cov')
-                # if j_nu==0 and self.tracer=='shear':
-                #     j_nu2=4
-                # cov_xi[j_nu]=delayed(self.xi_tomo_cov)(cov_cl=cov_cl,j_nu1=0,j_nu2=0)
 
                 cov_xi[j_nu]={}
                 for i in self.corr_indxs: #np.arange(ni):
@@ -472,8 +448,8 @@ if __name__ == "__main__":
     import pstats
 
     import dask,dask.multiprocessing
-    # dask.config.set(scheduler='processes')
-    dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler..
+    dask.config.set(scheduler='processes')
+    # dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler..
                                             # Works as usual single threaded worload. Useful for profiling.
 
 
