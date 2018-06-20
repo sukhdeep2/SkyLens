@@ -135,6 +135,8 @@ class Kappa():
         if cosmo_h is None:
             cosmo_h=self.Ang_PS.PS.cosmo_h
 
+        print('kappa_cl indx: ',zs1_indx,zs2_indx)
+
         l=self.l
         zs1=self.zs_bins[zs1_indx]#.copy() #we will modify these locally
         zs2=self.zs_bins[zs2_indx]#.copy()
@@ -157,8 +159,9 @@ class Kappa():
         """
             Computes the covariance between any two tomographic power spectra.
             cls: tomographic cls already computed before calling this function
-            zs_indx: 4-d array, noting the indices of the source bins involved in the tomographic
-                    cls for which covariance is computed. For ex. covariance between 12, 56 tomographic cross correlations
+            zs_indx: 4-d array, noting the indices of the source bins involved
+            in the tomographic cls for which covariance is computed.
+            For ex. covariance between 12, 56 tomographic cross correlations
                     involve 1,2,5,6 source bins
         """
         cov={}
@@ -261,13 +264,14 @@ class Kappa():
         out={}
         cl={}
         cov={}
+        cl_b=None
         for (i,j) in self.corr_indxs+self.cov_indxs:
             # out[(i,j)]
             cl[(i,j)]=delayed(self.kappa_cl)(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
                                     cosmo_params=cosmo_params,pk_params=pk_params,
                                     pk_func=pk_func)
             cl[(j,i)]=cl[(i,j)]
-        if bin_cl:
+        if self.bin_cl:
             cl_b=delayed(self.combine_cl_tomo)(cl)
 
         # cl_b=cl['cl_b']
@@ -278,14 +282,8 @@ class Kappa():
                 for j in self.corr_indxs: #np.arange(i,len(indxs)):
                     indx=i+j #indxs[i]+indxs[j]#np.append(indxs[i],indxs[j])
                     cov[indx]=delayed(self.kappa_cl_cov)(cls=cl, zs_indx=indx)
-        out_stack=delayed(self.stack_dat2)({'cov':cov,'cl':cl_b})
+        out_stack=delayed(self.stack_dat)({'cov':cov,'cl':cl_b})
         return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl}
-
-    def compute_cov_tomo(self,covG):
-        cov={}
-        for i in covG.keys():
-            cov[i]=covG[i].compute()
-        return cov
 
     def cut_clz_lxi(self,clz=None,l_xi=None):
         """
@@ -306,6 +304,7 @@ class Kappa():
         """
         #FIXME: Implement the cross covariance
         cov_xi={}
+
         Norm= self.cov_utils.Om_W
         th0,cov_xi['G1423']=self.HT.projected_covariance(k_pk=self.l,j_nu=j_nu,
                                                      pk1=cov_cl['G1423'],pk2=cov_cl['G1423'])
@@ -340,11 +339,12 @@ class Kappa():
         return xi_b
 
     def combine_xi_tomo(self,cl=[],j_nu=0):
-        xi=np.zeros((len(self.theta_bins)-1,self.ns_bins,self.ns_bins))
-        cl=cl.compute()
+        # xi=np.zeros((len(self.theta_bins)-1,self.ns_bins,self.ns_bins))
+        # cl=cl.compute()
+        xi={}
         for (i,j) in self.corr_indxs:
-            xi[:,i,j]=self.get_xi(cl=cl[:,i,j],j_nu=j_nu)
-            xi[:,j,i]=xi[:,i,j]
+            xi[(i,j)]=self.get_xi(cl=cl[(i,j)],j_nu=j_nu)
+            # xi[:,j,i]=xi[:,i,j]
         return xi
 
     def xi_tomo_cov(self,cov_cl=[],j_nu1=0,j_nu2=0):
@@ -370,87 +370,98 @@ class Kappa():
         cov_xi={}
         xi={}
         out={}
+        print('starting xi')
         for j_nu in [0]: #self.j_nus:
             l_nu=self.HT.k[j_nu]
             self.l=l_nu
             self.Ang_PS.l=l_nu
 
-            cls_tomo_nu=delayed(self.kappa_cl_tomo)(cosmo_h=cosmo_h,cosmo_params=cosmo_params,
+            #Donot use delayed here. Leads to error/repeated calculations
+            cls_tomo_nu=self.kappa_cl_tomo(cosmo_h=cosmo_h,cosmo_params=cosmo_params,
                                                      pk_params=pk_params,pk_func=pk_func)
 
             cl=cls_tomo_nu['cl']
-            xi[j_nu]=delayed(self.combine_xi_tomo)(cl=cl,j_nu=j_nu)
-
+            print('Got cl',cl)
+            # xi[j_nu]=delayed(self.combine_xi_tomo)(cl=cl,j_nu=j_nu)
+            xi[j_nu]={}
+            for (i,j) in self.corr_indxs:
+                xi[j_nu][(i,j)]=delayed(self.get_xi)(cl=cl[(i,j)]#.compute()
+                                                    ,j_nu=j_nu)
             if self.do_cov:
-                cov_cl=cls_tomo_nu['cov'].compute()
+                cov_cl=cls_tomo_nu['cov']#.compute()
                 j_nu2=j_nu
-                if j_nu==0 and self.tracer=='shear':
-                    j_nu2=4
+                print('doing cov')
+                # if j_nu==0 and self.tracer=='shear':
+                #     j_nu2=4
                 # cov_xi[j_nu]=delayed(self.xi_tomo_cov)(cov_cl=cov_cl,j_nu1=0,j_nu2=0)
 
                 cov_xi[j_nu]={}
                 for i in self.corr_indxs: #np.arange(ni):
                     for j in self.corr_indxs:#np.arange(i,ni):
                         indx=i+j #indxs[i]+indxs[j]
-                        cov_xi[j_nu][indx]=delayed(self.xi_cov)(cov_cl=cov_cl[indx],
-                                                        j_nu=j_nu,j_nu2=j_nu2)
-
-            out[j_nu]={}
-            out[j_nu]['stack']=delayed(self.stack_dat)({'cov':cov_xi[j_nu],'xi':xi[j_nu]})
+                        cov_xi[j_nu][indx]=delayed(self.xi_cov)(cov_cl=cov_cl[indx]#.compute()
+                                                        ,j_nu=j_nu,j_nu2=j_nu2)
+        print('got cov')
+        out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi})
         out['xi']=xi
         out['cov']=cov_xi
 
         return out
 
-    def stack_dat2(self,dat):
-        stack={}
-        for k in dat.keys():
-            stack[k]=pandas.DataFrame(dat[k])
-        return stack
-
 
     def stack_dat(self,dat):
         """
-            outputs from tomographic caluclations are dictionaries. This fucntion stacks them such that the cl or xi is a long
+            outputs from tomographic caluclations are dictionaries.
+            This fucntion stacks them such that the cl or xi is a long
             1-d array and the covariance is N X N array.
             dat: output from tomographic calculations.
-            XXX: reason that outputs tomographic bins are distionaries is that it make is easier to
+            XXX: reason that outputs tomographic bins are distionaries is that
+            it make is easier to
             handle things such as binning, hankel transforms etc. We will keep this structure for now.
         """
         nbins=self.ns_bins
         nD=len(self.corr_indxs) #np.int64(nbins*(nbins-1.)/2.+nbins)
-        nD2=1
-        est='cl'
+
+
         if self.do_xi:
             est='xi'
+            D_keys=list(dat[est].keys())
+            # print(dat[est][D_keys[0]])
+            nX=len(dat[est][D_keys[0]][self.corr_indxs[0]])
+            nD2=len(D_keys)
+        else:
+            est='cl'
+            nX=len(dat[est][self.corr_indxs[0]])
+            nD2=1
 
-        nX=len(dat[est])
         D_final=np.zeros(nD*nX*nD2)
         cov_final=np.zeros((nD*nX*nD2,nD*nX*nD2))
         # print( D_final.shape)
         ij=0
         for iD2 in np.arange(nD2):
             dat2=dat[est]
-            # if self.do_xi:
-            #     dat2=dat[est][d_k[iD2]]
+            if self.do_xi:
+                dat2=dat[est][D_keys[iD2]]
 
-            D_final[nD*nX*iD2:nD*nX*(iD2+1)]=np.hstack((dat2[:,i,j] for (i,j) in self.corr_indxs))
+            D_final[nD*nX*iD2:nD*nX*(iD2+1)]=np.hstack((dat2[(i,j)] for (i,j) in self.corr_indxs))
 
             if not self.do_cov:
                 cov_final=None
                 continue
+
             dat2=dat['cov']
-            # if self.do_xi:
-            #     dat2=dat['cov'][d_k[iD2]]
+            if self.do_xi:
+                dat2=dat['cov'][D_keys[iD2]]
 
             i_indx=0
+            indx0=iD2*nX*nD
             for i in np.arange(len(self.corr_indxs)):
                 for j in np.arange(i,len(self.corr_indxs)):
                     indx=self.corr_indxs[i]+self.corr_indxs[j]
                     #print(indx,self.corr_indxs[i],self.corr_indxs[j])
                     # print(dat2[indx]['final'])
-                    cov_final[ i*nX : (i+1)*nX , j*nX : (j+1)*nX] = dat2[indx]['final']
-                    cov_final[ j*nX : (j+1)*nX , i*nX : (i+1)*nX] = dat2[indx]['final']
+                    cov_final[ indx0+i*nX : indx0+(i+1)*nX , indx0+j*nX : indx0+(j+1)*nX] = dat2[indx]['final']
+                    cov_final[ indx0+j*nX : indx0+(j+1)*nX , indx0+i*nX : indx0+(i+1)*nX] = dat2[indx]['final']
         out={'cov':cov_final}
         out[est]=D_final
         return out
@@ -461,8 +472,8 @@ if __name__ == "__main__":
     import pstats
 
     import dask,dask.multiprocessing
-    dask.config.set(scheduler='processes')
-#     dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler..
+    # dask.config.set(scheduler='processes')
+    dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler..
                                             # Works as usual single threaded worload. Useful for profiling.
 
 
@@ -486,8 +497,8 @@ if __name__ == "__main__":
 
 
     do_cov=True
-    do_xi=False
-    bin_cl=~do_xi
+    do_xi=True
+    bin_cl=True
     SSV_cov=True
     tidal_SSV_cov=True
     stack_data=True
@@ -506,6 +517,7 @@ if __name__ == "__main__":
 #     print(gaussian_cov.inspect_types())
 
 ##############################################################
+    bin_cl=not do_xi
     zmin=0.3
     zmax=2
     z=np.linspace(0,5,200)
@@ -536,7 +548,7 @@ if __name__ == "__main__":
         cov=cl0['cov']
     else:
         xiSG=kappaS.kappa_xi_tomo()#make the compute graph
-        cProfile.run("xi0=xiSG[0]['stack'].compute(num_workers=4)",'output_stats_3bins')
+        cProfile.run("xi0=xiSG['stack'].compute(num_workers=4)",'output_stats_3bins')
 
 
     p = pstats.Stats('output_stats_3bins')
