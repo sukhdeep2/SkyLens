@@ -49,7 +49,11 @@ class Kappa():
             self.HT=hankel_transform(**HT_kwargs)
             self.j_nus=self.HT.j_nus
         if do_xi:
-            self.l=np.sort(np.unique(np.hstack((self.HT.k[i] for i in self.j_nus))))
+            # self.l=np.sort(np.unique(np.hstack((self.HT.k[i] for i in self.j_nus))))
+            self.l=np.hstack((self.HT.k[i] for i in self.j_nus))
+            self.l_cut_jnu={}
+            for j_nu in self.j_nus:
+                self.l_cut_jnu[j_nu]=np.isin(self.l,(self.HT.k[j_nu]))
 
         self.cov_utils=cov_utils
         if cov_utils is None:
@@ -183,18 +187,21 @@ class Kappa():
                 return cov
 
             clr1=self.Ang_PS.clz['clsR']
-
-            cov['SSC_dd']=np.dot((clr1).T*sig_cL,clr1)
-            cov['final']+=cov['SSC_dd']
-
             if self.tidal_SSV_cov:
-                #sig_cL will be divided by some factors to account for different sigma_win
-                clrk=self.Ang_PS.clz['clsRK']
+                clr1+=self.Ang_PS.clz['clsRK']/6.
 
-                cov['SSC_kk']=np.dot((clrk).T*sig_cL/36.,clrk)
-                cov['SSC_dk']=np.dot((clr1).T*sig_cL/6.,clrk)
+            # cov['SSC_dd']=np.dot((clr1).T*sig_cL,clr1)
+            cov['SSC']=np.dot((clr1).T*sig_cL,clr1)
+            cov['final']+=cov['SSC']
 
-                cov['final']+=cov['SSC_kk']+cov['SSC_dk']*2. #+cov['SSC_kd']
+            # if self.tidal_SSV_cov:
+            #     #sig_cL will be divided by some factors to account for different sigma_win
+            #     clrk=self.Ang_PS.clz['clsRK']
+            #
+            #     cov['SSC_kk']=np.dot((clrk).T*sig_cL/36.,clrk)
+            #     cov['SSC_dk']=np.dot((clr1).T*sig_cL/6.,clrk)
+            #
+            #     cov['final']+=cov['SSC_kk']+cov['SSC_dk']*2. #+cov['SSC_kd']
         if self.bin_cl:
             for k in cov.keys():
                 cl_none,cov[k]=self.bin_kappa_cl(cov=cov[k],bin_cov=True)
@@ -272,19 +279,7 @@ class Kappa():
         out_stack=delayed(self.stack_dat)({'cov':cov,'cl':cl_b})
         return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl}
 
-    def cut_clz_lxi(self,clz=None,l_xi=None):
-        """
-            For hankel transform is done on l-theta grid, which is based on j_nu. So grid is
-            different for xi+ and xi-.
-            When computing a given xi, we need to cut cls only to l values which are defined on the
-            grid for j_nu relevant to that xi. This function does that.
-        """
-        x=np.isin(self.l,l_xi)
-        clz['f']=(l_xi+0.5)**2/(l_xi*(l_xi+1.)) # cl correction from Kilbinger+ 2017
-        clz['cls']=clz['cls'][:,x]
-        return clz
-
-    def xi_cov(self,cov_cl={},j_nu=None,j_nu2=None):
+    def xi_cov(self,cov_cl={},j_nu=None,j_nu2=None,clr=None,clrk=None):
         """
             Computes covariance of xi, by performing 2-D hankel transform on covariance of Cl.
             In current implementation of hankel transform works only for j_nu=j_nu2. So no cross covariance between xi+ and xi-.
@@ -293,47 +288,28 @@ class Kappa():
         cov_xi={}
 
         Norm= self.cov_utils.Om_W
-        th0,cov_xi['G1423']=self.HT.projected_covariance(k_pk=self.l,j_nu=j_nu,
-                                                     pk1=cov_cl['G1423'],pk2=cov_cl['G1423'])
-                                                    #G1423 and G1324 need to be computed spearately
+        th0,cov_xi['G']=self.HT.projected_covariance(k_pk=self.l,j_nu=j_nu,
+                                                     pk_cov=cov_cl['G1423']+cov_cl['G1324'])
 
-        th2,cov_xi['G1324']=self.HT.projected_covariance(k_pk=self.l,j_nu=j_nu2,
-                                                        pk1=cov_cl['G1324'],pk2=cov_cl['G1324'],)
-
-        cov_xi['G']=self.binning.bin_2d(r=th0,cov=cov_xi['G1423']+cov_xi['G1324'],r_bins=self.theta_bins,
+        cov_xi['G']=self.binning.bin_2d(r=th0,cov=cov_xi['G'],r_bins=self.theta_bins,
                                                 r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
+        #binning is cheap
 
         cov_xi['G']/=Norm
         cov_xi['final']=cov_xi['G']
         if self.SSV_cov:
-            clr1=self.Ang_PS.clz['clsR']
             sig_cL=cov_cl['sig_cL']
 
+            #tidal term is added to clr in the calling function
             cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.J[j_nu]/self.HT.J_nu1[j_nu]**2,
-                                    (clr1).T*sig_cL,clr1,self.HT.J[j_nu],optimize=True)
+                            (clr).T*sig_cL,clr,self.HT.J[j_nu],optimize=True)
 
-            if self.tidal_SSV_cov:
-                clrk=self.Ang_PS.clz['clsRK']
-
-                cov_SSC+=2*np.einsum('rk,kz,zl,sl->rs',self.HT.J[j_nu]/self.HT.J_nu1[j_nu]**2,
-                                        (clrk).T*sig_cL/36,clrk,self.HT.J[j_nu],optimize=True)
-
-            cov_SSC*=(2.*self.HT.kmax**2/self.HT.zeros[j_nu][-1]**2)/(2*np.pi)
-            cov_SSC/=Norm
+            cov_SSC*=(2.*self.HT.kmax**2/self.HT.zeros[j_nu][-1]**2)/(2*np.pi)/Norm
+            # cov_SSC/=Norm
             cov_xi['SSC']=self.binning.bin_2d(r=th0,cov=cov_SSC,r_bins=self.theta_bins,
                                                     r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
             cov_xi['final']+=cov_xi['SSC']
-            # keys=['final']
-            # # keys=['SSC_dd']
-            # # if self.tidal_SSV_cov:
-            # #     keys=np.append(keys,['SSC_kk','SSC_dk'])
-            # for k in keys:
-            #     th,cov_xi[k]=self.HT.projected_covariance2(k_pk=self.l,j_nu=j_nu,
-            #                                                 pk_cov=cov_cl[k])
-            #     cov_xi[k]=self.binning.bin_2d(r=th,cov=cov_xi[k],r_bins=self.theta_bins,
-            #                                     r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
-            #     cov_xi[k]/=Norm
-            #     cov_xi['final']+=cov_xi[k]
+
         return cov_xi
 
     def get_xi(self,cl=[],j_nu=0):
@@ -365,38 +341,54 @@ class Kappa():
             Computed tomographic angular correlation functions. First calls the tomographic
             power spectra and covariance and then does the hankel transform and  binning.
         """
+        """
+            For hankel transform is done on l-theta grid, which is based on j_nu. So grid is
+            different for xi+ and xi-.
+            In the init function, we combined the ell arrays for all j_nu. This is not a problem
+            except for the case of SSV, where we will use l_cut to only select the relevant values
+        """
 
         if cosmo_h is None:
             cosmo_h=self.Ang_PS.PS.cosmo_h
 
         nbins=self.ns_bins
+
+        #Donot use delayed here. Leads to error/repeated calculations
+        cls_tomo_nu=self.kappa_cl_tomo(cosmo_h=cosmo_h,cosmo_params=cosmo_params,
+                                                 pk_params=pk_params,pk_func=pk_func)
+
+        cl=cls_tomo_nu['cl']
         cov_xi={}
         xi={}
         out={}
         for j_nu in [0]: #self.j_nus:
-            l_nu=self.HT.k[j_nu]
-            self.l=l_nu
-            self.Ang_PS.l=l_nu
-
-            #Donot use delayed here. Leads to error/repeated calculations
-            cls_tomo_nu=self.kappa_cl_tomo(cosmo_h=cosmo_h,cosmo_params=cosmo_params,
-                                                     pk_params=pk_params,pk_func=pk_func)
-
-            cl=cls_tomo_nu['cl']
+            # l_nu=self.HT.k[j_nu]
+            # self.l=l_nu
+            # self.Ang_PS.l=l_nu
+            # self.cov_utils.l=l_nu
             xi[j_nu]={}
             for (i,j) in self.corr_indxs:
                 xi[j_nu][(i,j)]=delayed(self.get_xi)(cl=cl[(i,j)]#.compute()
                                                     ,j_nu=j_nu)
             if self.do_cov:
+                l_cut=self.l_cut_jnu[j_nu]
                 cov_cl=cls_tomo_nu['cov']#.compute()
                 j_nu2=j_nu
 
                 cov_xi[j_nu]={}
+
+                clr=None
+                clrk=None
+                # SSC_z_temp={}
+                if self.SSV_cov:#this can be slower
+                    clr=self.Ang_PS.clz['clsR'][:,l_cut]
+                    if self.tidal_SSV_cov:
+                        clr+=self.Ang_PS.clz['clsRK'][:,l_cut]/6
                 for i in self.corr_indxs: #np.arange(ni):
                     for j in self.corr_indxs:#np.arange(i,ni):
                         indx=i+j #indxs[i]+indxs[j]
                         cov_xi[j_nu][indx]=delayed(self.xi_cov)(cov_cl=cov_cl[indx]#.compute()
-                                                        ,j_nu=j_nu,j_nu2=j_nu2)
+                                                        ,j_nu=j_nu,j_nu2=j_nu2,clr=clr)
         out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi})
         out['xi']=xi
         out['cov']=cov_xi
@@ -463,8 +455,8 @@ if __name__ == "__main__":
     import pstats
 
     import dask,dask.multiprocessing
-    # dask.config.set(scheduler='processes')
-    dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler..
+    dask.config.set(scheduler='processes')
+    # dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler..
                                             # Works as usual single threaded worload. Useful for profiling.
 
 
@@ -517,7 +509,7 @@ if __name__ == "__main__":
     pzs=pzs[x]
 
     ns0=26#+np.inf # Total (cumulative) number density of source galaxies, arcmin^-2.. setting to inf turns off shape noise
-    nbins=3 #number of tomographic bins
+    nbins=5 #number of tomographic bins
     z_sigma=0.01
     zs_bins=source_tomo_bins(zp=z,p_zp=pzs,ns=ns0,nz_bins=nbins,
                              ztrue_func=ztrue_given_pz_Gaussian,
