@@ -177,7 +177,8 @@ class Kappa():
             zs4=self.zs_bins[zs_indx[3]]
             sigma_win=self.cov_utils.sigma_win
 
-            sig_cL=zs1['sig_c_int']*zs2['sig_c_int']*zs3['sig_c_int']*zs4['sig_c_int']
+            sig_cL=zs1['sig_c_int']*zs2['sig_c_int']
+            sig_cL*=zs3['sig_c_int']*zs4['sig_c_int']
 
             sig_cL*=self.Ang_PS.clz['dchi']
             sig_cL*=sigma_win
@@ -186,28 +187,19 @@ class Kappa():
                 cov['sig_cL']=sig_cL
                 return cov
 
-            clr1=self.Ang_PS.clz['clsR']
+            clr=self.Ang_PS.clz['clsR']
             if self.tidal_SSV_cov:
-                clr1+=self.Ang_PS.clz['clsRK']/6.
+                clr+=self.Ang_PS.clz['clsRK']/6.
 
             # cov['SSC_dd']=np.dot((clr1).T*sig_cL,clr1)
-            cov['SSC']=np.dot((clr1).T*sig_cL,clr1)
+            cov['SSC']=np.dot((clr).T*sig_cL,clr)
             cov['final']+=cov['SSC']
 
-            # if self.tidal_SSV_cov:
-            #     #sig_cL will be divided by some factors to account for different sigma_win
-            #     clrk=self.Ang_PS.clz['clsRK']
-            #
-            #     cov['SSC_kk']=np.dot((clrk).T*sig_cL/36.,clrk)
-            #     cov['SSC_dk']=np.dot((clr1).T*sig_cL/6.,clrk)
-            #
-            #     cov['final']+=cov['SSC_kk']+cov['SSC_dk']*2. #+cov['SSC_kd']
-        if self.bin_cl:
-            for k in cov.keys():
-                cl_none,cov[k]=self.bin_kappa_cl(cov=cov[k],bin_cov=True)
+        for k in ['G','SSC','final']:#no need to bin G1324 and G1423
+            cl_none,cov[k]=self.bin_kappa_cl(cov=cov[k])
         return cov
 
-    def bin_kappa_cl(self,cl=None,cov=None,bin_cl=False,bin_cov=False):
+    def bin_kappa_cl(self,cl=None,cov=None):
         """
             bins the tomographic power spectra
             results: Either cl or covariance
@@ -216,23 +208,22 @@ class Kappa():
             Both bin_cl and bin_cov can be true simulatenously.
         """
         # results_b={}
-        cl_b=None
-        cov_b=None
-        if bin_cl:
-            cl_b=self.binning.bin_1d(r=self.l,xi=cl,
+        cl_b=cl
+        cov_b=cov
+        if self.bin_cl:
+            if not cl is None:
+                cl_b=self.binning.bin_1d(r=self.l,xi=cl,
                                         r_bins=self.l_bins,r_dim=2,bin_utils=self.cl_bin_utils)
-        if bin_cov:
-             cov_b=self.binning.bin_2d(r=self.l,cov=cov,r_bins=self.l_bins,r_dim=2
+            if not cov is None:
+                cov_b=self.binning.bin_2d(r=self.l,cov=cov,r_bins=self.l_bins,r_dim=2
                                             ,bin_utils=self.cl_bin_utils)
         return cl_b,cov_b
 
     def combine_cl_tomo(self,cl_compute_dict={}):
-
         cl_b={}
         for (i,j) in self.corr_indxs+self.cov_indxs:
             clij=cl_compute_dict[(i,j)]
-            cl_b[(i,j)],cov_none=self.bin_kappa_cl(cl=clij,cov=None,bin_cl=True,
-                                    bin_cov=False)
+            cl_b[(i,j)],cov_none=self.bin_kappa_cl(cl=clij,cov=None)
         return cl_b
 
 
@@ -265,10 +256,7 @@ class Kappa():
                                     cosmo_params=cosmo_params,pk_params=pk_params,
                                     pk_func=pk_func)
             cl[(j,i)]=cl[(i,j)]
-        if self.bin_cl:
-            cl_b=delayed(self.combine_cl_tomo)(cl)
-        else:
-            cl_b=cl
+        cl_b=delayed(self.combine_cl_tomo)(cl)
 
         if self.do_cov:
             for i in self.corr_indxs:
@@ -305,7 +293,6 @@ class Kappa():
                             (clr).T*sig_cL,clr,self.HT.J[j_nu],optimize=True)
 
             cov_SSC*=(2.*self.HT.kmax**2/self.HT.zeros[j_nu][-1]**2)/(2*np.pi)/Norm
-            # cov_SSC/=Norm
             cov_xi['SSC']=self.binning.bin_2d(r=th0,cov=cov_SSC,r_bins=self.theta_bins,
                                                     r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
             cov_xi['final']+=cov_xi['SSC']
@@ -318,23 +305,6 @@ class Kappa():
                                     r_bins=self.theta_bins,r_dim=2,
                                     bin_utils=self.xi_bin_utils[j_nu])
         return xi_b
-
-    def combine_xi_tomo(self,cl=[],j_nu=0):
-        xi={}
-        for (i,j) in self.corr_indxs:
-            xi[(i,j)]=self.get_xi(cl=cl[(i,j)],j_nu=j_nu)
-            # xi[:,j,i]=xi[:,i,j]
-        return xi
-
-    def xi_tomo_cov(self,cov_cl=[],j_nu1=0,j_nu2=0):
-        cov_xi={}
-        for i in self.corr_indxs: #np.arange(ni):
-            for j in self.corr_indxs:#np.arange(i,ni):
-                indx=i+j #indxs[i]+indxs[j]
-                cov_cl_i=cov_cl[indx] #delayed(self.kappa_cl_cov)(cls=cl,zs_indx=indx)
-                                        #need large l range for xi which leads to memory issues
-                cov_xi[indx]=delayed(self.xi_cov)(cov=cov_cl_i,j_nu=j_nu1,j_nu2=j_nu2)
-        return cov_xi
 
     def kappa_xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None):
         """
@@ -362,10 +332,6 @@ class Kappa():
         xi={}
         out={}
         for j_nu in [0]: #self.j_nus:
-            # l_nu=self.HT.k[j_nu]
-            # self.l=l_nu
-            # self.Ang_PS.l=l_nu
-            # self.cov_utils.l=l_nu
             xi[j_nu]={}
             for (i,j) in self.corr_indxs:
                 xi[j_nu][(i,j)]=delayed(self.get_xi)(cl=cl[(i,j)]#.compute()
@@ -378,12 +344,11 @@ class Kappa():
                 cov_xi[j_nu]={}
 
                 clr=None
-                clrk=None
-                # SSC_z_temp={}
                 if self.SSV_cov:#this can be slower
                     clr=self.Ang_PS.clz['clsR'][:,l_cut]
                     if self.tidal_SSV_cov:
                         clr+=self.Ang_PS.clz['clsRK'][:,l_cut]/6
+                        
                 for i in self.corr_indxs: #np.arange(ni):
                     for j in self.corr_indxs:#np.arange(i,ni):
                         indx=i+j #indxs[i]+indxs[j]
