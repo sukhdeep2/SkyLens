@@ -48,7 +48,6 @@ class Kappa():
                             'n_zeros':2000,'prune_r':2,'j_nu':[0]}
             self.HT=hankel_transform(**HT_kwargs)
             self.j_nus=self.HT.j_nus
-            print('Done HT config')
         if do_xi:
             self.l=np.sort(np.unique(np.hstack((self.HT.k[i] for i in self.j_nus))))
 
@@ -131,7 +130,7 @@ class Kappa():
         if cosmo_h is None:
             cosmo_h=self.Ang_PS.PS.cosmo_h
 
-        print('kappa_cl indx: ',zs1_indx,zs2_indx)
+        # print('kappa_cl indx: ',zs1_indx,zs2_indx)
 
         l=self.l
         zs1=self.zs_bins[zs1_indx]#.copy() #we will modify these locally
@@ -178,6 +177,10 @@ class Kappa():
 
             sig_cL*=self.Ang_PS.clz['dchi']
             sig_cL*=sigma_win
+
+            if self.do_xi:
+                cov['sig_cL']=sig_cL
+                return cov
 
             clr1=self.Ang_PS.clz['clsR']
 
@@ -303,16 +306,34 @@ class Kappa():
         cov_xi['G']/=Norm
         cov_xi['final']=cov_xi['G']
         if self.SSV_cov:
-            keys=['SSC_dd']
+            clr1=self.Ang_PS.clz['clsR']
+            sig_cL=cov_cl['sig_cL']
+
+            cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.J[j_nu]/self.HT.J_nu1[j_nu]**2,
+                                    (clr1).T*sig_cL,clr1,self.HT.J[j_nu],optimize=True)
+
             if self.tidal_SSV_cov:
-                keys=np.append(keys,['SSC_kk','SSC_dk'])
-            for k in keys:
-                th,cov_xi[k]=self.HT.projected_covariance2(k_pk=self.l,j_nu=j_nu,
-                                                            pk_cov=cov_cl[k])
-                cov_xi[k]=self.binning.bin_2d(r=th,cov=cov_xi[k],r_bins=self.theta_bins,
-                                                r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
-                cov_xi[k]/=Norm
-                cov_xi['final']+=cov_xi[k]
+                clrk=self.Ang_PS.clz['clsRK']
+
+                cov_SSC+=2*np.einsum('rk,kz,zl,sl->rs',self.HT.J[j_nu]/self.HT.J_nu1[j_nu]**2,
+                                        (clrk).T*sig_cL/36,clrk,self.HT.J[j_nu],optimize=True)
+
+            cov_SSC*=(2.*self.HT.kmax**2/self.HT.zeros[j_nu][-1]**2)/(2*np.pi)
+            cov_SSC/=Norm
+            cov_xi['SSC']=self.binning.bin_2d(r=th0,cov=cov_SSC,r_bins=self.theta_bins,
+                                                    r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
+            cov_xi['final']+=cov_xi['SSC']
+            # keys=['final']
+            # # keys=['SSC_dd']
+            # # if self.tidal_SSV_cov:
+            # #     keys=np.append(keys,['SSC_kk','SSC_dk'])
+            # for k in keys:
+            #     th,cov_xi[k]=self.HT.projected_covariance2(k_pk=self.l,j_nu=j_nu,
+            #                                                 pk_cov=cov_cl[k])
+            #     cov_xi[k]=self.binning.bin_2d(r=th,cov=cov_xi[k],r_bins=self.theta_bins,
+            #                                     r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
+            #     cov_xi[k]/=Norm
+            #     cov_xi['final']+=cov_xi[k]
         return cov_xi
 
     def get_xi(self,cl=[],j_nu=0):
@@ -352,7 +373,6 @@ class Kappa():
         cov_xi={}
         xi={}
         out={}
-        print('starting xi')
         for j_nu in [0]: #self.j_nus:
             l_nu=self.HT.k[j_nu]
             self.l=l_nu
@@ -377,7 +397,6 @@ class Kappa():
                         indx=i+j #indxs[i]+indxs[j]
                         cov_xi[j_nu][indx]=delayed(self.xi_cov)(cov_cl=cov_cl[indx]#.compute()
                                                         ,j_nu=j_nu,j_nu2=j_nu2)
-        print('got cov')
         out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi})
         out['xi']=xi
         out['cov']=cov_xi
@@ -402,7 +421,6 @@ class Kappa():
         if self.do_xi:
             est='xi'
             D_keys=list(dat[est].keys())
-            # print(dat[est][D_keys[0]])
             nX=len(dat[est][D_keys[0]][self.corr_indxs[0]])
             nD2=len(D_keys)
         else:
@@ -412,7 +430,6 @@ class Kappa():
 
         D_final=np.zeros(nD*nX*nD2)
         cov_final=np.zeros((nD*nX*nD2,nD*nX*nD2))
-        # print( D_final.shape)
         ij=0
         for iD2 in np.arange(nD2):
             dat2=dat[est]
@@ -434,8 +451,6 @@ class Kappa():
             for i in np.arange(len(self.corr_indxs)):
                 for j in np.arange(i,len(self.corr_indxs)):
                     indx=self.corr_indxs[i]+self.corr_indxs[j]
-                    #print(indx,self.corr_indxs[i],self.corr_indxs[j])
-                    # print(dat2[indx]['final'])
                     cov_final[ indx0+i*nX : indx0+(i+1)*nX , indx0+j*nX : indx0+(j+1)*nX] = dat2[indx]['final']
                     cov_final[ indx0+j*nX : indx0+(j+1)*nX , indx0+i*nX : indx0+(i+1)*nX] = dat2[indx]['final']
         out={'cov':cov_final}
@@ -448,8 +463,8 @@ if __name__ == "__main__":
     import pstats
 
     import dask,dask.multiprocessing
-    dask.config.set(scheduler='processes')
-    # dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler..
+    # dask.config.set(scheduler='processes')
+    dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler..
                                             # Works as usual single threaded worload. Useful for profiling.
 
 
@@ -473,26 +488,24 @@ if __name__ == "__main__":
 
 
     do_cov=True
-    do_xi=True
     bin_cl=True
     SSV_cov=True
     tidal_SSV_cov=True
     stack_data=True
 
-    kappa0=Kappa(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0,
-               stack_data=stack_data,SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,)
-
-    cl_G=kappa0.kappa_cl_tomo() #make the compute graph
-    cProfile.run("cl0=cl_G['stack'].compute()",'output_stats_1bin')
-    cl=cl0['cl']
-    cov=cl0['cov']
-
-    p = pstats.Stats('output_stats_1bin')
-    p.sort_stats('tottime').print_stats(10)
-
-#     print(gaussian_cov.inspect_types())
+    # kappa0=Kappa(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0,
+    #            stack_data=stack_data,SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,)
+    #
+    # cl_G=kappa0.kappa_cl_tomo() #make the compute graph
+    # cProfile.run("cl0=cl_G['stack'].compute()",'output_stats_1bin')
+    # cl=cl0['cl']
+    # cov=cl0['cov']
+    #
+    # p = pstats.Stats('output_stats_1bin')
+    # p.sort_stats('tottime').print_stats(10)
 
 ##############################################################
+    do_xi=True
     bin_cl=not do_xi
     zmin=0.3
     zmax=2
@@ -504,7 +517,7 @@ if __name__ == "__main__":
     pzs=pzs[x]
 
     ns0=26#+np.inf # Total (cumulative) number density of source galaxies, arcmin^-2.. setting to inf turns off shape noise
-    nbins=5 #number of tomographic bins
+    nbins=3 #number of tomographic bins
     z_sigma=0.01
     zs_bins=source_tomo_bins(zp=z,p_zp=pzs,ns=ns0,nz_bins=nbins,
                              ztrue_func=ztrue_given_pz_Gaussian,
