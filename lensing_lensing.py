@@ -16,7 +16,7 @@ from scipy.interpolate import interp1d
 d2r=np.pi/180.
 c=c.to(u.km/u.second)
 
-class Kappa():
+class lensing_lensing():
     def __init__(self,silence_camb=False,l=np.arange(2,2001),HT=None,Ang_PS=None,
                 lensing_utils=None,cov_utils=None,
                 power_spectra_kwargs={},HT_kwargs=None,zs_bins=None,cross_PS=True,
@@ -196,10 +196,10 @@ class Kappa():
             cov['final']+=cov['SSC']
 
         for k in ['G','SSC','final']:#no need to bin G1324 and G1423
-            cl_none,cov[k]=self.bin_kappa_cl(cov=cov[k])
+            cl_none,cov[k]=self.bin_cl_func(cov=cov[k])
         return cov
 
-    def bin_kappa_cl(self,cl=None,cov=None):
+    def bin_cl_func(self,cl=None,cov=None):
         """
             bins the tomographic power spectra
             results: Either cl or covariance
@@ -223,7 +223,7 @@ class Kappa():
         cl_b={}
         for (i,j) in self.corr_indxs+self.cov_indxs:
             clij=cl_compute_dict[(i,j)]
-            cl_b[(i,j)],cov_none=self.bin_kappa_cl(cl=clij,cov=None)
+            cl_b[(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
         return cl_b
 
 
@@ -279,7 +279,7 @@ class Kappa():
         th0,cov_xi['G']=self.HT.projected_covariance(k_pk=self.l,j_nu=j_nu,
                                                      pk_cov=cov_cl['G1423']+cov_cl['G1324'])
 
-        cov_xi['G']=self.binning.bin_2d(r=th0,cov=cov_xi['G'],r_bins=self.theta_bins,
+        cov_xi['G']=self.binning.bin_2d(r=th0/d2r,cov=cov_xi['G'],r_bins=self.theta_bins,
                                                 r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
         #binning is cheap
 
@@ -293,7 +293,7 @@ class Kappa():
                             (clr).T*sig_cL,clr,self.HT.J[j_nu],optimize=True)
 
             cov_SSC*=(2.*self.HT.kmax**2/self.HT.zeros[j_nu][-1]**2)/(2*np.pi)/Norm
-            cov_xi['SSC']=self.binning.bin_2d(r=th0,cov=cov_SSC,r_bins=self.theta_bins,
+            cov_xi['SSC']=self.binning.bin_2d(r=th0/d2r,cov=cov_SSC,r_bins=self.theta_bins,
                                                     r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
             cov_xi['final']+=cov_xi['SSC']
 
@@ -306,7 +306,7 @@ class Kappa():
                                     bin_utils=self.xi_bin_utils[j_nu])
         return xi_b
 
-    def kappa_xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None):
+    def xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None):
         """
             Computed tomographic angular correlation functions. First calls the tomographic
             power spectra and covariance and then does the hankel transform and  binning.
@@ -348,7 +348,7 @@ class Kappa():
                     clr=self.Ang_PS.clz['clsR'][:,l_cut]
                     if self.tidal_SSV_cov:
                         clr+=self.Ang_PS.clz['clsRK'][:,l_cut]/6
-                        
+
                 for i in self.corr_indxs: #np.arange(ni):
                     for j in self.corr_indxs:#np.arange(i,ni):
                         indx=i+j #indxs[i]+indxs[j]
@@ -427,7 +427,7 @@ if __name__ == "__main__":
 
     zs_bin1=source_tomo_bins(zp=[1],p_zp=np.array([1]),ns=26)
 
-    lmax_cl=2000
+    lmax_cl=5000
     lmin_cl=2
     l_step=3 #choose odd number
 
@@ -450,7 +450,7 @@ if __name__ == "__main__":
     tidal_SSV_cov=True
     stack_data=True
 
-    # kappa0=Kappa(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0,
+    # kappa0=lensing_lensing(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0,
     #            stack_data=stack_data,SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,)
     #
     # cl_G=kappa0.kappa_cl_tomo() #make the compute graph
@@ -462,7 +462,7 @@ if __name__ == "__main__":
     # p.sort_stats('tottime').print_stats(10)
 
 ##############################################################
-    do_xi=True
+    do_xi=False
     bin_cl=not do_xi
     zmin=0.3
     zmax=2
@@ -482,7 +482,7 @@ if __name__ == "__main__":
                             zp_sigma=z_sigma*np.ones_like(z))
 
 
-    kappaS = Kappa(zs_bins=zs_bins,l=l,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,
+    kappaS = lensing_lensing(zs_bins=zs_bins,l=l,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,
                     stack_data=stack_data,SSV_cov=SSV_cov,
                     tidal_SSV_cov=tidal_SSV_cov,do_xi=do_xi,bin_xi=bin_xi,
                     theta_bins=theta_bins)#ns=np.inf)
@@ -493,7 +493,7 @@ if __name__ == "__main__":
         cl=cl0['cl']
         cov=cl0['cov']
     else:
-        xiSG=kappaS.kappa_xi_tomo()#make the compute graph
+        xiSG=kappaS.xi_tomo()#make the compute graph
         cProfile.run("xi0=xiSG['stack'].compute(num_workers=4)",'output_stats_3bins')
 
 
