@@ -22,7 +22,7 @@ cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817
                 'As':2.12e-09,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
                 'w':-1,'wa':0})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
-pk_params={'non_linear':0,'kmax':30,'kmin':3.e-4,'nk':5000}
+pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':5000}
 
 # baryonic scenario option:
 # "owls_AGN","owls_DBLIMFV1618","owls_NOSN","owls_NOSN_NOZCOOL","owls_NOZCOOL","owls_REF","owls_WDENS"
@@ -52,7 +52,7 @@ zbin_logPkR = {"owls_AGN":Bins_z_OWLS,
               }
 
 
-class_accuracy_settings={ #from Vanessa. To avoid class errors due to compiler issues. 
+class_accuracy_settings={ #from Vanessa. To avoid class errors due to compiler issues.
                           #https://github.com/lesgourg/class_public/issues/193
             "k_min_tau0":0.002, #you could try change this
             "k_max_tau0_over_l_max":3., #you can also try 5 here
@@ -93,7 +93,7 @@ class Power_Spectra():
                             pk_params=pk_params,return_s8=return_s8)
         if self.SSV_cov:
             self.get_SSV_terms(z,cosmo_params=cosmo_params,
-                            pk_params=pk_params)    
+                            pk_params=pk_params)
 
     def get_SSV_terms(self,z,cosmo_params=None,pk_params=None):
         pk_params_lin=self.pk_params.copy() if pk_params is None else pk_params.copy()
@@ -103,7 +103,7 @@ class Power_Spectra():
         self.R1=self.R1_calc(k=self.kh,pk=self.pk_lin,axis=1)
         self.Rk=self.R_K_calc(k=self.kh,pk=self.pk_lin,axis=1)
 
-        
+
     def DZ_int(self,z=[0],cosmo=None): #linear growth factor.. full integral.. eq 63 in Lahav and suto
         if not cosmo:
             cosmo=self.cosmo
@@ -209,7 +209,7 @@ class Power_Spectra():
         pk=None #np.array([])
         z_step=140 #camb cannot handle more than 150 redshifts
         nz=len(z)
-        
+
         while i<nz:
             pki,kh=self.camb_pk(z=z[i:i+z_step],pk_params=pk_params,cosmo_params=cosmo_params,return_s8=False)
             pk=np.vstack((pk,pki)) if pk is not None else pki
@@ -242,12 +242,12 @@ class Power_Spectra():
             class_params['Omega_fld']=cosmo_params['Oml']
             class_params['w0_fld']=cosmo_params['w']
             class_params['wa_fld']=cosmo_params['wa']
-            
-        
+
+
         for ke in class_accuracy_settings.keys():
             class_params[ke]=class_accuracy_settings[ke]
 
-        cosmoC=Class() 
+        cosmoC=Class()
         cosmoC.set(class_params)
         cosmoC.compute()
 
@@ -260,11 +260,11 @@ class Power_Spectra():
             return pkC,self.kh,s8
         else:
             return pkC,self.kh
-   
+
     def bary_pk(self,z,scenario=None,cosmo_params=None,pk_params=None,return_s8=False):
-        if scenario is None: 
+        if scenario is None:
             scenario = self.scenario
-            
+
         out=self.pk_func(z,cosmo_params=cosmo_params,pk_params=pk_params,return_s8=return_s8)
         pk=out[0]
         kh=out[1]
@@ -276,16 +276,16 @@ class Power_Spectra():
         del Arr2D_logPkratio["logk"]
         Arr2D_logPkratio = np.array(Arr2D_logPkratio)
         f_logPkRatio = interpolate.interp2d(zbin_logPkR[scenario], Bins_log_k_Mpc, Arr2D_logPkratio, kind='linear')
-        
+
         PkR    = 10**(f_logPkRatio(z,np.log10(kh)))
         pkbary = pk*PkR.T
-        
+
         if return_s8:
             s8=out[2]
             return pkbary,kh,s8
         else:
             return pkbary,kh  #,pk,PkR.T
-    
+
 
     def R1_calc(self,k=None,pk=None,k_NonLinear=3.2,axis=0): #eq 2.5, R1, Barriera+ 2017
         G1=26./21.*np.ones_like(k)

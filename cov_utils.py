@@ -42,19 +42,14 @@ class Covariance_utils():
 
 
     def gaussian_cov_auto(self,cls,SN,z_indx,do_xi):
-        # G1324= ( cls[:,z_indx[0], z_indx[2] ] + SN[:,z_indx[0], z_indx[2] ] )
-        # G1324*=( cls[:,z_indx[1], z_indx[3] ] + SN[:,z_indx[1], z_indx[3] ] )
-        #
-        # G1423= ( cls[:,z_indx[0], z_indx[3] ] + SN[:,z_indx[0], z_indx[3] ] )
-        # G1423*=( cls[:,z_indx[1], z_indx[2] ] + SN[:,z_indx[1], z_indx[2] ] )
         G1324= ( cls[(z_indx[0], z_indx[2]) ] + SN[:,z_indx[0], z_indx[2] ] )
         G1324*=( cls[(z_indx[1], z_indx[3]) ] + SN[:,z_indx[1], z_indx[3] ] )
 
         G1423= ( cls[(z_indx[0], z_indx[3]) ] + SN[:,z_indx[0], z_indx[3] ] )
         G1423*=( cls[(z_indx[1], z_indx[2]) ] + SN[:,z_indx[1], z_indx[2] ] )
 
-        # G=None
-        # if not do_xi:
-        G=np.diag(G1423+G1324)
-        G/=self.gaussian_cov_norm
+        G=None
+        if not do_xi:
+            G=np.diag(G1423+G1324)
+            G/=self.gaussian_cov_norm
         return G,G1324,G1423

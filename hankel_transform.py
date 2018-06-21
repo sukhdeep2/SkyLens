@@ -121,14 +121,17 @@ class hankel_transform():
         w*=(2.*self.kmax**2/self.zeros[j_nu][-1]**2)/(2*np.pi)
         return self.r[j_nu],w
 
-    def projected_covariance(self,k_pk=[],pk1=[],pk2=[],j_nu=[],taper=False,**kwargs):
-        pk1=self.pk_grid(k_pk=k_pk,pk=pk1,j_nu=j_nu,taper=taper,**kwargs)
-        pk2=self.pk_grid(k_pk=k_pk,pk=pk2,j_nu=j_nu,taper=taper,**kwargs)
-        cov=np.dot(self.J[j_nu],(self.J[j_nu]*pk1*pk2/self.J_nu1[j_nu]**2).T)
+    def projected_covariance(self,k_pk=[],pk_cov=[],j_nu=[],taper=False,**kwargs):
+        #when pk_cov can be written as vector, eg. gaussian covariance
+        pk1=self.pk_grid(k_pk=k_pk,pk=pk_cov,j_nu=j_nu,taper=taper,**kwargs)
+        # cov=np.dot(self.J[j_nu],(self.J[j_nu]*pk1*pk2/self.J_nu1[j_nu]**2).T)
+        cov=np.einsum('rk,k,sk->rs',self.J[j_nu],pk1/self.J_nu1[j_nu]**2,
+                    self.J[j_nu],optimize=True)
         cov*=(2.*self.kmax**2/self.zeros[j_nu][-1]**2)/(2*np.pi)
         return self.r[j_nu],cov
 
     def projected_covariance2(self,k_pk=[],pk_cov=[],j_nu=[],taper=False,**kwargs):
+        #when pk_cov is a 2-d matrix
         pk_cov2=pk_cov#self.pk_cov_grid(k_pk=k_pk,pk_cov=pk_cov,j_nu=j_nu,taper=taper,**kwargs)
         cov=np.dot(self.J[j_nu],np.dot(self.J[j_nu]/self.J_nu1[j_nu]**2,pk_cov2).T)
         cov*=(2.*self.kmax**2/self.zeros[j_nu][-1]**2)/(2*np.pi)
@@ -146,7 +149,7 @@ class hankel_transform():
             taper_f[x]=np.cos((k[x]-low_k_upper)/(low_k_upper-low_k_lower)*np.pi/2.)
             self.taper_f={'taper_f':taper_f,'k':k}
         return self.taper_f
-    
+
     def diagonal_err(self,cov=[]):
         return np.sqrt(np.diagonal(cov))
 
