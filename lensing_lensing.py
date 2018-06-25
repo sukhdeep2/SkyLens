@@ -43,17 +43,24 @@ class lensing_lensing():
             if HT_kwargs is None:
                 th_min=1./60. if theta_bins is None else np.amin(theta_bins)
                 th_max=5 if theta_bins is None else np.amax(theta_bins)
-                HT_kwargs={'kmin':min(l),'kmax':max(l),
-                            'rmin':th_min*d2r,'rmax':th_max*d2r,
-                            'n_zeros':2000,'prune_r':2,'j_nu':[0]}
+                HT_kwargs={'l_min':min(l),'l_max':max(l),
+                            'theta_min':th_min*d2r,'theta_max':th_max*d2r,
+                            'n_zeros':2000,'prune_theta':2,'m1_m2':[(0,0)]}
             self.HT=hankel_transform(**HT_kwargs)
-            self.j_nus=self.HT.j_nus
+            self.m1_m2s=self.HT.m1_m2s
         if do_xi:
-            # self.l=np.sort(np.unique(np.hstack((self.HT.k[i] for i in self.j_nus))))
-            self.l=np.hstack((self.HT.k[i] for i in self.j_nus))
-            self.l_cut_jnu={}
-            for j_nu in self.j_nus:
-                self.l_cut_jnu[j_nu]=np.isin(self.l,(self.HT.k[j_nu]))
+            self.m1_m2s=self.HT.m1_m2s
+            if self.HT.name=='Hankel':
+                self.l=np.hstack((self.HT.l[i] for i in self.m1_m2s))
+                self.l_cut_jnu={}
+                for m1_m2 in self.m1_m2s:
+                    self.l_cut_jnu[m1_m2]=np.isin(self.l,(self.HT.l[m1_m2]))
+
+            if self.HT.name=='Wigner':
+                self.l_cut_jnu={}
+                for m1_m2 in self.m1_m2s:
+                    self.l_cut_jnu[m1_m2]=np.isin(self.l,(self.l))
+                #FIXME: This is ugly
 
         self.cov_utils=cov_utils
         if cov_utils is None:
@@ -102,8 +109,8 @@ class lensing_lensing():
                                                 r_dim=2,mat_dims=[1,2])
         if self.do_xi and self.bin_xi:
             self.xi_bin_utils={}
-            for j_nu in self.j_nus:
-                self.xi_bin_utils[j_nu]=self.binning.bin_utils(r=self.HT.r[j_nu]/d2r,
+            for m1_m2 in self.m1_m2s:
+                self.xi_bin_utils[m1_m2]=self.binning.bin_utils(r=self.HT.theta[m1_m2]/d2r,
                                                     r_bins=self.theta_bins,
                                                     r_dim=2,mat_dims=[1,2])
 
@@ -168,7 +175,7 @@ class lensing_lensing():
 
         cov['final']=cov['G']
 
-
+        cov['SSC']=None
         if self.SSV_cov:
             clz=self.Ang_PS.clz
             zs1=self.zs_bins[zs_indx[0]]
@@ -267,20 +274,21 @@ class lensing_lensing():
         out_stack=delayed(self.stack_dat)({'cov':cov,'cl':cl_b})
         return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl}
 
-    def xi_cov(self,cov_cl={},j_nu=None,j_nu2=None,clr=None,clrk=None):
+    def xi_cov(self,cov_cl={},m1_m2=None,m1_m2_2=None,clr=None,clrk=None):
         """
             Computes covariance of xi, by performing 2-D hankel transform on covariance of Cl.
-            In current implementation of hankel transform works only for j_nu=j_nu2. So no cross covariance between xi+ and xi-.
+            In current implementation of hankel transform works only for m1_m2=m1_m2_2.
+            So no cross covariance between xi+ and xi-.
         """
         #FIXME: Implement the cross covariance
         cov_xi={}
 
         Norm= self.cov_utils.Om_W
-        th0,cov_xi['G']=self.HT.projected_covariance(k_pk=self.l,j_nu=j_nu,
-                                                     pk_cov=cov_cl['G1423']+cov_cl['G1324'])
+        th0,cov_xi['G']=self.HT.projected_covariance(l_cl=self.l,m1_m2=m1_m2,
+                                                     cl_cov=cov_cl['G1423']+cov_cl['G1324'])
 
         cov_xi['G']=self.binning.bin_2d(r=th0/d2r,cov=cov_xi['G'],r_bins=self.theta_bins,
-                                                r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
+                                                r_dim=2,bin_utils=self.xi_bin_utils[m1_m2])
         #binning is cheap
 
         cov_xi['G']/=Norm
@@ -289,21 +297,21 @@ class lensing_lensing():
             sig_cL=cov_cl['sig_cL']
 
             #tidal term is added to clr in the calling function
-            cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.J[j_nu]/self.HT.J_nu1[j_nu]**2,
-                            (clr).T*sig_cL,clr,self.HT.J[j_nu],optimize=True)
+            cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.J[m1_m2]/self.HT.J_nu1[m1_m2]**2,
+                            (clr).T*sig_cL,clr,self.HT.J[m1_m2],optimize=True)
 
-            cov_SSC*=(2.*self.HT.kmax**2/self.HT.zeros[j_nu][-1]**2)/(2*np.pi)/Norm
+            cov_SSC*=(2.*self.HT.l_max**2/self.HT.zeros[m1_m2][-1]**2)/(2*np.pi)/Norm
             cov_xi['SSC']=self.binning.bin_2d(r=th0/d2r,cov=cov_SSC,r_bins=self.theta_bins,
-                                                    r_dim=2,bin_utils=self.xi_bin_utils[j_nu])
+                                                    r_dim=2,bin_utils=self.xi_bin_utils[m1_m2])
             cov_xi['final']+=cov_xi['SSC']
 
         return cov_xi
 
-    def get_xi(self,cl=[],j_nu=0):
-        th,xi=self.HT.projected_correlation(k_pk=self.l,j_nu=j_nu,pk=cl)
+    def get_xi(self,cl=[],m1_m2=[(0,0)]):
+        th,xi=self.HT.projected_correlation(l_cl=self.l,m1_m2=m1_m2,cl=cl)
         xi_b=self.binning.bin_1d(r=th/d2r,xi=xi,
                                     r_bins=self.theta_bins,r_dim=2,
-                                    bin_utils=self.xi_bin_utils[j_nu])
+                                    bin_utils=self.xi_bin_utils[m1_m2])
         return xi_b
 
     def xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None):
@@ -312,9 +320,9 @@ class lensing_lensing():
             power spectra and covariance and then does the hankel transform and  binning.
         """
         """
-            For hankel transform is done on l-theta grid, which is based on j_nu. So grid is
+            For hankel transform is done on l-theta grid, which is based on m1_m2. So grid is
             different for xi+ and xi-.
-            In the init function, we combined the ell arrays for all j_nu. This is not a problem
+            In the init function, we combined the ell arrays for all m1_m2. This is not a problem
             except for the case of SSV, where we will use l_cut to only select the relevant values
         """
 
@@ -331,17 +339,17 @@ class lensing_lensing():
         cov_xi={}
         xi={}
         out={}
-        for j_nu in [0]: #self.j_nus:
-            xi[j_nu]={}
+        for m1_m2 in [(0,0)]: #self.m1_m2s:
+            xi[m1_m2]={}
             for (i,j) in self.corr_indxs:
-                xi[j_nu][(i,j)]=delayed(self.get_xi)(cl=cl[(i,j)]#.compute()
-                                                    ,j_nu=j_nu)
+                xi[m1_m2][(i,j)]=delayed(self.get_xi)(cl=cl[(i,j)]#.compute()
+                                                    ,m1_m2=m1_m2)
             if self.do_cov:
-                l_cut=self.l_cut_jnu[j_nu]
+                l_cut=self.l_cut_jnu[m1_m2]
                 cov_cl=cls_tomo_nu['cov']#.compute()
-                j_nu2=j_nu
+                m1_m2_2=m1_m2
 
-                cov_xi[j_nu]={}
+                cov_xi[m1_m2]={}
 
                 clr=None
                 if self.SSV_cov:#this can be slower
@@ -352,8 +360,8 @@ class lensing_lensing():
                 for i in self.corr_indxs: #np.arange(ni):
                     for j in self.corr_indxs:#np.arange(i,ni):
                         indx=i+j #indxs[i]+indxs[j]
-                        cov_xi[j_nu][indx]=delayed(self.xi_cov)(cov_cl=cov_cl[indx]#.compute()
-                                                        ,j_nu=j_nu,j_nu2=j_nu2,clr=clr)
+                        cov_xi[m1_m2][indx]=delayed(self.xi_cov)(cov_cl=cov_cl[indx]#.compute()
+                                                        ,m1_m2=m1_m2,m1_m2_2=m1_m2_2,clr=clr)
         out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi})
         out['xi']=xi
         out['cov']=cov_xi
@@ -462,7 +470,7 @@ if __name__ == "__main__":
     # p.sort_stats('tottime').print_stats(10)
 
 ##############################################################
-    do_xi=False
+    do_xi=True
     bin_cl=not do_xi
     zmin=0.3
     zmax=2

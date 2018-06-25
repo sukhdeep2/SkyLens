@@ -5,159 +5,161 @@ import numpy as np
 import itertools
 
 class hankel_transform():
-    def __init__(self,rmin=0.1,rmax=100,kmax=10,kmin=1.e-4,n_zeros=1000,n_zeros_step=1000,
-                 j_nu=[0],prune_r=0,prune_log_space=True):
-        self.rmin=rmin
-        self.rmax=rmax
-        self.kmax=kmax
-        self.kmin=kmin
+    def __init__(self,theta_min=0.1,theta_max=100,l_max=10,l_min=1.e-4,n_zeros=1000,n_zeros_step=1000,
+                 m1_m2=[(0,0)],prune_theta=0,prune_log_space=True):
+    #FIXME: try to get init in same form as for wigner_transform
+        self.name='Hankel'
+        self.theta_min=theta_min
+        self.theta_max=theta_max
+        self.l_max=l_max
+        self.l_min=l_min
         self.n_zeros=n_zeros
         self.n_zeros_step=n_zeros_step
-        self.k={}
-        self.r={}
+        self.l={}
+        self.theta={}
         self.J={}
         self.J_nu1={}
         self.zeros={}
-        self.j_nus=j_nu
-        for i in j_nu:
-            self.k[i],self.r[i],self.J[i],self.J_nu1[i],self.zeros[i]=self.get_k_r_j(j_nu=i,
-                                                   n_zeros=n_zeros,rmin=rmin,rmax=rmax,
-                                                   kmax=kmax,kmin=kmin,n_zeros_step=n_zeros_step,
-                                                   prune_r=prune_r,
+        self.m1_m2s=m1_m2
+        for i in m1_m2:
+            self.l[i],self.theta[i],self.J[i],self.J_nu1[i],self.zeros[i]=self.get_k_r_j(j_nu=np.absolute(i[1]-i[0]),
+                                                   n_zeros=n_zeros,theta_min=theta_min,theta_max=theta_max,
+                                                   l_max=l_max,l_min=l_min,n_zeros_step=n_zeros_step,
+                                                   prune_theta=prune_theta,
                                                    prune_log_space=prune_log_space)
 
-    def get_k_r_j(self,j_nu=0,n_zeros=1000,rmin=0.1,rmax=100,kmax=10,kmin=1.e-4,
-                  n_zeros_step=1000,prune_r=0,prune_log_space=True):
+    def get_k_r_j(self,j_nu=0,n_zeros=1000,theta_min=0.1,theta_max=100,l_max=10,l_min=1.e-4,
+                  n_zeros_step=1000,prune_theta=0,prune_log_space=True):
         while True:
-            if isinstance(j_nu,int):
-                zeros=jn_zeros(j_nu,n_zeros)
-            else:
-                def jv2(x):
-                    return jv(j_nu,x)
-                zeros_t=jn_zeros(j_nu-0.5,n_zeros)+0.7852
-                zeros=np.zeros_like(zeros_t)
-                zeros[:5500]= fsolve(jv2,zeros_t[:5500])
-                zi=interp1d(zeros_t[:5500],zeros[:5500]-zeros_t[:5500],
-                                bounds_error=False,fill_value='extrapolate',kind=0)
-                zeros=zi(zeros_t)+zeros_t
+            # if isinstance(j_nu,int):
+            zeros=jn_zeros(j_nu,n_zeros)
+            # else:
+            #     def jv2(x):
+            #         return jv(j_nu,x)
+            #     zeros_t=jn_zeros(j_nu-0.5,n_zeros)+0.7852
+            #     zeros=np.zeros_like(zeros_t)
+            #     zeros[:5500]= fsolve(jv2,zeros_t[:5500])
+            #     zi=interp1d(zeros_t[:5500],zeros[:5500]-zeros_t[:5500],
+            #                     bounds_error=False,fill_value='extrapolate',kind=0)
+            #     zeros=zi(zeros_t)+zeros_t
                 #this is bad, but can't find zeros of spherical right now. .7852 does make it
                 #better by ensuring most values are <1.e-3
-            k=zeros/zeros[-1]*kmax
-            r=zeros/kmax
-            if min(r)>rmin:
-                kmax=min(zeros)/rmin
-                print ('changed kmax to',kmax,' to cover rmin')
+            l=zeros/zeros[-1]*l_max
+            theta=zeros/l_max
+            if min(theta)>theta_min:
+                l_max=min(zeros)/theta_min
+                print ('changed l_max to',l_max,' to cover theta_min')
                 continue
-            elif max(r)<rmax:
+            elif max(theta)<theta_max:
                 n_zeros+=n_zeros_step
-                print ('j-nu=',j_nu,' not enough zeros to cover rmax, increasing by ',n_zeros_step,' to',n_zeros)
-            elif min(k)>kmin:
+                print ('j-nu=',j_nu,' not enough zeros to cover theta_max, increasing by ',n_zeros_step,' to',n_zeros)
+            elif min(l)>l_min:
                 n_zeros+=n_zeros_step
-                print ('j-nu=',j_nu,' not enough zeros to cover kmin, increasing by ',n_zeros_step,' to',n_zeros)
+                print ('j-nu=',j_nu,' not enough zeros to cover l_min, increasing by ',n_zeros_step,' to',n_zeros)
             else:
                 break
-        rmin2=r[r<=rmin][-1]
-        rmax2=r[r>=rmax][0]
-        x=r<=rmax2
-        x*=r>=rmin2
-        r=r[x]
-        if prune_r!=0:
-            print('pruning r, log_space,n_f:',prune_log_space,prune_r)
-            N=len(r)
+        theta_min2=theta[theta<=theta_min][-1]
+        theta_max2=theta[theta>=theta_max][0]
+        x=theta<=theta_max2
+        x*=theta>=theta_min2
+        theta=theta[x]
+        if prune_theta!=0:
+            print('pruning theta, log_space,n_f:',prune_log_space,prune_theta)
+            N=len(theta)
             if prune_log_space:
-                idx=np.unique(np.int64(np.logspace(0,np.log10(N-1),N/prune_r)))#pruning can be worse than prune_r factor due to repeated numbers when logspace number are convereted to int.
+                idx=np.unique(np.int64(np.logspace(0,np.log10(N-1),N/prune_theta)))#pruning can be worse than prune_theta factor due to repeated numbers when logspace number are convereted to int.
                 idx=np.append([0],idx)
             else:
-                idx=np.arange(0,N-1,step=prune_r)
+                idx=np.arange(0,N-1,step=prune_theta)
             idx=np.append(idx,[N-1])
-            r=r[idx]
-            print ('pruned r:',len(r))
-        r=np.unique(r)
-        print ('nr:',len(r))
-        J=jn(j_nu,np.outer(r,k))
+            theta=theta[idx]
+            print ('pruned theta:',len(theta))
+        theta=np.unique(theta)
+        print ('nr:',len(theta))
+        J=jn(j_nu,np.outer(theta,l))
         J_nu1=jn(j_nu+1,zeros)
-        return k,r,J,J_nu1,zeros
+        return l,theta,J,J_nu1,zeros
 
-    def pk_grid(self,k_pk=[],pk=[],j_nu=[],taper=False,**kwargs):
+    def cl_grid(self,l_cl=[],cl=[],m1_m2=[],taper=False,**kwargs):
         if taper:
-            sself.taper_f=self.taper(k=k_pk,**kwargs)
-            pk=pk*taper_f
-        if k_pk==[]:#In this case pass a function that takes k with kwargs and outputs pk
-            pk2=pk(k=self.k[j_nu],**kwargs)
+            sself.taper_f=self.taper(l=l_cl,**kwargs)
+            cl=cl*taper_f
+        if l_cl==[]:#In this case pass a function that takes k with kwargs and outputs cl
+            cl2=cl(l=self.l[m1_m2],**kwargs)
         else:
-            pk_int=interp1d(k_pk,pk,bounds_error=False,fill_value=0,
+            cl_int=interp1d(l_cl,cl,bounds_error=False,fill_value=0,
                             kind='linear')
-            pk2=pk_int(self.k[j_nu])
-        return pk2
+            cl2=cl_int(self.l[m1_m2])
+        return cl2
 
-    def pk_cov_grid(self,k_pk=[],pk_cov=[],j_nu=[],taper=False,**kwargs):
+    def cl_cov_grid(self,l_cl=[],cl_cov=[],m1_m2=[],taper=False,**kwargs):
         if taper:#FIXME there is no check on change in taper_kwargs
-            if self.taper_f2 is None or not np.all(np.isclose(self.taper_f['k'],k_pk)):
-                self.taper_f=self.taper(k=k_pk,**kwargs)
+            if self.taper_f2 is None or not np.all(np.isclose(self.taper_f['l'],l_cl)):
+                self.taper_f=self.taper(l=l_cl,**kwargs)
                 taper_f2=np.outer(self.taper_f['taper_f'],self.taper_f['taper_f'])
-                self.taper_f2={'k':k_pk,'taper_f2':taper_f2}
-            pk_cov=pk_cov*self.taper_f2['taper_f2']
-        if k_pk==[]:#In this case pass a function that takes k with kwargs and outputs pk
-            pk2=pk_cov(k=self.k[j_nu],**kwargs)
+                self.taper_f2={'l':l_cl,'taper_f2':taper_f2}
+            cl_cov=cl_cov*self.taper_f2['taper_f2']
+        if l_cl==[]:#In this case pass a function that takes k with kwargs and outputs cl
+            cl2=cl_cov(l=self.l[m1_m2],**kwargs)
         else:
-            pk_int=RectBivariateSpline(k_pk,k_pk,pk_cov,)#bounds_error=False,fill_value=0,
+            cl_int=RectBivariateSpline(l_cl,l_cl,cl_cov,)#bounds_error=False,fill_value=0,
                             #kind='linear')
-                    #interp2d is slow. Make sure k_pk is on regular grid.
-            pk2=pk_int(self.k[j_nu],self.k[j_nu])
-        return pk2
+                    #interp2d is slow. Make sure l_cl is on regular grid.
+            cl2=cl_int(self.l[m1_m2],self.l[m1_m2])
+        return cl2
 
-    def projected_correlation(self,k_pk=[],pk=[],j_nu=[],taper=False,**kwargs):
-        pk2=self.pk_grid(k_pk=k_pk,pk=pk,j_nu=j_nu,taper=taper,**kwargs)
-        w=np.dot(self.J[j_nu],pk2/self.J_nu1[j_nu]**2)
-        w*=(2.*self.kmax**2/self.zeros[j_nu][-1]**2)/(2*np.pi)
-        return self.r[j_nu],w
+    def projected_correlation(self,l_cl=[],cl=[],m1_m2=[],taper=False,**kwargs):
+        cl2=self.cl_grid(l_cl=l_cl,cl=cl,m1_m2=m1_m2,taper=taper,**kwargs)
+        w=np.dot(self.J[m1_m2],cl2/self.J_nu1[m1_m2]**2)
+        w*=(2.*self.l_max**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
+        return self.theta[m1_m2],w
 
-    def spherical_correlation(self,k_pk=[],pk=[],j_nu=[],taper=False,**kwargs):
+    def spherical_correlation(self,l_cl=[],cl=[],m1_m2=[],taper=False,**kwargs):
     #we will use relation spherical_jn(z)=j{n+0.5}(z)*sqrt(pi/2z)
-    #pk will be written as k*pk
-        pk2=self.pk_grid(k_pk=k_pk,pk=pk,j_nu=j_nu,taper=taper,**kwargs)
-        j_f=np.sqrt(np.pi/2./np.outer(self.r[j_nu],self.k[j_nu]))
-        w=np.dot(self.J[j_nu],pk2*self.k[j_nu]/self.J_nu1[j_nu]**2)
-        w*=(2.*self.kmax**2/self.zeros[j_nu][-1]**2)/(2*np.pi)
-        return self.r[j_nu],w
+    #cl will be written as k*cl
+        cl2=self.cl_grid(l_cl=l_cl,cl=cl,m1_m2=m1_m2,taper=taper,**kwargs)
+        j_f=np.sqrt(np.pi/2./np.outer(self.theta[m1_m2],self.l[m1_m2]))
+        w=np.dot(self.J[m1_m2],cl2*self.l[m1_m2]/self.J_nu1[m1_m2]**2)
+        w*=(2.*self.l_max**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
+        return self.theta[m1_m2],w
 
-    def projected_covariance(self,k_pk=[],pk_cov=[],j_nu=[],taper=False,**kwargs):
-        #when pk_cov can be written as vector, eg. gaussian covariance
-        pk1=self.pk_grid(k_pk=k_pk,pk=pk_cov,j_nu=j_nu,taper=taper,**kwargs)
-        # cov=np.dot(self.J[j_nu],(self.J[j_nu]*pk1*pk2/self.J_nu1[j_nu]**2).T)
-        cov=np.einsum('rk,k,sk->rs',self.J[j_nu],pk1/self.J_nu1[j_nu]**2,
-                    self.J[j_nu],optimize=True)
-        cov*=(2.*self.kmax**2/self.zeros[j_nu][-1]**2)/(2*np.pi)
-        return self.r[j_nu],cov
+    def projected_covariance(self,l_cl=[],cl_cov=[],m1_m2=[],taper=False,**kwargs):
+        #when cl_cov can be written as vector, eg. gaussian covariance
+        cl1=self.cl_grid(l_cl=l_cl,cl=cl_cov,m1_m2=m1_m2,taper=taper,**kwargs)
+        # cov=np.dot(self.J[m1_m2],(self.J[m1_m2]*cl1*cl2/self.J_nu1[m1_m2]**2).T)
+        cov=np.einsum('rk,k,sk->rs',self.J[m1_m2],cl1/self.J_nu1[m1_m2]**2,
+                    self.J[m1_m2],optimize=True)
+        cov*=(2.*self.l_max**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
+        return self.theta[m1_m2],cov
 
-    def projected_covariance2(self,k_pk=[],pk_cov=[],j_nu=[],taper=False,**kwargs):
-        #when pk_cov is a 2-d matrix
-        pk_cov2=pk_cov#self.pk_cov_grid(k_pk=k_pk,pk_cov=pk_cov,j_nu=j_nu,taper=taper,**kwargs)
-        cov=np.dot(self.J[j_nu],np.dot(self.J[j_nu]/self.J_nu1[j_nu]**2,pk_cov2).T)
-        cov*=(2.*self.kmax**2/self.zeros[j_nu][-1]**2)/(2*np.pi)
-        return self.r[j_nu],cov
+    def projected_covariance2(self,l_cl=[],cl_cov=[],m1_m2=[],taper=False,**kwargs):
+        #when cl_cov is a 2-d matrix
+        cl_cov2=cl_cov#self.cl_cov_grid(l_cl=l_cl,cl_cov=cl_cov,m1_m2=m1_m2,taper=taper,**kwargs)
+        cov=np.dot(self.J[m1_m2],np.dot(self.J[m1_m2]/self.J_nu1[m1_m2]**2,cl_cov2).T)
+        cov*=(2.*self.l_max**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
+        return self.theta[m1_m2],cov
 
-    def taper(self,k=[],large_k_lower=10,large_k_upper=100,low_k_lower=0,low_k_upper=1.e-5):
+    def taper(self,l=[],large_k_lower=10,large_k_upper=100,low_k_lower=0,low_k_upper=1.e-5):
         #FIXME there is no check on change in taper_kwargs
-        if self.taper_f is None or not np.all(np.isclose(self.taper_f['k'],k)):
-            taper_f=np.zeros_like(k)
+        if self.taper_f is None or not np.all(np.isclose(self.taper_f['l'],k)):
+            taper_f=np.zeros_like(l)
             x=k>large_k_lower
             taper_f[x]=np.cos((k[x]-large_k_lower)/(large_k_upper-large_k_lower)*np.pi/2.)
             x=k<large_k_lower and k>low_k_upper
             taper_f[x]=1
             x=k<low_k_upper
             taper_f[x]=np.cos((k[x]-low_k_upper)/(low_k_upper-low_k_lower)*np.pi/2.)
-            self.taper_f={'taper_f':taper_f,'k':k}
+            self.taper_f={'taper_f':taper_f,'l':k}
         return self.taper_f
 
     def diagonal_err(self,cov=[]):
         return np.sqrt(np.diagonal(cov))
 
-    def skewness(self,k_pk=[],pk1=[],pk2=[],pk3=[],j_nu=[],taper=False,**kwargs):
-        pk1=self.pk_grid(k_pk=k_pk,pk=pk1,j_nu=j_nu,taper=taper,**kwargs)
-        pk2=self.pk_grid(k_pk=k_pk,pk=pk2,j_nu=j_nu,taper=taper,**kwargs)
-        pk3=self.pk_grid(k_pk=k_pk,pk=pk3,j_nu=j_nu,taper=taper,**kwargs)
-        skew=np.einsum('ji,ki,li',self.J[j_nu],self.J[j_nu],
-                        self.J[j_nu]*pk1*pk2*pk3/self.J_nu1[j_nu]**2)
-        skew*=(2.*self.kmax**2/self.zeros[j_nu][-1]**2)/(2*np.pi)
-        return self.r[j_nu],skew
+    def skewness(self,l_cl=[],cl1=[],cl2=[],cl3=[],m1_m2=[],taper=False,**kwargs):
+        cl1=self.cl_grid(l_cl=l_cl,cl=cl1,m1_m2=m1_m2,taper=taper,**kwargs)
+        cl2=self.cl_grid(l_cl=l_cl,cl=cl2,m1_m2=m1_m2,taper=taper,**kwargs)
+        cl3=self.cl_grid(l_cl=l_cl,cl=cl3,m1_m2=m1_m2,taper=taper,**kwargs)
+        skew=np.einsum('ji,ki,li',self.J[m1_m2],self.J[m1_m2],
+                        self.J[m1_m2]*cl1*cl2*cl3/self.J_nu1[m1_m2]**2)
+        skew*=(2.*self.l_max**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
+        return self.theta[m1_m2],skew
