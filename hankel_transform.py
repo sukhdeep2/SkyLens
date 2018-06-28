@@ -6,13 +6,14 @@ import itertools
 
 class hankel_transform():
     def __init__(self,theta_min=0.1,theta_max=100,l_max=10,l_min=1.e-4,n_zeros=1000,n_zeros_step=1000,
-                 m1_m2=[(0,0)],prune_theta=0,prune_log_space=True):
+                 m1_m2=[(0,0)],prune_theta=0,prune_log_space=True,logger=None):
     #FIXME: try to get init in same form as for wigner_transform
         self.name='Hankel'
+        self.logger=logger
         self.theta_min=theta_min
         self.theta_max=theta_max
-        self.l_max=l_max
-        self.l_min=l_min
+        self.l_max={}
+        self.l_min={}
         self.n_zeros=n_zeros
         self.n_zeros_step=n_zeros_step
         self.l={}
@@ -21,8 +22,10 @@ class hankel_transform():
         self.J_nu1={}
         self.zeros={}
         self.m1_m2s=m1_m2
+        if len(m1_m2)>1:
+            self.logger.warning('cross covariance not implemented with Hankel Transform. m1_m2s: %s',m1_m2)
         for i in m1_m2:
-            self.l[i],self.theta[i],self.J[i],self.J_nu1[i],self.zeros[i]=self.get_k_r_j(j_nu=np.absolute(i[1]-i[0]),
+            self.l[i],self.l_max[i],self.theta[i],self.J[i],self.J_nu1[i],self.zeros[i]=self.get_k_r_j(j_nu=np.absolute(i[1]-i[0]),
                                                    n_zeros=n_zeros,theta_min=theta_min,theta_max=theta_max,
                                                    l_max=l_max,l_min=l_min,n_zeros_step=n_zeros_step,
                                                    prune_theta=prune_theta,
@@ -31,31 +34,20 @@ class hankel_transform():
     def get_k_r_j(self,j_nu=0,n_zeros=1000,theta_min=0.1,theta_max=100,l_max=10,l_min=1.e-4,
                   n_zeros_step=1000,prune_theta=0,prune_log_space=True):
         while True:
-            # if isinstance(j_nu,int):
             zeros=jn_zeros(j_nu,n_zeros)
-            # else:
-            #     def jv2(x):
-            #         return jv(j_nu,x)
-            #     zeros_t=jn_zeros(j_nu-0.5,n_zeros)+0.7852
-            #     zeros=np.zeros_like(zeros_t)
-            #     zeros[:5500]= fsolve(jv2,zeros_t[:5500])
-            #     zi=interp1d(zeros_t[:5500],zeros[:5500]-zeros_t[:5500],
-            #                     bounds_error=False,fill_value='extrapolate',kind=0)
-            #     zeros=zi(zeros_t)+zeros_t
-                #this is bad, but can't find zeros of spherical right now. .7852 does make it
-                #better by ensuring most values are <1.e-3
+
             l=zeros/zeros[-1]*l_max
             theta=zeros/l_max
             if min(theta)>theta_min:
                 l_max=min(zeros)/theta_min
-                print ('changed l_max to',l_max,' to cover theta_min')
+                self.logger.info ('changed l_max to %s to cover theta_min. j_nu=%s',l_max,j_nu)
                 continue
             elif max(theta)<theta_max:
                 n_zeros+=n_zeros_step
-                print ('j-nu=',j_nu,' not enough zeros to cover theta_max, increasing by ',n_zeros_step,' to',n_zeros)
+                self.logger.info ('j-nu=%s  not enough zeros to cover theta_max, increasing by %s to %s',j_nu,n_zeros_step,n_zeros)
             elif min(l)>l_min:
                 n_zeros+=n_zeros_step
-                print ('j-nu=',j_nu,' not enough zeros to cover l_min, increasing by ',n_zeros_step,' to',n_zeros)
+                self.logger.info ('j-nu=%s not enough zeros to cover l_min, increasing by %s to %s',j_nu,n_zeros_step,n_zeros)
             else:
                 break
         theta_min2=theta[theta<=theta_min][-1]
@@ -64,7 +56,7 @@ class hankel_transform():
         x*=theta>=theta_min2
         theta=theta[x]
         if prune_theta!=0:
-            print('pruning theta, log_space,n_f:',prune_log_space,prune_theta)
+            self.logger.info('pruning theta, log_space:%s n_f:%s',prune_log_space,prune_theta)
             N=len(theta)
             if prune_log_space:
                 idx=np.unique(np.int64(np.logspace(0,np.log10(N-1),N/prune_theta)))#pruning can be worse than prune_theta factor due to repeated numbers when logspace number are convereted to int.
@@ -73,14 +65,14 @@ class hankel_transform():
                 idx=np.arange(0,N-1,step=prune_theta)
             idx=np.append(idx,[N-1])
             theta=theta[idx]
-            print ('pruned theta:',len(theta))
+            self.logger.info ('pruned theta:%s',len(theta))
         theta=np.unique(theta)
-        print ('nr:',len(theta))
+        self.logger.info ('nr:%s',len(theta))
         J=jn(j_nu,np.outer(theta,l))
         J_nu1=jn(j_nu+1,zeros)
-        return l,theta,J,J_nu1,zeros
+        return l,l_max,theta,J,J_nu1,zeros
 
-    def cl_grid(self,l_cl=[],cl=[],m1_m2=[],taper=False,**kwargs):
+    def _cl_grid(self,l_cl=[],cl=[],m1_m2=[],taper=False,**kwargs):
         if taper:
             sself.taper_f=self.taper(l=l_cl,**kwargs)
             cl=cl*taper_f
@@ -92,7 +84,7 @@ class hankel_transform():
             cl2=cl_int(self.l[m1_m2])
         return cl2
 
-    def cl_cov_grid(self,l_cl=[],cl_cov=[],m1_m2=[],taper=False,**kwargs):
+    def _cl_cov_grid(self,l_cl=[],cl_cov=[],m1_m2=[],taper=False,**kwargs):
         if taper:#FIXME there is no check on change in taper_kwargs
             if self.taper_f2 is None or not np.all(np.isclose(self.taper_f['l'],l_cl)):
                 self.taper_f=self.taper(l=l_cl,**kwargs)
@@ -109,34 +101,34 @@ class hankel_transform():
         return cl2
 
     def projected_correlation(self,l_cl=[],cl=[],m1_m2=[],taper=False,**kwargs):
-        cl2=self.cl_grid(l_cl=l_cl,cl=cl,m1_m2=m1_m2,taper=taper,**kwargs)
+        cl2=self._cl_grid(l_cl=l_cl,cl=cl,m1_m2=m1_m2,taper=taper,**kwargs)
         w=np.dot(self.J[m1_m2],cl2/self.J_nu1[m1_m2]**2)
-        w*=(2.*self.l_max**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
+        w*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],w
 
     def spherical_correlation(self,l_cl=[],cl=[],m1_m2=[],taper=False,**kwargs):
     #we will use relation spherical_jn(z)=j{n+0.5}(z)*sqrt(pi/2z)
     #cl will be written as k*cl
-        cl2=self.cl_grid(l_cl=l_cl,cl=cl,m1_m2=m1_m2,taper=taper,**kwargs)
+        cl2=self._cl_grid(l_cl=l_cl,cl=cl,m1_m2=m1_m2,taper=taper,**kwargs)
         j_f=np.sqrt(np.pi/2./np.outer(self.theta[m1_m2],self.l[m1_m2]))
         w=np.dot(self.J[m1_m2],cl2*self.l[m1_m2]/self.J_nu1[m1_m2]**2)
-        w*=(2.*self.l_max**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
+        w*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],w
 
     def projected_covariance(self,l_cl=[],cl_cov=[],m1_m2=[],taper=False,**kwargs):
         #when cl_cov can be written as vector, eg. gaussian covariance
-        cl1=self.cl_grid(l_cl=l_cl,cl=cl_cov,m1_m2=m1_m2,taper=taper,**kwargs)
+        cl1=self._cl_grid(l_cl=l_cl,cl=cl_cov,m1_m2=m1_m2,taper=taper,**kwargs)
         # cov=np.dot(self.J[m1_m2],(self.J[m1_m2]*cl1*cl2/self.J_nu1[m1_m2]**2).T)
         cov=np.einsum('rk,k,sk->rs',self.J[m1_m2],cl1/self.J_nu1[m1_m2]**2,
                     self.J[m1_m2],optimize=True)
-        cov*=(2.*self.l_max**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
+        cov*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],cov
 
     def projected_covariance2(self,l_cl=[],cl_cov=[],m1_m2=[],taper=False,**kwargs):
         #when cl_cov is a 2-d matrix
-        cl_cov2=cl_cov#self.cl_cov_grid(l_cl=l_cl,cl_cov=cl_cov,m1_m2=m1_m2,taper=taper,**kwargs)
+        cl_cov2=cl_cov#self._cl_cov_grid(l_cl=l_cl,cl_cov=cl_cov,m1_m2=m1_m2,taper=taper,**kwargs)
         cov=np.dot(self.J[m1_m2],np.dot(self.J[m1_m2]/self.J_nu1[m1_m2]**2,cl_cov2).T)
-        cov*=(2.*self.l_max**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
+        cov*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],cov
 
     def taper(self,l=[],large_k_lower=10,large_k_upper=100,low_k_lower=0,low_k_upper=1.e-5):
@@ -156,10 +148,10 @@ class hankel_transform():
         return np.sqrt(np.diagonal(cov))
 
     def skewness(self,l_cl=[],cl1=[],cl2=[],cl3=[],m1_m2=[],taper=False,**kwargs):
-        cl1=self.cl_grid(l_cl=l_cl,cl=cl1,m1_m2=m1_m2,taper=taper,**kwargs)
-        cl2=self.cl_grid(l_cl=l_cl,cl=cl2,m1_m2=m1_m2,taper=taper,**kwargs)
-        cl3=self.cl_grid(l_cl=l_cl,cl=cl3,m1_m2=m1_m2,taper=taper,**kwargs)
+        cl1=self._cl_grid(l_cl=l_cl,cl=cl1,m1_m2=m1_m2,taper=taper,**kwargs)
+        cl2=self._cl_grid(l_cl=l_cl,cl=cl2,m1_m2=m1_m2,taper=taper,**kwargs)
+        cl3=self._cl_grid(l_cl=l_cl,cl=cl3,m1_m2=m1_m2,taper=taper,**kwargs)
         skew=np.einsum('ji,ki,li',self.J[m1_m2],self.J[m1_m2],
                         self.J[m1_m2]*cl1*cl2*cl3/self.J_nu1[m1_m2]**2)
-        skew*=(2.*self.l_max**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
+        skew*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],skew

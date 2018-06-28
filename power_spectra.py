@@ -67,7 +67,9 @@ class_accuracy_settings={ #from Vanessa. To avoid class errors due to compiler i
 
 class Power_Spectra():
     def __init__(self,cosmo_params=cosmo_fid,pk_params=pk_params,cosmo=cosmo,
-                 silence_camb=False,pk_func=None,SSV_cov=False,scenario=None):
+                 silence_camb=False,pk_func=None,SSV_cov=False,scenario=None,
+                 logger=None):
+        self.logger=logger
         self.cosmo_params=cosmo_params
         self.pk_params=pk_params
         self.cosmo=cosmo
@@ -141,7 +143,7 @@ class Power_Spectra():
             try:
                 ps[i]= pyccl_pkf(cosmo_ccl,kh,1./(1+z[i]))
             except Exception as err:
-                print ('CCL err',err,z[i])
+                self.logger.error ('CCL err %s %s',err,z[i])
                 if not np.any(ps0):
                     ps0=pyccl.linear_matter_power(cosmo_ccl,kh,1./(1.+z0))
                 Dz=self.DZ_int(z=[z0,z[i]])

@@ -11,8 +11,10 @@ sky_area=np.pi*4/(d2r)**2 #in degrees
 
 
 class Covariance_utils():
-    def __init__(self,f_sky=0,l=None):
+    def __init__(self,f_sky=0,l=None,logger=None,l_cut_jnu=None):
+        self.logger=logger
         self.l=l
+        self.l_cut_jnu=l_cut_jnu #this is needed for hankel_transform case for xi. Need separate sigma_window calc.
         self.f_sky=f_sky
         self.set_window_params(f_sky=self.f_sky)
         self.window_func(theta_win=self.theta_win,f_sky=self.f_sky)
@@ -34,7 +36,14 @@ class Covariance_utils():
         return W
 
     def sigma_win_calc(self,cls_lin):
-        self.sigma_win=np.dot(self.Win**2*np.gradient(self.l)*self.l,cls_lin.T)
+        if self.l_cut_jnu is None:
+            self.sigma_win=np.dot(self.Win**2*np.gradient(self.l)*self.l,cls_lin.T)
+        else: #FIXME: This is ugly. Only needed for hankel transform (not wigner). Remove if HT is deprecated.
+            self.sigma_win={}
+            for m1_m2 in self.l_cut_jnu['m1_m2s']:
+                lc=self.l_cut_jnu[m1_m2]
+                self.sigma_win[m1_m2]=np.dot(self.Win[lc]**2*np.gradient(self.l[lc])*self.l[lc],cls_lin[:,lc].T)
+        #FIXME: This is ugly
 
     def corr_matrix(self,cov=[]):
         diag=np.diag(cov)

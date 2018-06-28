@@ -6,8 +6,9 @@ import numpy as np
 import itertools
 
 class wigner_transform():
-    def __init__(self,theta=[],l=[],m1_m2=[(0,0)],**kwargs):
+    def __init__(self,theta=[],l=[],m1_m2=[(0,0)],logger=None,**kwargs):
         self.name='Wigner'
+        self.logger=logger
         self.l=l
         self.norm=(2*l+1.)*np.gradient(l)/(4.*np.pi)
         self.wig_d={}

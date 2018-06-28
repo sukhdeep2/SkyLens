@@ -19,11 +19,10 @@ def wigner_d(l,m1,m2,theta):
     d_mat=d_mat.reshape(1,len(d_mat))
     theta=theta.reshape(len(theta),1)
     d_mat=d_mat*((np.sin(theta/2.0)**a)*(np.cos(theta/2.0)**b))
-#     J=jacobi(l,a,b,np.cos(theta).reshape(len(theta),1))
-    d_mat*=jacobi(l,a,b,np.cos(theta).reshape(len(theta),1))
+    d_mat*=jacobi(l,a,b,np.cos(theta))
     return d_mat
 
-    
+
 def log_factorial(n):
     return loggamma(n+1)
 

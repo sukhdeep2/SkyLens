@@ -14,13 +14,14 @@ c=c.to(u.km/u.second)
 
 class Angular_power_spectra():
     def __init__(self,silence_camb=False,l=np.arange(2,2001),power_spectra_kwargs={},
-                z_PS=None,nz_PS=100,log_z_PS=False,z_PS_max=None,
+                z_PS=None,nz_PS=100,log_z_PS=False,z_PS_max=None,logger=None,
                 SSV_cov=False,tracer='kappa',cov_utils=None):
+        self.logger=logger
         self.PS=Power_Spectra(silence_camb=silence_camb,SSV_cov=SSV_cov,**power_spectra_kwargs)
         self.l=l
         self.cl_f=(l+0.5)**2/(l*(l+1.)) # cl correction from Kilbinger+ 2017
         self.tracer=tracer
-        
+
         self.SSV_cov=SSV_cov
 
         self.DC=None #these should be cosmology depdendent. set to none before when varying cosmology
@@ -56,10 +57,10 @@ class Angular_power_spectra():
              This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts. The shape of the output is l,nz, where nz is the number of z bins.
         """
         if self.clz is not None:
-            return 
+            return
         if cosmo_h is None:
             cosmo_h=self.PS.cosmo_h
-        
+
         l=self.l
 
         z=self.z
@@ -95,11 +96,11 @@ class Angular_power_spectra():
             lz=kh*DC_i-0.5
             cls[i][:]+=k_to_l(l,lz,pk[i]/DC_i**2)
             if self.SSV_cov:
-                Rls[i][:]+=k_to_l(l,lz,self.PS.R1[i]) 
-                RKls[i][:]+=k_to_l(l,lz,self.PS.Rk[i]) 
+                Rls[i][:]+=k_to_l(l,lz,self.PS.R1[i])
+                RKls[i][:]+=k_to_l(l,lz,self.PS.Rk[i])
                 cls_lin[i][:]+=k_to_l(l,lz,self.PS.pk_lin[i]/DC_i**2)
-        
-        
+
+
             #cl*=2./np.pi #comparison with CAMB requires this.
         self.clz={'cls':cls,'l':l,'cH':cH,'dchi':cH*self.dz,'chi':chi}
         if self.SSV_cov:
