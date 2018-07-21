@@ -5,6 +5,7 @@ from power_spectra import *
 from angular_power_spectra import *
 from lsst_utils import *
 from hankel_transform import *
+from wigner_transform import *
 from binning import *
 from cov_utils import *
 from lensing_utils import *
@@ -136,7 +137,7 @@ class lensing_lensing():
         clz=self.Ang_PS.clz
         cls=clz['cls']
         f=self.Ang_PS.cl_f
-        sc=zs1['sig_c_int']*zs2['sig_c_int']
+        sc=zs1['kernel_int']*zs2['kernel_int']
 
         cl=np.dot(sc*clz['dchi'],cls)
 
@@ -158,7 +159,7 @@ class lensing_lensing():
         l=self.l
         zs1=self.zs_bins[zs1_indx]#.copy() #we will modify these locally
         zs2=self.zs_bins[zs2_indx]#.copy()
-        if zs1['sig_c'] is None or zs2['sig_c'] is None:
+        if zs1['kernel'] is None or zs2['kernel'] is None:
             self.lensing_utils.set_zs_sigc(cosmo_h=cosmo_h,zl=self.Ang_PS.z)
 
         if self.Ang_PS.clz is None:
@@ -182,8 +183,9 @@ class lensing_lensing():
         cov={}
         cov['final']=None
         l=self.l
-        cov['G'],cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,
-                                        self.lensing_utils.SN,zs_indx,self.do_xi)
+        cov['G'],cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,cls,cls,
+                                        self.lensing_utils.SN,self.lensing_utils.SN,self.lensing_utils.SN,
+                                        zs_indx,self.do_xi)
 
         cov['final']=cov['G']
 
@@ -196,13 +198,13 @@ class lensing_lensing():
             zs4=self.zs_bins[zs_indx[3]]
             sigma_win=self.cov_utils.sigma_win
 
-            sig_cL=zs1['sig_c_int']*zs2['sig_c_int']
-            sig_cL*=zs3['sig_c_int']*zs4['sig_c_int']
+            sig_cL=zs1['kernel_int']*zs2['kernel_int']
+            sig_cL*=zs3['kernel_int']*zs4['kernel_int']
 
             sig_cL*=self.Ang_PS.clz['dchi']
 
             if self.do_xi:
-                cov['sig_cL']=sig_cL
+                cov['kernelL']=sig_cL
                 return cov
 
             sig_cL*=sigma_win
@@ -314,7 +316,7 @@ class lensing_lensing():
         cov_xi['G']/=Norm
         cov_xi['final']=cov_xi['G']
         if self.SSV_cov:
-            sig_cL=cov_cl['sig_cL']*self.cov_utils.sigma_win[m1_m2]
+            sig_cL=cov_cl['kernelL']*self.cov_utils.sigma_win[m1_m2]
 
             #tidal term is added to clr in the calling function
             if self.HT.name=='Hankel':
@@ -545,16 +547,17 @@ if __name__ == "__main__":
         cl=cl0['cl']
         cov=cl0['cov']
     else:
-        l_max=2e4
+        l_max=2e2
         l_W=np.arange(2,l_max,dtype='int')
-        WT_kwargs={'l':l_W ,'theta': XI_H.HT.theta[(2,2)],'m1_m2':[(2,2),(2,-2)]}
+        WT_kwargs={'l':l_W ,'theta': np.logspace(-1,1,50),'m1_m2':[(2,2),(2,-2)]}
         cProfile.run("WT=wigner_transform(**WT_kwargs)",'output_stats_3bins')
         kappaS = lensing_lensing(zs_bins=zs_bins,l=l,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,
                     stack_data=stack_data,SSV_cov=SSV_cov,HT=WT,
                     tidal_SSV_cov=tidal_SSV_cov,do_xi=do_xi,bin_xi=bin_xi,
                     theta_bins=theta_bins)#ns=np.inf)
         xiSG=kappaS.xi_tomo()#make the compute graph
-        cProfile.run("xi0=xiSG['stack'].compute(num_workers=4)",'output_stats_3bins')
+        # cProfile.run("xi0=xiSG['stack'].compute(num_workers=4)",'output_stats_3bins')
+        xi0=xiSG['stack'].compute(num_workers=4)
 
 
     p = pstats.Stats('output_stats_3bins')

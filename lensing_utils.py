@@ -95,16 +95,16 @@ class Lensing_utils():
         rho=self.Rho_crit(cosmo_h=cosmo_h)*cosmo_h.Om0
 
         for i in np.arange(self.ns_bins):
-            self.zs_bins[i]['sig_c']=rho/self.sigma_crit(zl=zl,
+            self.zs_bins[i]['kernel']=rho/self.sigma_crit(zl=zl,
                                                         zs=self.zs_bins[i]['z'],
                                                         cosmo_h=cosmo_h)
-            self.zs_bins[i]['sig_c_int']=np.dot(self.zs_bins[i]['pzdz'],self.zs_bins[i]['sig_c'])
-            self.zs_bins[i]['sig_c_int']/=self.zs_bins[i]['Norm']
+            self.zs_bins[i]['kernel_int']=np.dot(self.zs_bins[i]['pzdz'],self.zs_bins[i]['kernel'])
+            self.zs_bins[i]['kernel_int']/=self.zs_bins[i]['Norm']
 
     def reset_zs(self):
         """
             Reset cosmology dependent values for each source bin
         """
         for i in np.arange(self.ns_bins):
-            self.zs_bins[i]['sig_c']=None
-            self.zs_bins[i]['sig_c_int']=None
+            self.zs_bins[i]['kernel']=None
+            self.zs_bins[i]['kernel_int']=None

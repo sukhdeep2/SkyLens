@@ -50,12 +50,30 @@ class Covariance_utils():
         return cov/np.sqrt(np.outer(diag,diag))
 
 
-    def gaussian_cov_auto(self,cls,SN,z_indx,do_xi):
-        G1324= ( cls[(z_indx[0], z_indx[2]) ] + SN[:,z_indx[0], z_indx[2] ] )
-        G1324*=( cls[(z_indx[1], z_indx[3]) ] + SN[:,z_indx[1], z_indx[3] ] )
+    def gaussian_cov_auto(self,cls,SN,tracers,z_indx,do_xi):
+        """
+        This is 'auto' covariance for a particular power spectra, but the power spectra
+        itself could a cross-correlation, eg. galaxy-lensing cross correlations.
+        For auto correlation, eg. lensing-lensing, cls1,cls2,cl12 should be same. Same for shot noise
+        SN.
 
-        G1423= ( cls[(z_indx[0], z_indx[3]) ] + SN[:,z_indx[0], z_indx[3] ] )
-        G1423*=( cls[(z_indx[1], z_indx[2]) ] + SN[:,z_indx[1], z_indx[2] ] )
+        """
+        G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]
+             + (SN.get((tracers[0],tracers[2]))[:,z_indx[0], z_indx[2] ] or 0)
+                )
+             #get returns None if key doesnot exist. or 0 adds 0 is SN is none
+
+        G1324*=( cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]
+              +(SN.get((tracers[1],tracers[3]))[:,z_indx[1], z_indx[3] ] or 0)
+              )
+
+        G1423= ( cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]
+              + (SN.get((tracers[0],tracers[3]))[:,z_indx[0], z_indx[3] ] or 0)
+              )
+
+        G1423*=( cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]
+             + (SN.get((tracers[1],tracers[2]))[:,z_indx[1], z_indx[2] ] or 0)
+                )
 
         G=None
         if not do_xi:
