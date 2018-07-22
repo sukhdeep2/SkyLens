@@ -378,7 +378,8 @@ class cov_3X2():
                                     bin_utils=self.xi_bin_utils[m1_m2])
         return xi_b
 
-    def xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,corrs=[('shear','shear')]):
+    def xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
+                corrs=[('shear','shear')]):
         """
             Computed tomographic angular correlation functions. First calls the tomographic
             power spectra and covariance and then does the hankel transform and  binning.
@@ -438,7 +439,7 @@ class cov_3X2():
                             if self.tidal_SSV_cov:
                                 clr+=self.Ang_PS.clz['clsRK'][:,l_cut]/6.
 
-                        for im2 in np.arange(im,len(m1_m2s_2)):
+                        for im2 in np.arange(im1,len(m1_m2s_2)):
                             m1_m2_cross=m1_m2s_2[im2]
                             cov_xi[corr][m1_m2+m1_m2_cross]={}
 
@@ -474,10 +475,11 @@ class cov_3X2():
 
         if self.do_xi:
             est='xi'
+            len_bins=len(self.theta_bins)-1
 
         n_bins=0
         for corr in corrs:
-            if est=='xi':
+            if self.do_xi:
                 n_m1_m2=len(self.m1_m2s[corr])
             n_bins+=len(self.corr_indxs[corr])*n_m1_m2 #np.int64(nbins*(nbins-1.)/2.+nbins)
 
@@ -485,17 +487,18 @@ class cov_3X2():
 
         i=0
         for corr in corrs:
-            if est=='xi':
+            if self.do_xi:
                 n_m1_m2=len(self.m1_m2s[corr])
 
             for i in np.arange(n_m1_m2):
                 dat_c=dat[est][corr]
-                if est=='xi':
-                    dat_c=dat[est][corr][self.m1_m2s[corr]]
+                if self.do_xi:
+                    dat_c=dat[est][corr][self.m1_m2s[corr][i]]
 
-            for indx in self.corr_indxs[corr]:
-                D_final[i*len_bins:(i+1)*len_bins]=dat_c[indx]
-                i+=1
+                for indx in self.corr_indxs[corr]:
+                    # print(len_bins,dat_c[indx].shape)
+                    D_final[i*len_bins:(i+1)*len_bins]=dat_c[indx]
+                    i+=1
 
         cov_final=np.zeros((len(D_final),len(D_final)))#np.int(nD2*(nD2+1)/2)
 
@@ -515,14 +518,17 @@ class cov_3X2():
                 corr=corr1+corr2
                 n_m1_m2_1=1
                 n_m1_m2_2=1
-                if est=='xi':
+                if self.do_xi:
                     m1_m2_1=self.m1_m2s[corr1]
                     m1_m2_2=self.m1_m2s[corr2]
                     n_m1_m2_1=len(m1_m2_1)
                     n_m1_m2_2=len(m1_m2_2)
 
-                for im1 in np.arange(m1_m2_1):
-                    for im2 in np.arange(m1_m2_2):
+                for im1 in np.arange(n_m1_m2_1):
+                    start_m1=0
+                    if corr1==corr2:
+                        start_m1=im1
+                    for im2 in np.arange(im1,n_m1_m2_2):
                         indx0_m1=(im1)*nc1*len_bins
                         indx0_m2=(im2)*nc2*len_bins
                         for i1 in np.arange(nc1):
@@ -536,8 +542,27 @@ class cov_3X2():
 
                                 i=indx0_c1+indx0_1+indx0_m1
                                 j=indx0_c2+indx0_2+indx0_m2
-                                cov_final[i:i+len_bins,j:j+len_bins]=dat['cov'][corr][indx]['final']
-                                cov_final[j:j+len_bins,i:i+len_bins]=dat['cov'][corr][indx]['final']
+
+                                if self.do_xi:
+                                    cov_here=dat['cov'][corr][m1_m2_1[im1]+m1_m2_2[im2]][indx]['final']
+                                else:
+                                    cov_here=dat['cov'][corr][indx]['final']
+
+                                if im1==im2:
+                                    cov_final[i:i+len_bins,j:j+len_bins]=cov_here
+                                    cov_final[j:j+len_bins,i:i+len_bins]=cov_here
+
+                                if im1!=im2:
+                                    i=indx0_c1+indx0_1+indx0_m1
+                                    j=indx0_c2+indx0_2+indx0_m2
+                                    cov_final[i:i+len_bins,j:j+len_bins]=cov_here
+                                    cov_final[j:j+len_bins,i:i+len_bins]=cov_here.T
+
+                                    i=indx0_c1+indx0_1+indx0_m2
+                                    j=indx0_c2+indx0_2+indx0_m1
+                                    cov_final[i:i+len_bins,j:j+len_bins]=cov_here.T
+                                    cov_final[j:j+len_bins,i:i+len_bins]=cov_here
+
 
             # dat2=dat['cov']
             # for jD2 in np.arange(iD2,nD2):
