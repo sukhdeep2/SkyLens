@@ -487,13 +487,15 @@ class cov_3X2():
 
         i=0
         for corr in corrs:
+            n_m1_m2=1
             if self.do_xi:
-                n_m1_m2=len(self.m1_m2s[corr])
+                m1_m2=self.m1_m2s[corr]
+                n_m1_m2=len(m1_m2)
 
-            for i in np.arange(n_m1_m2):
+            for im in np.arange(n_m1_m2):
                 dat_c=dat[est][corr]
                 if self.do_xi:
-                    dat_c=dat[est][corr][self.m1_m2s[corr][i]]
+                    dat_c=dat[est][corr][m1_m2[im]]
 
                 for indx in self.corr_indxs[corr]:
                     # print(len_bins,dat_c[indx].shape)
