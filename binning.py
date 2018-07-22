@@ -7,7 +7,7 @@ class binning():
                  j_nu=[0],prune_r=0,prune_log_space=True):
         pass
     
-    def bin_utils(self,r=[],r_bins=[],r_dim=2,mat_dims=None):
+    def bin_utils(self,r=[],r_bins=[],r_dim=2,wt=1,mat_dims=None):
         bu={}
         bu['bin_center']=np.sqrt(r_bins[1:]*r_bins[:-1])
         bu['n_bins']=len(r_bins)-1
@@ -25,10 +25,12 @@ class binning():
         r2_idx=[i for i in np.arange(len(r2)) if r2[i] in r]
         dr=dr[r2_idx]
         bu['r_dr']=r**(r_dim-1)*dr
+        bu['r_dr']*=wt
         bu['norm']=np.dot(bu['r_dr'],binning_mat)
 
         x=np.logical_or(r_bins[1:]<=np.amin(r),r_bins[:-1]>=np.amax(r))
         bu['norm'][x]=np.inf
+#         print(bu['norm'])
 
         if mat_dims is not None:
             bu['r_dr_m']={}
@@ -91,7 +93,7 @@ class binning():
 
 
 
-#simpler binning code for testing.
+#more basic binning code for testing.
 def bin_cov(r=[],cov=[],r_bins=[]):
     bin_center=np.sqrt(r_bins[1:]*r_bins[:-1])
     n_bins=len(bin_center)
@@ -109,7 +111,7 @@ def bin_cov(r=[],cov=[],r_bins=[]):
             xj=bin_idx==j
             norm_ij=np.sum(r_dr[xi])*np.sum(r_dr[xj])
             if i==j:
-                print i,j,norm_ij
+                print( i,j,norm_ij)
             if norm_ij==0:
                 continue
             cov_int[i][j]=np.sum(cov_r_dr[xi,:][:,xj])/norm_ij

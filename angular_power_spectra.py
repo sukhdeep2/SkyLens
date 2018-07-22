@@ -14,33 +14,56 @@ c=c.to(u.km/u.second)
 
 class Angular_power_spectra():
     def __init__(self,silence_camb=False,l=np.arange(2,2001),power_spectra_kwargs={},
-                zl=None,n_zl=100,SSV_cov=False,tracer='kappa',cov_utils=None):
+                z_PS=None,nz_PS=100,log_z_PS=False,z_PS_max=None,logger=None,
+                SSV_cov=False,tracer='kappa',cov_utils=None):
+        self.logger=logger
         self.PS=Power_Spectra(silence_camb=silence_camb,SSV_cov=SSV_cov,**power_spectra_kwargs)
         self.l=l
+        self.cl_f=(l+0.5)**2/(l*(l+1.)) # cl correction from Kilbinger+ 2017
         self.tracer=tracer
-        
+
         self.SSV_cov=SSV_cov
 
         self.DC=None #these should be cosmology depdendent. set to none before when varying cosmology
         self.clz=None
         self.cov_utils=cov_utils
-        self.zl=zl
+        self.set_z_PS(z=z_PS,nz=nz_PS,log_z=log_z_PS,z_max=z_PS_max)
 
-    
+        self.dz=np.gradient(self.z)
+
+    def set_z_PS(self,z=None,nz=10,log_z=False,z_max=None):
+        """
+            Define redshifts where we compute the matter power spectra.
+            These can be input when intializing the class or set here.
+            Can be set in log or linear space.
+            Redshift range here will be from z=0 to z_max
+        """
+        z_min=0
+        if z_max is None:
+            z_max=3
+
+        if z is None:
+            if log_z:#bins for z_lens.
+                self.z=np.logspace(np.log10(max(z_min,1.e-4)),np.log10(z_max),nz)
+            else:
+                self.z=np.linspace(z_min,z_max,nz)
+        else:
+            self.z=z
+        self.dz=np.gradient(self.z)
+
     def angular_power_z(self,z=None,pk_params=None,cosmo_h=None,
                     cosmo_params=None,pk_func=None):
         """
-             This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts. The shape of the output is l,n_z, where n_z is the number of z bins.
+             This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts. The shape of the output is l,nz, where nz is the number of z bins.
         """
         if self.clz is not None:
-            return 
+            return
         if cosmo_h is None:
             cosmo_h=self.PS.cosmo_h
-        
+
         l=self.l
 
-        if z is None:
-            z=self.zl
+        z=self.z
 
         nz=len(z)
         nl=len(l)
@@ -58,7 +81,7 @@ class Angular_power_spectra():
             RKls=np.zeros((nz,nl),dtype='float32')
             cls_lin=np.zeros((nz,nl),dtype='float32')#*u.Mpc#**2
 
-        cH=c/(cosmo_h.efunc(self.zl)*cosmo_h.H0)
+        cH=c/(cosmo_h.efunc(self.z)*cosmo_h.H0)
         cH=cH.value
 
         def k_to_l(l,lz,f_k): #take func from k to l space
@@ -67,19 +90,27 @@ class Angular_power_spectra():
 
         kh=self.PS.kh
         pk=self.PS.pk
-        
+        chi=cosmo_h.comoving_transverse_distance(z).value
         for i in np.arange(nz):
-            DC_i=cosmo_h.comoving_transverse_distance(z[i]).value#because camb k in h/mpc
+            DC_i=chi[i] #cosmo_h.comoving_transverse_distance(z[i]).value#because camb k in h/mpc
             lz=kh*DC_i-0.5
             cls[i][:]+=k_to_l(l,lz,pk[i]/DC_i**2)
             if self.SSV_cov:
-                Rls[i][:]+=k_to_l(l,lz,self.PS.R1[i]) 
-                RKls[i][:]+=k_to_l(l,lz,self.PS.Rk[i]) 
+                Rls[i][:]+=k_to_l(l,lz,self.PS.R1[i])
+                RKls[i][:]+=k_to_l(l,lz,self.PS.Rk[i])
                 cls_lin[i][:]+=k_to_l(l,lz,self.PS.pk_lin[i]/DC_i**2)
-        
-        f=(l+0.5)**2/(l*(l+1.)) # cl correction from Kilbinger+ 2017
+
+
             #cl*=2./np.pi #comparison with CAMB requires this.
-        self.clz={'cls':cls,'l':l,'cH':cH,'f':f}
+        self.clz={'cls':cls,'l':l,'cH':cH,'dchi':cH*self.dz,'chi':chi}
         if self.SSV_cov:
             self.cov_utils.sigma_win_calc(cls_lin=cls_lin)
             self.clz.update({'clsR':cls*Rls,'clsRK':cls*RKls})
+            # clsR=np.einsum('ji,jk->ikj',cls*Rls,cls*Rls)
+            # clsRK=np.einsum('ji,jk->ikj',cls*RKls,cls*RKls)/36.
+            # clsR_RK=np.einsum('ji,jk->ikj',cls*Rls,cls*RKls)/6.
+            # self.clz.update({'clsR':clsR,'clsRK':clsRK,'clsR_RK':clsR_RK})
+
+    def reset(self):
+        self.clz=None
+        self.PS.reset()
