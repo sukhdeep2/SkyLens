@@ -58,21 +58,26 @@ class Covariance_utils():
         SN.
 
         """
+        # print(cls[(tracers[0],tracers[2])].keys())
         G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]
-             + (SN.get((tracers[0],tracers[2]))[:,z_indx[0], z_indx[2] ] or 0)
+             # + (SN.get((tracers[0],tracers[2]))[:,z_indx[0], z_indx[2] ]  or 0)
+             + (SN[(tracers[0],tracers[2])][:,z_indx[0], z_indx[2] ] if SN.get((tracers[0],tracers[2])) is not None else 0)
                 )
              #get returns None if key doesnot exist. or 0 adds 0 is SN is none
 
         G1324*=( cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]
-              +(SN.get((tracers[1],tracers[3]))[:,z_indx[1], z_indx[3] ] or 0)
+              # +(SN.get((tracers[1],tracers[3]))[:,z_indx[1], z_indx[3] ] or 0)
+              + (SN[(tracers[1],tracers[3])][:,z_indx[1], z_indx[3] ] if SN.get((tracers[1],tracers[3])) is not None else 0)
               )
 
         G1423= ( cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]
-              + (SN.get((tracers[0],tracers[3]))[:,z_indx[0], z_indx[3] ] or 0)
+              # + (SN.get((tracers[0],tracers[3]))[:,z_indx[0], z_indx[3] ] or 0)
+              + (SN[(tracers[0],tracers[3])][:,z_indx[0], z_indx[3] ] if SN.get((tracers[0],tracers[3])) is not None else 0)
               )
 
         G1423*=( cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]
-             + (SN.get((tracers[1],tracers[2]))[:,z_indx[1], z_indx[2] ] or 0)
+             # + (SN.get((tracers[1],tracers[2]))[:,z_indx[1], z_indx[2] ] or 0)
+             + (SN[(tracers[1],tracers[2])][:,z_indx[1], z_indx[2] ] if SN.get((tracers[1],tracers[2])) is not None else 0)
                 )
 
         G=None
