@@ -3,6 +3,7 @@ import copy
 import numpy as np
 from lensing_utils import *
 from astropy.cosmology import Planck15 as cosmo
+from astropy.table import Table
 cosmo_h_PL=cosmo.clone(H0=100)
 
 
@@ -15,40 +16,40 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None,ns=0):
     """
         zp: photometrix redshift bins
         p_zp: Probability p(zp) of galaxies in photometric bins
-        bias: bias in the true redshift distribution relative to zp.. gaussian will be centered at 
+        bias: bias in the true redshift distribution relative to zp.. gaussian will be centered at
                 pz+bias
-        sigma: scatter in the true redshift distribution relative to zp.. sigma error of the 
+        sigma: scatter in the true redshift distribution relative to zp.. sigma error of the
                 gaussian
         zs: True z_source, for which to compute p(z_source)
         ns: Source number density. Needed to return n(zs)
     """
     if zs is None:
         zs=np.linspace(min(zp-sigma*5),max(zp-sigma*5),500)
-    
+
     y=np.tile(zs, (len(zp),1)  )
     pdf=gaussian.pdf(y.T,loc=zp+bias,scale=sigma).T
     # pdf=np.zeros((len(zp),len(zs)))
     # for i in np.arange(len(zp)):
     #     pdf[i,:]=gaussian.pdf(zs,loc=zp[i]+bias[i],scale=sigma[i])
-    
+
     dzp=np.gradient(zp)
-    
+
     p_zs=np.dot(dzp*p_zp,pdf)
 
     dzs=np.gradient(zs)
     p_zs/=np.sum(p_zs*dzs)
     nz=dzs*p_zs*ns
     return zs,p_zs,nz
-        
+
 def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
                     zp_sigma=None,zs=None):
     """
-        Setting source redshift bins in the format used in code. 
-        Need 
-        zs (array): redshift bins for every source bin. if z_bins is none, then dictionary with 
+        Setting source redshift bins in the format used in code.
+        Need
+        zs (array): redshift bins for every source bin. if z_bins is none, then dictionary with
                     with values for each bin
         p_zs: redshift distribution. same format as zs
-        z_bins: if zs and p_zs are for whole survey, then bins to divide the sample. If 
+        z_bins: if zs and p_zs are for whole survey, then bins to divide the sample. If
                 tomography is based on lens redshift, then this arrays contains those redshifts.
         ns: The number density for each bin to compute shape noise.
     """
@@ -71,7 +72,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     for i in np.arange(nz_bins):
         zs_bins[i]={}
         indx=zp.searchsorted(z_bins[i:i+2])
-        
+
         if ztrue_func is None:
             if indx[0]==indx[1]:
                 indx[1]=-1
@@ -101,12 +102,12 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
 def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
                         zp_sigma=None,cosmo_h=None,z_bins=None):
     """
-        Setting source redshift bins in the format used in code. 
-        Need 
-        zs (array): redshift bins for every source bin. if z_bins is none, then dictionary with 
+        Setting source redshift bins in the format used in code.
+        Need
+        zs (array): redshift bins for every source bin. if z_bins is none, then dictionary with
                     with values for each bin
         p_zs: redshift distribution. same format as zs
-        z_bins: if zs and p_zs are for whole survey, then bins to divide the sample. If 
+        z_bins: if zs and p_zs are for whole survey, then bins to divide the sample. If
                 tomography is based on lens redshift, then this arrays contains those redshifts.
         ns: The number density for each bin to compute shape noise.
     """
@@ -136,11 +137,11 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
         zs_bins[i]['W']=1./lu.sigma_crit(zl=z_bins[i],zs=zs,cosmo_h=cosmo_h)
         zs_bins[i]['W']*=scW
         zs_bins[i]['pz']*=zs_bins[i]['W']
-        
+
         x= zs_bins[i]['pz']>-1 #1.e-10 # FIXME: for shape noise we check equality of 2 z arrays. Thats leads to null shape noise when cross the bins in covariance
         for v in ['z','pz','dz','W','nz']:
             zs_bins[i][v]=zs_bins[i][v][x]
-        
+
         zs_bins[i]['pzdz']=zs_bins[i]['pz']*zs_bins[i]['dz']
         zs_bins[i]['Norm']=np.sum(zs_bins[i]['pzdz'])
         zs_bins[i]['pz']/=zs_bins[i]['Norm']
@@ -154,12 +155,12 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
 def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bias=None,
                     zp_sigma=None,zg=None):
     """
-        Setting source redshift bins in the format used in code. 
-        Need 
-        zg (array): redshift bins for every galaxy bin. if z_bins is none, then dictionary with 
+        Setting source redshift bins in the format used in code.
+        Need
+        zg (array): redshift bins for every galaxy bin. if z_bins is none, then dictionary with
                     with values for each bin
         p_zs: redshift distribution. same format as zs
-        z_bins: if zg and p_zg are for whole survey, then bins to divide the sample. If 
+        z_bins: if zg and p_zg are for whole survey, then bins to divide the sample. If
                 tomography is based on lens redshift, then this arrays contains those redshifts.
         ns: The number density for each bin to compute shot noise.
     """
@@ -182,7 +183,7 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
     for i in np.arange(nz_bins):
         zg_bins[i]={}
         indx=zp.searchsorted(z_bins[i:i+2])
-        
+
         if ztrue_func is None:
             if indx[0]==indx[1]:
                 indx[1]=-1
@@ -205,3 +206,21 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
         zg_bins[i]['Norm']=np.sum(zg_bins[i]['pzdz'])
     zg_bins['n_bins']=nz_bins #easy to remember the counts
     return zg_bins
+
+def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits'):
+    z_bins={}
+    t=Table.read(fname,format='fits',hdu=6)
+    nz_bins=4
+    nz=[1.496,1.5189,1.5949,0.7949]
+    for i in np.arange(nz_bins):
+        z_bins[i]={}
+        z_bins[i]['z']=t['Z_MID']
+        z_bins[i]['dz']=t['Z_HIGH']-t['Z_LOW']
+        z_bins[i]['nz']=nz[i]
+        z_bins[i]['pz']=t['BIN'+str(i+1)]
+        z_bins[i]['W']=1.
+        z_bins[i]['pzdz']=z_bins[i]['pz']*z_bins[i]['dz']
+        z_bins[i]['Norm']=np.sum(z_bins[i]['pzdz'])
+    z_bins['n_bins']=nz_bins
+    z_bins['nz']=nz
+    return z_bins
