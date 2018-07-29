@@ -225,13 +225,13 @@ class cov_3X2():
         if self.SSV_cov:
             clz=self.Ang_PS.clz
             zs1=self.z_bins[tracers[0]][zs_indx[0]]
-            zs2=self.z_bins[tracers[0]][zs_indx[1]]
-            zs3=self.z_bins[tracers[0]][zs_indx[2]]
-            zs4=self.z_bins[tracers[0]][zs_indx[3]]
+            zs2=self.z_bins[tracers[1]][zs_indx[1]]
+            zs3=self.z_bins[tracers[2]][zs_indx[2]]
+            zs4=self.z_bins[tracers[3]][zs_indx[3]]
             sigma_win=self.cov_utils.sigma_win
 
-            sig_cL=zs1['kernel_int']*zs2['kernel_int']
-            sig_cL*=zs3['kernel_int']*zs4['kernel_int']
+            sig_cL=zs1['kernel_int']*zs2['kernel_int']*zs3['kernel_int']*zs4['kernel_int']
+            # sig_cL*=zs3['kernel_int']*zs4['kernel_int']
 
             sig_cL*=self.Ang_PS.clz['dchi']
 
@@ -273,11 +273,14 @@ class cov_3X2():
                                             ,bin_utils=self.cl_bin_utils)
         return cl_b,cov_b
 
-    def combine_cl_tomo(self,cl_compute_dict={},tracers=[]):
-        cl_b={}
-        for (i,j) in self.corr_indxs[(tracers[0],tracers[1])]+self.cov_indxs:
+    def combine_cl_tomo(self,cl_compute_dict={},corr=None):
+        corr2=corr[::-1]
+        cl_b={corr:{},corr2:{}}
+
+        for (i,j) in self.corr_indxs[corr]+self.cov_indxs:
             clij=cl_compute_dict[(i,j)]
-            cl_b[(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
+            cl_b[corr][(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
+            cl_b[corr2][(j,i)]=cl_b[corr][(i,j)]
         return cl_b
 
 
@@ -293,7 +296,19 @@ class cov_3X2():
 
         l=self.l
 
-        tracers=[j for i in corrs for j in i]
+        #tracers=[j for i in corrs for j in i]
+        tracers=np.unique([j for i in corrs for j in i])
+
+        corrs2=corrs
+        if self.do_cov:#make sure we compute cl for all cross corrs necessary for covariance
+                        #FIXME: If corrs are gg and ll only, this will lead to uncessary gl. This
+                        #        is an unlikely use case though
+            corrs2=[]
+            for i in np.arange(len(tracers)):
+                for j in np.arange(i,len(tracers)):
+                    corrs2+=[(tracers[i],tracers[j])]
+
+        print(corrs2)
 
         if cosmo_h is None:
             cosmo_h=self.Ang_PS.PS.cosmo_h
@@ -319,7 +334,7 @@ class cov_3X2():
         cl={}
         cov={}
         cl_b={}
-        for corr in corrs:
+        for corr in corrs2:
             corr2=corr[::-1]
             cl[corr]={}
             cl[corr2]={}
@@ -331,8 +346,7 @@ class cov_3X2():
                                         pk_func=pk_func,corr=corr)
 
                 cl[corr2][(j,i)]=cl[corr][(i,j)]#useful in gaussian covariance calculation.
-            cl_b[corr]=delayed(self.combine_cl_tomo)(cl[corr],tracers=corr)
-            cl_b[corr2]=delayed(self.combine_cl_tomo)(cl[corr2],tracers=corr2) #may not be needed
+            cl_b=delayed(self.combine_cl_tomo)(cl[corr],corr=corr)
 
         if self.do_cov:
             for corr1 in corrs:
@@ -423,20 +437,10 @@ class cov_3X2():
         if cosmo_h is None:
             cosmo_h=self.Ang_PS.PS.cosmo_h
 
-        if self.do_cov:#make sure we compute cl for all cross corrs necessary for covariance
-                        #FIXME: If corrs are gg and ll only, this will lead to uncessary gl. This
-                        #        is an unlikely use case though
-            tracers=np.unique([j for i in corrs for j in i])
-            corrs2=[]
-            for i in np.arange(len(tracers)):
-                for j in np.arange(i,len(tracers)):
-                    corrs2+=[(tracers[i],tracers[j])]
-
-        print(corrs2)
         #Donot use delayed here. Leads to error/repeated calculations
         cls_tomo_nu=self.cl_tomo(cosmo_h=cosmo_h,cosmo_params=cosmo_params,
                             pk_params=pk_params,pk_func=pk_func,
-                            corrs=corrs2)
+                            corrs=corrs)
 
         cl=cls_tomo_nu['cl']
         cov_xi={}
@@ -478,7 +482,10 @@ class cov_3X2():
                             if self.tidal_SSV_cov:
                                 clr+=self.Ang_PS.clz['clsRK'][:,l_cut]/6.
 
-                        for im2 in np.arange(im1,len(m1_m2s_2)):
+                        start2=0
+                        if corr1==corr2:
+                            start2=im1
+                        for im2 in np.arange(start2,len(m1_m2s_2)):
                             m1_m2_cross=m1_m2s_2[im2]
                             cov_xi[corr][m1_m2+m1_m2_cross]={}
 
@@ -541,20 +548,21 @@ class cov_3X2():
                     D_final[i*len_bins:(i+1)*len_bins]=dat_c[indx]
                     i+=1
 
-        cov_final=np.zeros((len(D_final),len(D_final)))#np.int(nD2*(nD2+1)/2)
+        cov_final=np.zeros((len(D_final),len(D_final)))-999.#np.int(nD2*(nD2+1)/2)
 
-
+        indx0_c1=0
         for ic1 in np.arange(len(corrs)):
             corr1=corrs[ic1]
             indxs_1=self.corr_indxs[corr1]
-            nc1=len(indxs_1)
-            indx0_c1=(ic1)*nc1*len_bins
+            n_indx1=len(indxs_1)
+            # indx0_c1=(ic1)*n_indx1*len_bins
 
+            indx0_c2=indx0_c1
             for ic2 in np.arange(ic1,len(corrs)):
                 corr2=corrs[ic2]
                 indxs_2=self.corr_indxs[corr2]
-                nc2=len(indxs_2)
-                indx0_c2=(ic2)*nc2*len_bins
+                n_indx2=len(indxs_2)
+                # indx0_c2=(ic2)*n_indx2*len_bins
 
                 corr=corr1+corr2
                 n_m1_m2_1=1
@@ -566,44 +574,46 @@ class cov_3X2():
                     n_m1_m2_2=len(m1_m2_2)
 
                 for im1 in np.arange(n_m1_m2_1):
-                    start_m1=0
+                    start_m2=0
                     if corr1==corr2:
-                        start_m1=im1
-                    for im2 in np.arange(im1,n_m1_m2_2):
-                        indx0_m1=(im1)*nc1*len_bins
-                        indx0_m2=(im2)*nc2*len_bins
-                        for i1 in np.arange(nc1):
+                        start_m2=im1
+                    for im2 in np.arange(start_m2,n_m1_m2_2):
+                        indx0_m1=(im1)*n_indx1*len_bins
+                        indx0_m2=(im2)*n_indx2*len_bins
+                        for i1 in np.arange(n_indx1):
                             start2=0
-                            if ic1==ic2:
+                            if corr1==corr2:
                                 start2=i1
-                            for i2 in np.arange(start2,nc2):
+                            for i2 in np.arange(start2,n_indx2):
                                 indx0_1=(i1)*len_bins
                                 indx0_2=(i2)*len_bins
                                 indx=indxs_1[i1]+indxs_2[i2]
-
-                                i=indx0_c1+indx0_1+indx0_m1
-                                j=indx0_c2+indx0_2+indx0_m2
 
                                 if self.do_xi:
                                     cov_here=dat['cov'][corr][m1_m2_1[im1]+m1_m2_2[im2]][indx]['final']
                                 else:
                                     cov_here=dat['cov'][corr][indx]['final']
 
-                                if im1==im2:
-                                    cov_final[i:i+len_bins,j:j+len_bins]=cov_here
-                                    cov_final[j:j+len_bins,i:i+len_bins]=cov_here
+                                # if im1==im2:
+                                i=indx0_c1+indx0_1+indx0_m1
+                                j=indx0_c2+indx0_2+indx0_m2
 
-                                if im1!=im2:
-                                    i=indx0_c1+indx0_1+indx0_m1
-                                    j=indx0_c2+indx0_2+indx0_m2
-                                    cov_final[i:i+len_bins,j:j+len_bins]=cov_here
-                                    cov_final[j:j+len_bins,i:i+len_bins]=cov_here.T
+                                cov_final[i:i+len_bins,j:j+len_bins]=cov_here
+                                cov_final[j:j+len_bins,i:i+len_bins]=cov_here.T
+
+                                if im1!=im2 and corr1==corr2:
+                                    # i=indx0_c1+indx0_1+indx0_m1
+                                    # j=indx0_c2+indx0_2+indx0_m2
+                                    # cov_final[i:i+len_bins,j:j+len_bins]=cov_here
+                                    # cov_final[j:j+len_bins,i:i+len_bins]=cov_here.T
 
                                     i=indx0_c1+indx0_1+indx0_m2
                                     j=indx0_c2+indx0_2+indx0_m1
                                     cov_final[i:i+len_bins,j:j+len_bins]=cov_here.T
                                     cov_final[j:j+len_bins,i:i+len_bins]=cov_here
 
+                indx0_c2+=n_indx2*len_bins*n_m1_m2_2
+            indx0_c1+=n_indx1*len_bins*n_m1_m2_1
 
             # dat2=dat['cov']
             # for jD2 in np.arange(iD2,nD2):
