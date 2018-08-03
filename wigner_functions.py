@@ -1,9 +1,10 @@
 import numpy as np
 from scipy.special import binom,jn,loggamma
 from scipy.special import eval_jacobi as jacobi
+from multiprocessing import Pool,cpu_count
+from functools import partial
 
-
-def wigner_d(l,m1,m2,theta):
+def wigner_d(m1,m2,theta,l):
     k=np.amin([l-m1,l-m2,l+m1,l+m2],axis=0)
     a=np.absolute(m1-m2)
     lamb=0 #lambda
@@ -13,6 +14,7 @@ def wigner_d(l,m1,m2,theta):
     d_mat=(-1)**lamb
     d_mat*=np.sqrt(binom(2*l-k,k+a)) #this gives array of shape l with elements choose(2l[i]-k[i], k[i]+a)
     d_mat/=np.sqrt(binom(k+b,b))
+    d_mat=np.atleast_1d(d_mat)
     x=k<0
     d_mat[x]=0
 
@@ -22,6 +24,13 @@ def wigner_d(l,m1,m2,theta):
     d_mat*=jacobi(l,a,b,np.cos(theta))
     return d_mat
 
+
+def wigner_d_parallel(m1,m2,theta,l,ncpu=None):
+    if ncpu is None:
+        ncpu=cpu_count()
+    p=Pool(ncpu)
+    d_mat=np.array(p.map(partial(wigner_d,m1,m2,theta),l))
+    return d_mat[:,:,0].T
 
 def log_factorial(n):
     return loggamma(n+1)
