@@ -404,8 +404,9 @@ class cov_3X2():
                 cov_SSC*=(2.*self.HT.l_max[m1_m2]**2/self.HT.zeros[m1_m2][-1]**2)/(2*np.pi)/Norm
 
             elif self.HT.name=='Wigner':
-                cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.wig_d[m1_m2]*self.HT.norm/Norm,
-                                (clr).T*sig_cL,clr,self.HT.wig_d[m1_m2_cross],optimize=True)
+                cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.wig_d[m1_m2]*np.sqrt(self.HT.norm)/Norm,
+                                (clr).T*sig_cL,clr,np.sqrt(self.HT.wig_d[m1_m2_cross]),optimize=True)
+                                #FIXME: This is likely to be broken.
 
             cov_xi['SSC']=self.binning.bin_2d(r=th0/d2r,cov=cov_SSC,r_bins=self.theta_bins,
                                                     r_dim=2,bin_utils=self.xi_bin_utils[m1_m2])
@@ -515,13 +516,15 @@ class cov_3X2():
             handle things such as binning, hankel transforms etc. We will keep this structure for now.
         """
 
-        est='cl'
-        n_m1_m2=1
-        len_bins=len(self.l_bins)-1
+
 
         if self.do_xi:
             est='xi'
             len_bins=len(self.theta_bins)-1
+        else:
+            est='cl'
+            n_m1_m2=1
+            len_bins=len(self.l_bins)-1
 
         n_bins=0
         for corr in corrs:
