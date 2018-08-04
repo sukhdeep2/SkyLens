@@ -65,7 +65,7 @@ class wigner_transform():
         #when cl_cov can be written as vector, eg. gaussian covariance
         cl2=self.cl_grid(l_cl=l_cl,cl=cl_cov,taper=taper,**kwargs)
         cov=np.einsum('rk,k,sk->rs',self.wig_d[m1_m2]*np.sqrt(self.norm),cl2*self.grad_l,
-                    self.wig_d[m1_m2_cross]*np.sqrt(self.norm),optimize=True)/2./np.pi
+                    self.wig_d[m1_m2_cross]*np.sqrt(self.norm),optimize=True)
         #FIXME: Check normalization
         return self.theta[m1_m2],cov
 
@@ -75,7 +75,7 @@ class wigner_transform():
         if m1_m2_cross is None:
             m1_m2_cross=m1_m2
         cl_cov2=cl_cov#self.cl_cov_grid(l_cl=l_cl,cl_cov=cl_cov,m1_m2=m1_m2,taper=taper,**kwargs)
-        cov=np.dot(self.wig_d[m1_m2]*self.grad_l*np.sqrt(self.norm),np.dot(self.wig_d[m1_m2_cross]*np.sqrt(self.norm),cl_cov2).T)/2/np.pi
+        cov=np.dot(self.wig_d[m1_m2]*self.grad_l*np.sqrt(self.norm),np.dot(self.wig_d[m1_m2_cross]*np.sqrt(self.norm),cl_cov2).T)
         # cov*=self.norm
         #FIXME: Check normalization
         return self.theta[m1_m2],cov
