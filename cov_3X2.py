@@ -28,10 +28,11 @@ class cov_3X2():
                 zs_bins=None,zg_bins=None,
                 power_spectra_kwargs={},HT_kwargs=None,
                 z_PS=None,nz_PS=100,log_z_PS=True,z_PS_max=None,
-                do_cov=False,SSV_cov=False,tidal_SSV_cov=False,
+                do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
+                use_window=True,
                 sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
-                corrs=['ll_m','ll_p']):
+                corrs=[('shear','shear')]):
         self.logger=logger
         self.cov_SSC_nobin={}
         if logger is None:
@@ -62,7 +63,8 @@ class cov_3X2():
         self.cov_utils=cov_utils
         if cov_utils is None:
             self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,
-                                            l_cut_jnu=self.l_cut_jnu)
+                                            l_cut_jnu=self.l_cut_jnu,
+                                            do_sample_variance=do_sample_variance,use_window=use_window)
 
         self.Ang_PS=Ang_PS
         if Ang_PS is None:
@@ -78,7 +80,6 @@ class cov_3X2():
         if galaxy_utils is None:
             self.galaxy_utils=Galaxy_utils(zg_bins=zg_bins,logger=self.logger,l=self.l,
                                             z_th=self.Ang_PS.z)
-
         self.z_bins={}
         self.z_bins['shear']=self.lensing_utils.zs_bins
         #self.z_bins['kappa']=self.lensing_utils.zk_bins
@@ -174,6 +175,7 @@ class cov_3X2():
         cl=np.dot(cls.T*sc,clz['dchi'])
 
         cl/=self.Ang_PS.cl_f**2# cl correction from Kilbinger+ 2017
+        # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
         return cl
 
 #     @jit
@@ -266,8 +268,7 @@ class cov_3X2():
         cov_b=cov
         if self.bin_cl:
             if not cl is None:
-                cl_b=self.binning.bin_1d(r=self.l,xi=cl,
-                                        r_bins=self.l_bins,r_dim=2,bin_utils=self.cl_bin_utils)
+                cl_b=self.binning.bin_1d(xi=cl,bin_utils=self.cl_bin_utils)
             if not cov is None:
                 cov_b=self.binning.bin_2d(r=self.l,cov=cov,r_bins=self.l_bins,r_dim=2
                                             ,bin_utils=self.cl_bin_utils)
@@ -415,11 +416,9 @@ class cov_3X2():
 
         return cov_xi
 
-    def get_xi(self,cl=[],m1_m2=[(0,0)]):
+    def get_xi(self,cl=[],m1_m2=[]):
         th,xi=self.HT.projected_correlation(l_cl=self.l,m1_m2=m1_m2,cl=cl)
-        xi_b=self.binning.bin_1d(r=th/d2r,xi=xi,
-                                    r_bins=self.theta_bins,r_dim=2,
-                                    bin_utils=self.xi_bin_utils[m1_m2])
+        xi_b=self.binning.bin_1d(xi=xi,bin_utils=self.xi_bin_utils[m1_m2])
         return xi_b
 
     def xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
@@ -501,7 +500,7 @@ class cov_3X2():
         out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi},corrs=corrs)
         out['xi']=xi
         out['cov']=cov_xi
-
+        out['cl']=cl
         return out
 
 

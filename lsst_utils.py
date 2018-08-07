@@ -144,7 +144,7 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
 
         zs_bins[i]['pzdz']=zs_bins[i]['pz']*zs_bins[i]['dz']
         zs_bins[i]['Norm']=np.sum(zs_bins[i]['pzdz'])
-        zs_bins[i]['pz']/=zs_bins[i]['Norm']
+        # zs_bins[i]['pz']/=zs_bins[i]['Norm']
         zs_bins[i]['lens_kernel']=np.dot(zs_bins[i]['pzdz'],sc)/zs_bins[i]['Norm']
     zs_bins['n_bins']=nz_bins #easy to remember the counts
     zs_bins['z_lens_kernel']=zl
@@ -218,6 +218,27 @@ def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits'):
         z_bins[i]['dz']=t['Z_HIGH']-t['Z_LOW']
         z_bins[i]['nz']=nz[i]
         z_bins[i]['pz']=t['BIN'+str(i+1)]
+        z_bins[i]['W']=1.
+        z_bins[i]['pzdz']=z_bins[i]['pz']*z_bins[i]['dz']
+        z_bins[i]['Norm']=np.sum(z_bins[i]['pzdz'])
+    z_bins['n_bins']=nz_bins
+    z_bins['nz']=nz
+    return z_bins
+
+
+def Kids_bins(kids_fname='/home/deep/data/KiDS-450/Nz_DIR/Nz_DIR_Mean/Nz_DIR_z{zl}t{zh}.asc'):
+    zl=[0.1,0.3,0.5,0.7]
+    zh=[0.3,0.5,0.7,0.9]
+    z_bins={}
+    nz_bins=4
+    nz=[1.94, 1.59, 1.52, 1.09]
+    for i in np.arange(nz_bins):
+        z_bins[i]={}
+        t=np.genfromtxt(kids_fname.format(zl=zl[i],zh=zh[i]),names=('z','pz','pz_err'))
+        z_bins[i]['z']=t['z']
+        z_bins[i]['dz']=0.05
+        z_bins[i]['nz']=nz[i]
+        z_bins[i]['pz']=t['pz']
         z_bins[i]['W']=1.
         z_bins[i]['pzdz']=z_bins[i]['pz']*z_bins[i]['dz']
         z_bins[i]['Norm']=np.sum(z_bins[i]['pzdz'])

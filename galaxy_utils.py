@@ -36,7 +36,7 @@ class Galaxy_utils():
             self.zg_bins[i]['dz']=dz_th
             norm=np.sum(self.z_th*dz_th*pz_zth)
             self.zg_bins[i]['pz']=pz_zth/norm
-            self.zg_bins[i]['pzdz']=dz_th*self.zg_bins[i]['pz']
+            self.zg_bins[i]['pzdz']=dz_th*self.zg_bins[i]['pz'] #FIXME: This can mess things up
             self.zg_bins[i]['Norm']=1
             self.zg_bins[i]['lens_kernel']=None
             if hasattr(self.zg_bins[i]['W'],"__len__"):

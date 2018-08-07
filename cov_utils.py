@@ -11,11 +11,17 @@ sky_area=np.pi*4/(d2r)**2 #in degrees
 
 
 class Covariance_utils():
-    def __init__(self,f_sky=0,l=None,logger=None,l_cut_jnu=None):
+    def __init__(self,f_sky=0,l=None,logger=None,l_cut_jnu=None,do_sample_variance=True,use_window=True):
         self.logger=logger
         self.l=l
         self.l_cut_jnu=l_cut_jnu #this is needed for hankel_transform case for xi. Need separate sigma_window calc.
         self.f_sky=f_sky
+
+        self.use_window=use_window
+        self.sample_variance_f=1
+        if not do_sample_variance:
+            self.sample_variance_f=0 #remove sample_variance from gaussian part
+
         self.set_window_params(f_sky=self.f_sky)
         self.window_func(theta_win=self.theta_win,f_sky=self.f_sky)
 
@@ -24,7 +30,10 @@ class Covariance_utils():
 
     def set_window_params(self,f_sky=None):
         self.theta_win=np.sqrt(f_sky*sky_area)
-        self.Win=self.window_func(theta_win=self.theta_win,f_sky=f_sky)
+        if self.use_window:
+            self.Win=self.window_func(theta_win=self.theta_win,f_sky=f_sky)
+        else:
+            self.Win=np.ones_like(self.l,dtype='float32')
         self.Om_W=4*np.pi*f_sky
         self.Win/=self.Om_W
 
@@ -59,23 +68,23 @@ class Covariance_utils():
 
         """
         # print(cls[(tracers[0],tracers[2])].keys())
-        G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]
+        G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f
              # + (SN.get((tracers[0],tracers[2]))[:,z_indx[0], z_indx[2] ]  or 0)
              + (SN[(tracers[0],tracers[2])][:,z_indx[0], z_indx[2] ] if SN.get((tracers[0],tracers[2])) is not None else 0)
                 )
              #get returns None if key doesnot exist. or 0 adds 0 is SN is none
 
-        G1324*=( cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]
+        G1324*=( cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]*self.sample_variance_f
               # +(SN.get((tracers[1],tracers[3]))[:,z_indx[1], z_indx[3] ] or 0)
               + (SN[(tracers[1],tracers[3])][:,z_indx[1], z_indx[3] ] if SN.get((tracers[1],tracers[3])) is not None else 0)
               )
 
-        G1423= ( cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]
+        G1423= ( cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]*self.sample_variance_f
               # + (SN.get((tracers[0],tracers[3]))[:,z_indx[0], z_indx[3] ] or 0)
               + (SN[(tracers[0],tracers[3])][:,z_indx[0], z_indx[3] ] if SN.get((tracers[0],tracers[3])) is not None else 0)
               )
 
-        G1423*=( cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]
+        G1423*=( cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f
              # + (SN.get((tracers[1],tracers[2]))[:,z_indx[1], z_indx[2] ] or 0)
              + (SN[(tracers[1],tracers[2])][:,z_indx[1], z_indx[2] ] if SN.get((tracers[1],tracers[2])) is not None else 0)
                 )

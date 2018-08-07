@@ -1,6 +1,6 @@
-# import camb
-# from camb import model, initialpower
-# import pyccl
+import camb
+from camb import model, initialpower
+import pyccl
 import os,sys
 from classy import Class
 sys.path.insert(0,'./')
@@ -219,9 +219,9 @@ class Power_Spectra():
         return pk,kh
 
     def class_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
-        if not cosmo_params:
+        if  cosmo_params is None:
             cosmo_params=self.cosmo_params
-        if not pk_params:
+        if pk_params is None:
             pk_params=self.pk_params
         cosmoC=Class()
         h=cosmo_params['h']
@@ -229,7 +229,7 @@ class Power_Spectra():
                             'omega_cdm':(cosmo_params['Om']-cosmo_params['Omb'])*h**2,
                             'A_s':cosmo_params['As'],'n_s':cosmo_params['ns'],
                             'output': 'mPk','z_max_pk':max(z)+0.1,
-                            'P_k_max_1/Mpc':pk_params['kmax']*h,
+                            'P_k_max_1/Mpc':pk_params['kmax']*h*1.01,
                     }
         if pk_params['non_linear']==1:
             class_params['non linear']='halofit'

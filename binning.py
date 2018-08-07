@@ -6,13 +6,13 @@ class binning():
     def __init__(self,rmin=0.1,rmax=100,kmax=10,kmin=1.e-4,n_zeros=1000,n_zeros_step=1000,
                  j_nu=[0],prune_r=0,prune_log_space=True):
         pass
-    
+
     def bin_utils(self,r=[],r_bins=[],r_dim=2,wt=1,mat_dims=None):
         bu={}
-        bu['bin_center']=np.sqrt(r_bins[1:]*r_bins[:-1])
+        bu['bin_center']=0.5*(r_bins[1:]+r_bins[:-1])
         bu['n_bins']=len(r_bins)-1
         bu['bin_indx']=np.digitize(r,r_bins)-1
-        
+
         binning_mat=np.zeros((len(r),bu['n_bins']))
         for i in np.arange(len(r)):
             if bu['bin_indx'][i]<0 or bu['bin_indx'][i]>=bu['n_bins']:
@@ -50,7 +50,7 @@ class binning():
                 bu['norm_m'][ndim]=norm_m
         return bu
 
-    def bin_1d(self,r=[],xi=[],r_bins=[],r_dim=2,bin_utils=None):
+    def bin_1d(self,xi=[],bin_utils=None):
         xi_b=np.dot(xi*bin_utils['r_dr'],bin_utils['binning_mat'])
         xi_b/=bin_utils['norm']
         return xi_b
@@ -69,7 +69,7 @@ class binning():
         bin_idx=bin_utils['bin_indx']#np.digitize(r,r_bins)-1
         r_dr=bin_utils['r_dr']
         r_dr_m=bin_utils['r_dr_m'][ndim]
-        
+
         mat_int=np.zeros([n_bins]*ndim,dtype='float64')
         norm_int=np.zeros([n_bins]*ndim,dtype='float64')
 
