@@ -500,7 +500,7 @@ class cov_3X2():
         out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi},corrs=corrs)
         out['xi']=xi
         out['cov']=cov_xi
-        out['cl']=cl
+        out['cl']=cls_tomo_nu
         return out
 
 

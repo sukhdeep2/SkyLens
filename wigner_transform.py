@@ -6,7 +6,7 @@ import numpy as np
 import itertools
 
 class wigner_transform():
-    def __init__(self,theta=[],l=[],m1_m2=[(0,0)],logger=None,**kwargs):
+    def __init__(self,theta=[],l=[],m1_m2=[(0,0)],logger=None,ncpu=None,**kwargs):
         self.name='Wigner'
         self.logger=logger
         self.l=l
@@ -20,7 +20,7 @@ class wigner_transform():
         self.theta={}
         # self.theta=theta
         for (m1,m2) in m1_m2:
-            self.wig_d[(m1,m2)]=wigner_d_parallel(m1,m2,theta,self.l)
+            self.wig_d[(m1,m2)]=wigner_d_parallel(m1,m2,theta,self.l,ncpu=ncpu)
             # self.wig_d[(m1,m2)]*=self.norm #this works for covariance and correlation function
             self.theta[(m1,m2)]=theta #FIXME: Ugly
 

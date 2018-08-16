@@ -35,7 +35,7 @@ class Covariance_utils():
         else:
             self.Win=np.ones_like(self.l,dtype='float32')
         self.Om_W=4*np.pi*f_sky
-        self.Win/=self.Om_W
+        self.Win/=self.Om_W #FIXME: This thing has been forgotten and not used anywhere in the code.
 
     def window_func(self,theta_win=None,f_sky=None):
         l=self.l
