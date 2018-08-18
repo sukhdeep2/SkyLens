@@ -3,6 +3,7 @@ import os,sys
 from power_spectra import *
 from hankel_transform import *
 from binning import *
+from torch_utils import *
 from astropy.constants import c,G
 from astropy import units as u
 import numpy as np
@@ -13,7 +14,7 @@ d2r=np.pi/180.
 c=c.to(u.km/u.second)
 
 class Angular_power_spectra():
-    def __init__(self,silence_camb=False,l=np.arange(2,2001),power_spectra_kwargs={},
+    def __init__(self,silence_camb=False,l=tc.arange(2,2001),power_spectra_kwargs={},
                 z_PS=None,nz_PS=100,log_z_PS=False,z_PS_max=None,logger=None,
                 SSV_cov=False,tracer='kappa',cov_utils=None):
         self.logger=logger
@@ -29,7 +30,7 @@ class Angular_power_spectra():
         self.cov_utils=cov_utils
         self.set_z_PS(z=z_PS,nz=nz_PS,log_z=log_z_PS,z_max=z_PS_max)
 
-        self.dz=np.gradient(self.z)
+        self.dz=tc_gradient(self.z)
 
     def set_z_PS(self,z=None,nz=10,log_z=False,z_max=None):
         """
@@ -44,12 +45,12 @@ class Angular_power_spectra():
 
         if z is None:
             if log_z:#bins for z_lens.
-                self.z=np.logspace(np.log10(max(z_min,1.e-4)),np.log10(z_max),nz)
+                self.z=tc.logspace(np.log10(max(z_min,1.e-4)),np.log10(z_max),nz)
             else:
-                self.z=np.linspace(z_min,z_max,nz)
+                self.z=tc.linspace(z_min,z_max,nz)
         else:
             self.z=z
-        self.dz=np.gradient(self.z)
+        self.dz=tc_gradient(self.z)
 
     def angular_power_z(self,z=None,pk_params=None,cosmo_h=None,
                     cosmo_params=None,pk_func=None):
@@ -70,28 +71,28 @@ class Angular_power_spectra():
 
         #XXX At some point this should be moved to power spectra, pk and SSV, especially if doing 3X2
         if self.PS.pk is None:
-            self.PS.get_pk(z=z,pk_params=pk_params,cosmo_params=cosmo_params)
-        cls=np.zeros((nz,nl),dtype='float32')#*u.Mpc#**2
-
+            self.PS.get_pk(z=np.array(z),pk_params=pk_params,cosmo_params=cosmo_params)
+        cls=tc.zeros((nz,nl),dtype=l.dtype,device=l.device)#*u.Mpc#**2
+        print('got pk')
         Rls=None #pk response functions, used for SSV calculations
         RKls=None
         cls_lin=None #cls from linear power spectra, to compute \delta_window for SSV
         if self.SSV_cov: #things needed to compute SSV cov
-            Rls=np.zeros((nz,nl),dtype='float32')
-            RKls=np.zeros((nz,nl),dtype='float32')
-            cls_lin=np.zeros((nz,nl),dtype='float32')#*u.Mpc#**2
+            Rls=tc.zeros((nz,nl),dtype=l.dtype)
+            RKls=tc.zeros((nz,nl),dtype=l.dtype)
+            cls_lin=tc.zeros((nz,nl),dtype=l.dtype)#*u.Mpc#**2
 
         cH=c/(cosmo_h.efunc(self.z)*cosmo_h.H0)
         cH=cH.value
 
         def k_to_l(l,lz,f_k): #take func from k to l space
             fk_int=interp1d(lz,f_k,bounds_error=False,fill_value=0)
-            return fk_int(l)
+            return tc.tensor(fk_int(l),dtype=l.dtype,device=l.device)
 
         kh=self.PS.kh
         pk=self.PS.pk
-        chi=cosmo_h.comoving_transverse_distance(z).value
-        for i in np.arange(nz):
+        chi=tc.tensor(cosmo_h.comoving_transverse_distance(z).value,dtype=l.dtype,device=l.device)
+        for i in tc.arange(nz):
             DC_i=chi[i] #cosmo_h.comoving_transverse_distance(z[i]).value#because camb k in h/mpc
             lz=kh*DC_i-0.5
             cls[i][:]+=k_to_l(l,lz,pk[i]/DC_i**2)

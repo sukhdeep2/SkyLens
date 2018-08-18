@@ -2,6 +2,7 @@ from scipy.special import jn, jn_zeros,jv
 from scipy.interpolate import interp1d,interp2d,RectBivariateSpline
 from scipy.optimize import fsolve
 import numpy as np
+import torch as tc
 import itertools
 
 class hankel_transform():
@@ -67,8 +68,12 @@ class hankel_transform():
             theta=theta[idx]
             self.logger.info ('pruned theta:%s',len(theta))
         theta=np.unique(theta)
+
+        l=tc.tensor(l,dtype=tc.double)
+        theta=tc.tensor(theta,dtype=tc.double)
+        print(theta)
         self.logger.info ('nr:%s',len(theta))
-        J=jn(j_nu,np.outer(theta,l))
+        J=jn(j_nu,tc.ger(theta,l))
         J_nu1=jn(j_nu+1,zeros)
         return l,l_max,theta,J,J_nu1,zeros
 
@@ -86,9 +91,9 @@ class hankel_transform():
 
     def _cl_cov_grid(self,l_cl=[],cl_cov=[],m1_m2=[],taper=False,**kwargs):
         if taper:#FIXME there is no check on change in taper_kwargs
-            if self.taper_f2 is None or not np.all(np.isclose(self.taper_f['l'],l_cl)):
+            if self.taper_f2 is None or not tc.all(tc.isclose(self.taper_f['l'],l_cl)):
                 self.taper_f=self.taper(l=l_cl,**kwargs)
-                taper_f2=np.outer(self.taper_f['taper_f'],self.taper_f['taper_f'])
+                taper_f2=tc.ger(self.taper_f['taper_f'],self.taper_f['taper_f'])
                 self.taper_f2={'l':l_cl,'taper_f2':taper_f2}
             cl_cov=cl_cov*self.taper_f2['taper_f2']
         if l_cl==[]:#In this case pass a function that takes k with kwargs and outputs cl
@@ -102,7 +107,7 @@ class hankel_transform():
 
     def projected_correlation(self,l_cl=[],cl=[],m1_m2=[],taper=False,**kwargs):
         cl2=self._cl_grid(l_cl=l_cl,cl=cl,m1_m2=m1_m2,taper=taper,**kwargs)
-        w=np.dot(self.J[m1_m2],cl2/self.J_nu1[m1_m2]**2)
+        w=(self.J[m1_m2]*cl2/self.J_nu1[m1_m2]**2).sum(0)
         w*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],w
 
@@ -110,7 +115,7 @@ class hankel_transform():
     #we will use relation spherical_jn(z)=j{n+0.5}(z)*sqrt(pi/2z)
     #cl will be written as k*cl
         cl2=self._cl_grid(l_cl=l_cl,cl=cl,m1_m2=m1_m2,taper=taper,**kwargs)
-        j_f=np.sqrt(np.pi/2./np.outer(self.theta[m1_m2],self.l[m1_m2]))
+        j_f=tc.sqrt(np.pi/2./tc.ger(self.theta[m1_m2],self.l[m1_m2]))
         w=np.dot(self.J[m1_m2],cl2*self.l[m1_m2]/self.J_nu1[m1_m2]**2)
         w*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],w
@@ -119,7 +124,7 @@ class hankel_transform():
         #when cl_cov can be written as vector, eg. gaussian covariance
         cl1=self._cl_grid(l_cl=l_cl,cl=cl_cov,m1_m2=m1_m2,taper=taper,**kwargs)
         # cov=np.dot(self.J[m1_m2],(self.J[m1_m2]*cl1*cl2/self.J_nu1[m1_m2]**2).T)
-        cov=np.einsum('rk,k,sk->rs',self.J[m1_m2],cl1/self.J_nu1[m1_m2]**2,
+        cov=tc.einsum('rk,k,sk->rs',self.J[m1_m2],cl1/self.J_nu1[m1_m2]**2,
                     self.J[m1_m2],optimize=True)
         cov*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],cov
@@ -127,31 +132,31 @@ class hankel_transform():
     def projected_covariance2(self,l_cl=[],cl_cov=[],m1_m2=[],taper=False,**kwargs):
         #when cl_cov is a 2-d matrix
         cl_cov2=cl_cov#self._cl_cov_grid(l_cl=l_cl,cl_cov=cl_cov,m1_m2=m1_m2,taper=taper,**kwargs)
-        cov=np.dot(self.J[m1_m2],np.dot(self.J[m1_m2]/self.J_nu1[m1_m2]**2,cl_cov2).T)
+        cov=tc.dot(self.J[m1_m2],tc.dot(self.J[m1_m2]/self.J_nu1[m1_m2]**2,cl_cov2).T)
         cov*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],cov
 
     def taper(self,l=[],large_k_lower=10,large_k_upper=100,low_k_lower=0,low_k_upper=1.e-5):
         #FIXME there is no check on change in taper_kwargs
-        if self.taper_f is None or not np.all(np.isclose(self.taper_f['l'],k)):
-            taper_f=np.zeros_like(l)
+        if self.taper_f is None or not tc.all(tc.isclose(self.taper_f['l'],k)):
+            taper_f=tc.zeros_like(l)
             x=k>large_k_lower
-            taper_f[x]=np.cos((k[x]-large_k_lower)/(large_k_upper-large_k_lower)*np.pi/2.)
+            taper_f[x]=tc.cos((k[x]-large_k_lower)/(large_k_upper-large_k_lower)*np.pi/2.)
             x=k<large_k_lower and k>low_k_upper
             taper_f[x]=1
             x=k<low_k_upper
-            taper_f[x]=np.cos((k[x]-low_k_upper)/(low_k_upper-low_k_lower)*np.pi/2.)
+            taper_f[x]=tc.cos((k[x]-low_k_upper)/(low_k_upper-low_k_lower)*np.pi/2.)
             self.taper_f={'taper_f':taper_f,'l':k}
         return self.taper_f
 
     def diagonal_err(self,cov=[]):
-        return np.sqrt(np.diagonal(cov))
+        return tc.sqrt(tc.diagonal(cov))
 
     def skewness(self,l_cl=[],cl1=[],cl2=[],cl3=[],m1_m2=[],taper=False,**kwargs):
         cl1=self._cl_grid(l_cl=l_cl,cl=cl1,m1_m2=m1_m2,taper=taper,**kwargs)
         cl2=self._cl_grid(l_cl=l_cl,cl=cl2,m1_m2=m1_m2,taper=taper,**kwargs)
         cl3=self._cl_grid(l_cl=l_cl,cl=cl3,m1_m2=m1_m2,taper=taper,**kwargs)
-        skew=np.einsum('ji,ki,li',self.J[m1_m2],self.J[m1_m2],
+        skew=tc.einsum('ji,ki,li',self.J[m1_m2],self.J[m1_m2],
                         self.J[m1_m2]*cl1*cl2*cl3/self.J_nu1[m1_m2]**2)
         skew*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],skew

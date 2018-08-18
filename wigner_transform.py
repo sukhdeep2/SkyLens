@@ -3,6 +3,7 @@ from scipy.interpolate import interp1d,interp2d,RectBivariateSpline
 from scipy.optimize import fsolve
 from wigner_functions import *
 import numpy as np
+import torch as tc
 import itertools
 
 class wigner_transform():
@@ -10,7 +11,7 @@ class wigner_transform():
         self.name='Wigner'
         self.logger=logger
         self.l=l
-        self.grad_l=np.gradient(l)
+        self.grad_l=tc.as_tensor(np.gradient(l),dtype=l.dtype,device=l.device)
         self.norm=(2*l+1.)/(4.*np.pi) #ignoring some factors of -1,
                                                     #assuming sum and differences of m1,m2
                                                     #are even for all correlations we need.
@@ -20,8 +21,7 @@ class wigner_transform():
         self.theta={}
         # self.theta=theta
         for (m1,m2) in m1_m2:
-            self.wig_d[(m1,m2)]=wigner_d_parallel(m1,m2,theta,self.l,ncpu=ncpu)
-            # self.wig_d[(m1,m2)]*=self.norm #this works for covariance and correlation function
+            self.wig_d[(m1,m2)]=wigner_d(m1,m2,theta,self.l,)#ncpu=ncpu) #FIXME: Use the parallel version
             self.theta[(m1,m2)]=theta #FIXME: Ugly
 
 
@@ -64,9 +64,16 @@ class wigner_transform():
             m1_m2_cross=m1_m2
         #when cl_cov can be written as vector, eg. gaussian covariance
         cl2=self.cl_grid(l_cl=l_cl,cl=cl_cov,taper=taper,**kwargs)
-        cov=np.einsum('rk,k,sk->rs',self.wig_d[m1_m2]*np.sqrt(self.norm),cl2*self.grad_l,
-                    self.wig_d[m1_m2_cross]*np.sqrt(self.norm),optimize=True)
+        cov=(self.wig_d[m1_m2]*np.sqrt(self.norm))@(
+            (self.wig_d[m1_m2_cross]*np.sqrt(self.norm)*cl2*self.grad_l))
+        #@==np.matmul
+#         cov=np.einsum('rk,k,sk->rs',self.wig_d[m1_m2]*np.sqrt(self.norm),cl2*self.grad_l,
+#                     self.wig_d[m1_m2_cross]*np.sqrt(self.norm),optimize=True)
         #FIXME: Check normalization
+
+#         test case:%time xx=np.einsum('rk,k,sk->rs',x2,x1,x2)
+#                     %time xx2=x2@(x2*x1).T
+
         return self.theta[m1_m2],cov
 
     def projected_covariance2(self,l_cl=[],cl_cov=[],m1_m2=[],m1_m2_cross=None,
@@ -75,7 +82,10 @@ class wigner_transform():
         if m1_m2_cross is None:
             m1_m2_cross=m1_m2
         cl_cov2=cl_cov#self.cl_cov_grid(l_cl=l_cl,cl_cov=cl_cov,m1_m2=m1_m2,taper=taper,**kwargs)
-        cov=np.dot(self.wig_d[m1_m2]*self.grad_l*np.sqrt(self.norm),np.dot(self.wig_d[m1_m2_cross]*np.sqrt(self.norm),cl_cov2).T)
+#         cov=np.dot(self.wig_d[m1_m2]*self.grad_l*np.sqrt(self.norm),
+#                    np.dot(self.wig_d[m1_m2_cross]*np.sqrt(self.norm),cl_cov2).T)
+        cov=(self.wig_d[m1_m2]*self.grad_l*np.sqrt(self.norm))@cl_cov2@(
+                                    self.wig_d[m1_m2_cross]*np.sqrt(self.norm)).T
         # cov*=self.norm
         #FIXME: Check normalization
         return self.theta[m1_m2],cov

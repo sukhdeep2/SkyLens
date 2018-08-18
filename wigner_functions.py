@@ -1,36 +1,48 @@
 import numpy as np
+import torch as tc
 from scipy.special import binom,jn,loggamma
 from scipy.special import eval_jacobi as jacobi
 from multiprocessing import Pool,cpu_count
+from torch.multiprocessing import Pool as t_Pool
 from functools import partial
 
+def tc_binom(n,k):
+    return tc.exp(tc.lgamma(n+1)-tc.lgamma(k+1)-tc.lgamma(n-k+1))
+
 def wigner_d(m1,m2,theta,l):
-    k=np.amin([l-m1,l-m2,l+m1,l+m2],axis=0)
-    a=np.absolute(m1-m2)
+    k=tc.min(tc.stack((l-m1,l-m2,l+m1,l+m2)),0)[0]
+    a=tc.abs(tc.tensor(m1-m2,dtype=l.dtype,device=l.device))
     lamb=0 #lambda
     if m2>m1:
         lamb=m2-m1
     b=2*l-2*k-a
-    d_mat=(-1)**lamb
-    d_mat*=np.sqrt(binom(2*l-k,k+a)) #this gives array of shape l with elements choose(2l[i]-k[i], k[i]+a)
-    d_mat/=np.sqrt(binom(k+b,b))
-    d_mat=np.atleast_1d(d_mat)
+    #d_mat=(-1)**lamb
+    d_mat=tc.sqrt(tc_binom(2*l-k,k+a)) #this gives array of shape l with elements choose(2l[i]-k[i], k[i]+a)
+    d_mat*=(-1)**lamb
+    d_mat/=tc.sqrt(tc_binom(k+b,b))
+#     d_mat=tc.atleast_1d(d_mat)
     x=k<0
     d_mat[x]=0
-
+    d_mat=tc.tensor(d_mat,dtype=l.dtype,device=l.device)
+    if  d_mat.dim()==0:
+        d_mat=tc.tensor([d_mat],dtype=l.dtype,device=l.device)
     d_mat=d_mat.reshape(1,len(d_mat))
     theta=theta.reshape(len(theta),1)
-    d_mat=d_mat*((np.sin(theta/2.0)**a)*(np.cos(theta/2.0)**b))
-    d_mat*=jacobi(l,a,b,np.cos(theta))
+    d_mat=d_mat*((tc.sin(theta/2.0)**a)*(tc.cos(theta/2.0)**b))
+    d_mat*=tc.tensor(jacobi(l,a,b,tc.cos(theta)),dtype=l.dtype,device=l.device)
     return d_mat
 
 
 def wigner_d_parallel(m1,m2,theta,l,ncpu=None):
     if ncpu is None:
         ncpu=cpu_count()
-    p=Pool(ncpu)
-    d_mat=np.array(p.map(partial(wigner_d,m1,m2,theta),l))
-    return d_mat[:,:,0].T
+    # p=t_Pool(ncpu)
+    with Pool(ncpu) as p: #t_pool
+        d_mat=p.map(partial(wigner_d,m1,m2,theta),l)
+    # d_mat=tc.stack([d_mat[i][:,0] for i in np.arange(len(l))])
+    d_mat=d_mat[:,:,0].T
+    #p.close()
+    return d_mat
 
 def log_factorial(n):
     return loggamma(n+1)

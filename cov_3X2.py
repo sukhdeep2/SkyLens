@@ -13,6 +13,7 @@ from galaxy_utils import *
 from astropy.constants import c,G
 from astropy import units as u
 import numpy as np
+import torch as tc
 from scipy.interpolate import interp1d
 import warnings,logging
 
@@ -32,8 +33,10 @@ class cov_3X2():
                 use_window=True,
                 sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
+                tc_device=None,tc_dtype=tc.double,
                 corrs=[('shear','shear')]):
-        self.logger=logger
+        kwargs=locals()
+        self.__dict__.update(**kwargs)
         self.cov_SSC_nobin={}
         if logger is None:
             self.logger=logging.getLogger()
@@ -45,28 +48,19 @@ class cov_3X2():
             # ch.setFormatter(format)
             # self.logger.addHandler(ch)
 
-        self.do_cov=do_cov
-        self.SSV_cov=SSV_cov
-        self.tidal_SSV_cov=tidal_SSV_cov
-        self.l=l
-        self.do_xi=do_xi
-        self.corrs=corrs
         self.l_cut_jnu=None
         if do_xi:
             self.set_HT(HT=HT,HT_kwargs=HT_kwargs)
 
-        self.lensing_utils=lensing_utils
         if lensing_utils is None:
             self.lensing_utils=Lensing_utils(sigma_gamma=sigma_gamma,zs_bins=zs_bins,
                                             logger=self.logger)
 
-        self.cov_utils=cov_utils
         if cov_utils is None:
             self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,
                                             l_cut_jnu=self.l_cut_jnu,
                                             do_sample_variance=do_sample_variance,use_window=use_window)
 
-        self.Ang_PS=Ang_PS
         if Ang_PS is None:
             self.Ang_PS=Angular_power_spectra(silence_camb=silence_camb,
                                 SSV_cov=SSV_cov,l=self.l,logger=self.logger,
@@ -76,7 +70,6 @@ class cov_3X2():
                                 z_PS_max=z_PS_max)
                         #FIXME: Need a dict for these args
 
-        self.galaxy_utils=galaxy_utils
         if galaxy_utils is None:
             self.galaxy_utils=Galaxy_utils(zg_bins=zg_bins,logger=self.logger,l=self.l,
                                             z_th=self.Ang_PS.z)
@@ -84,13 +77,8 @@ class cov_3X2():
         self.z_bins['shear']=self.lensing_utils.zs_bins
         #self.z_bins['kappa']=self.lensing_utils.zk_bins
         self.z_bins['galaxy']=self.galaxy_utils.zg_bins
-        self.l_bins=l_bins
-        self.stack_data=stack_data
-        self.theta_bins=theta_bins
-        self.bin_utils=None
 
-        self.bin_cl=bin_cl
-        self.bin_xi=bin_xi
+        self.bin_utils=None
         self.set_bin_params()
         self.cov_indxs=[]
         self.corr_indxs={}
@@ -171,8 +159,8 @@ class cov_3X2():
         f=self.Ang_PS.cl_f
         sc=zs1['kernel_int']*zs2['kernel_int']
 
-        # cl=np.dot(sc*clz['dchi'],cls)
-        cl=np.dot(cls.T*sc,clz['dchi'])
+        # cl=np.dot(cls.T*sc,clz['dchi'])
+        cl=(cls.transpose(1,0)*sc*clz['dchi']).sum(1)
 
         cl/=self.Ang_PS.cl_f**2# cl correction from Kilbinger+ 2017
         # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
@@ -180,7 +168,7 @@ class cov_3X2():
 
 #     @jit
     def get_cl(self,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear'),
-                pk_func=None,pk_params=None,cosmo_h=None,cosmo_params=None):
+                ):
         """
             Wrapper for calc_lens_lens_cl. Checks to make sure quantities such as power spectra and cosmology
             are available otherwise sets them to some default values.
@@ -235,7 +223,7 @@ class cov_3X2():
             sig_cL=zs1['kernel_int']*zs2['kernel_int']*zs3['kernel_int']*zs4['kernel_int']
             # sig_cL*=zs3['kernel_int']*zs4['kernel_int']
 
-            sig_cL*=self.Ang_PS.clz['dchi']
+            sig_cL=sig_cL*self.Ang_PS.clz['dchi']
 
             if self.do_xi:
                 cov['kernel']=sig_cL
@@ -248,7 +236,7 @@ class cov_3X2():
                 clr+=self.Ang_PS.clz['clsRK']/6.
 
             # cov['SSC_dd']=np.dot((clr1).T*sig_cL,clr1)
-            cov['SSC']=np.dot((clr).T*sig_cL,clr)
+            cov['SSC']=(clr.transpose(1,0)*sig_cL).mm(clr)#np.dot((clr).T*sig_cL,clr)
             cov['final']+=cov['SSC']
 
         for k in ['G','SSC','final']:#no need to bin G1324 and G1423
@@ -309,8 +297,6 @@ class cov_3X2():
                 for j in np.arange(i,len(tracers)):
                     corrs2+=[(tracers[i],tracers[j])]
 
-        print(corrs2)
-
         if cosmo_h is None:
             cosmo_h=self.Ang_PS.PS.cosmo_h
 
@@ -342,9 +328,7 @@ class cov_3X2():
             corr_indxs=self.corr_indxs[(corr[0],corr[1])]#+self.cov_indxs
             for (i,j) in corr_indxs:
                 # out[(i,j)]
-                cl[corr][(i,j)]=delayed(self.get_cl)(zs1_indx=i,zs2_indx=j,cosmo_h=cosmo_h,
-                                        cosmo_params=cosmo_params,pk_params=pk_params,
-                                        pk_func=pk_func,corr=corr)
+                cl[corr][(i,j)]=delayed(self.get_cl)(zs1_indx=i,zs2_indx=j,corr=corr)
 
                 cl[corr2][(j,i)]=cl[corr][(i,j)]#useful in gaussian covariance calculation.
             cl_b=delayed(self.combine_cl_tomo)(cl[corr],corr=corr)
@@ -380,7 +364,7 @@ class cov_3X2():
 
         if self.HT.name=='Hankel' and m1_m2!=m1_m2_cross:
             n=len(self.theta_bins)-1
-            cov_xi['final']=np.zeros((n,n))
+            cov_xi['final']=tc.zeros((n,n))
             return cov_xi
 
         Norm= self.cov_utils.Om_W
@@ -531,7 +515,7 @@ class cov_3X2():
                 n_m1_m2=len(self.m1_m2s[corr])
             n_bins+=len(self.corr_indxs[corr])*n_m1_m2 #np.int64(nbins*(nbins-1.)/2.+nbins)
         print(n_bins,len_bins,n_m1_m2)
-        D_final=np.zeros(n_bins*len_bins)
+        D_final=tc.zeros(n_bins*len_bins)
 
         i=0
         for corr in corrs:
@@ -546,11 +530,10 @@ class cov_3X2():
                     dat_c=dat[est][corr][m1_m2[im]]
 
                 for indx in self.corr_indxs[corr]:
-                    # print(len_bins,dat_c[indx].shape)
                     D_final[i*len_bins:(i+1)*len_bins]=dat_c[indx]
                     i+=1
 
-        cov_final=np.zeros((len(D_final),len(D_final)))-999.#np.int(nD2*(nD2+1)/2)
+        cov_final=tc.zeros((len(D_final),len(D_final)))-999.#np.int(nD2*(nD2+1)/2)
 
         indx0_c1=0
         for ic1 in np.arange(len(corrs)):
@@ -594,6 +577,7 @@ class cov_3X2():
                                 if self.do_xi:
                                     cov_here=dat['cov'][corr][m1_m2_1[im1]+m1_m2_2[im2]][indx]['final']
                                 else:
+                                    print(dat['cov'].keys())
                                     cov_here=dat['cov'][corr][indx]['final']
 
                                 # if im1==im2:
@@ -601,7 +585,7 @@ class cov_3X2():
                                 j=indx0_c2+indx0_2+indx0_m2
 
                                 cov_final[i:i+len_bins,j:j+len_bins]=cov_here
-                                cov_final[j:j+len_bins,i:i+len_bins]=cov_here.T
+                                cov_final[j:j+len_bins,i:i+len_bins]=cov_here.transpose(1,0)
 
                                 if im1!=im2 and corr1==corr2:
                                     # i=indx0_c1+indx0_1+indx0_m1
@@ -611,7 +595,7 @@ class cov_3X2():
 
                                     i=indx0_c1+indx0_1+indx0_m2
                                     j=indx0_c2+indx0_2+indx0_m1
-                                    cov_final[i:i+len_bins,j:j+len_bins]=cov_here.T
+                                    cov_final[i:i+len_bins,j:j+len_bins]=cov_here.transpose(1,0)
                                     cov_final[j:j+len_bins,i:i+len_bins]=cov_here
 
                 indx0_c2+=n_indx2*len_bins*n_m1_m2_2
