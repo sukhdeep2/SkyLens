@@ -124,7 +124,7 @@ class cov_3X2():
         self.l_cut_jnu['m1_m2s']=self.m1_m2s
         self.m1_m2s=self.HT.m1_m2s
         if self.HT.name=='Hankel':
-            self.l=tc.stack([self.HT.l[i] for i in self.m1_m2s])[0]
+            self.l=tc.cat([self.HT.l[i] for i in self.m1_m2s])
             for m1_m2 in self.m1_m2s:
                 self.l_cut_jnu[m1_m2]=tc_isin(self.l,(self.HT.l[m1_m2]))
 
@@ -382,15 +382,17 @@ class cov_3X2():
 
             #tidal term is added to clr in the calling function
             if self.HT.name=='Hankel':
-                cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.J[m1_m2]/self.HT.J_nu1[m1_m2]**2,
-                                    (clr).T*sig_cL,clr,self.HT.J[m1_m2_cross],optimize=True)
+                cov_SSC=tc.einsum('rk,kz,zl,sl->rs',(self.HT.J[m1_m2]/self.HT.J_nu1[m1_m2]**2,
+                                    (clr).transpose(1,0)*sig_cL, 
+                                    clr,self.HT.J[m1_m2_cross]))#,optimize=True)
 
                 self.cov_SSC_nobin[m1_m2]=sig_cL
                 cov_SSC*=(2.*self.HT.l_max[m1_m2]**2/self.HT.zeros[m1_m2][-1]**2)/(2*np.pi)/Norm
 
             elif self.HT.name=='Wigner':
-                cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.wig_d[m1_m2]*np.sqrt(self.HT.norm)/Norm,
-                                (clr).T*sig_cL,clr,np.sqrt(self.HT.wig_d[m1_m2_cross]),optimize=True)
+                cov_SSC=tc.einsum('rk,kz,zl,sl->rs',
+                                        (self.HT.wig_d[m1_m2]*np.sqrt(self.HT.norm)/Norm,
+                                        (clr).transpose(1,0)*sig_cL,clr,np.sqrt(self.HT.wig_d[m1_m2_cross])))
                                 #FIXME: This is likely to be broken.
 
             cov_xi['SSC']=self.binning.bin_2d(r=th0/d2r,cov=cov_SSC,r_bins=self.theta_bins,

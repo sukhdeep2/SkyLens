@@ -61,7 +61,7 @@ class_accuracy_settings={ #from Vanessa. To avoid class errors due to compiler i
             "k_step_super_reduction":0.1,
             'k_per_decade_for_pk': 20,
             'perturb_sampling_stepsize':0.01,
-            'tol_perturb_integration':1.e-6,
+            'tol_perturb_integration':1.e-4,
             'halofit_k_per_decade': 3000. #you could try change this
             }
 
@@ -77,7 +77,7 @@ class Power_Spectra():
         self.cosmo_h=cosmo.clone(H0=100)
         #self.pk_func=self.camb_pk_too_many_z if pk_func is None else pk_func
         #self.pk_func=self.ccl_pk if pk_func is None else pk_func
-        self.pk_func=self.class_pk if pk_func is None else pk_func
+        self.pk_func=self.camb_pk_too_many_z if pk_func is None else pk_func
         self.SSV_cov=SSV_cov
         self.scenario = scenario
         self.pk=None
@@ -223,13 +223,14 @@ class Power_Spectra():
             cosmo_params=self.cosmo_params
         if pk_params is None:
             pk_params=self.pk_params
-        cosmoC=Class()
+            
         h=cosmo_params['h']
         class_params={'h':h,'omega_b':cosmo_params['Omb']*h**2,
                             'omega_cdm':(cosmo_params['Om']-cosmo_params['Omb'])*h**2,
                             'A_s':cosmo_params['As'],'n_s':cosmo_params['ns'],
                             'output': 'mPk','z_max_pk':max(z)+0.1,
-                            'P_k_max_1/Mpc':pk_params['kmax']*h*1.01,
+                            'P_k_max_1/Mpc':pk_params['kmax']*h*1.05,
+#                             'P_k_min_1/Mpc':pk_params['kmin']*h*0.95,
                     }
         if pk_params['non_linear']==1:
             class_params['non linear']='halofit'
@@ -256,6 +257,7 @@ class Power_Spectra():
         k=self.kh*h
         pkC=np.array([[cosmoC.pk(ki,zj) for ki in k ]for zj in z])
         pkC*=h**3
+#         pkC=cosmoC.get_pk(self.kh,z)
         s8=cosmoC.sigma8()
         cosmoC.struct_cleanup()
         if return_s8:
