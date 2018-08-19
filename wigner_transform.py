@@ -4,6 +4,7 @@ from scipy.optimize import fsolve
 from wigner_functions import *
 import numpy as np
 import torch as tc
+from torch_utils import *
 import itertools
 
 class wigner_transform():
@@ -11,7 +12,7 @@ class wigner_transform():
         self.name='Wigner'
         self.logger=logger
         self.l=l
-        self.grad_l=tc.as_tensor(np.gradient(l),dtype=l.dtype,device=l.device)
+        self.grad_l=tc_gradient(l)
         self.norm=(2*l+1.)/(4.*np.pi) #ignoring some factors of -1,
                                                     #assuming sum and differences of m1,m2
                                                     #are even for all correlations we need.
@@ -35,13 +36,13 @@ class wigner_transform():
         cl_int=interp1d(l_cl,cl,bounds_error=False,fill_value=0,
                         kind='linear')
         cl2=cl_int(self.l)
-        return cl2
+        return tc.tensor(cl2,dtype=cl.dtype,)#device=cl.device)
 
     def cl_cov_grid(self,l_cl=[],cl_cov=[],taper=False,**kwargs):
         if taper:#FIXME there is no check on change in taper_kwargs
             if self.taper_f2 is None or not np.all(np.isclose(self.taper_f['l'],cl)):
                 self.taper_f=self.taper(l=l,**kwargs)
-                taper_f2=np.outer(self.taper_f['taper_f'],self.taper_f['taper_f'])
+                taper_f2=tc.gre(self.taper_f['taper_f'],self.taper_f['taper_f'])
                 self.taper_f2={'l':l,'taper_f2':taper_f2}
             cl=cl*self.taper_f2['taper_f2']
         if l_cl_cl==[]:#In this case pass a function that takes k with kwargs and outputs cl
@@ -55,7 +56,8 @@ class wigner_transform():
 
     def projected_correlation(self,l_cl=[],cl=[],m1_m2=[],taper=False,**kwargs):
         cl2=self.cl_grid(l_cl=l_cl,cl=cl,taper=taper,**kwargs)
-        w=np.dot(self.wig_d[m1_m2]*self.grad_l*self.norm,cl2)
+        #w=np.dot(self.wig_d[m1_m2]*self.grad_l*self.norm,cl2)
+        w=(self.wig_d[m1_m2]*self.grad_l*self.norm*cl2).sum(1)
         return self.theta[m1_m2],w
 
     def projected_covariance(self,l_cl=[],cl_cov=[],m1_m2=[],m1_m2_cross=None,
@@ -64,8 +66,8 @@ class wigner_transform():
             m1_m2_cross=m1_m2
         #when cl_cov can be written as vector, eg. gaussian covariance
         cl2=self.cl_grid(l_cl=l_cl,cl=cl_cov,taper=taper,**kwargs)
-        cov=(self.wig_d[m1_m2]*np.sqrt(self.norm))@(
-            (self.wig_d[m1_m2_cross]*np.sqrt(self.norm)*cl2*self.grad_l))
+        cov=(self.wig_d[m1_m2]*np.sqrt(self.norm)).mm(
+            (self.wig_d[m1_m2_cross]*np.sqrt(self.norm)*cl2*self.grad_l).transpose(1,0))
         #@==np.matmul
 #         cov=np.einsum('rk,k,sk->rs',self.wig_d[m1_m2]*np.sqrt(self.norm),cl2*self.grad_l,
 #                     self.wig_d[m1_m2_cross]*np.sqrt(self.norm),optimize=True)
@@ -93,13 +95,13 @@ class wigner_transform():
     def taper(self,l=[],large_k_lower=10,large_k_upper=100,low_k_lower=0,low_k_upper=1.e-5):
         #FIXME there is no check on change in taper_kwargs
         if self.taper_f is None or not np.all(np.isclose(self.taper_f['k'],k)):
-            taper_f=np.zeros_like(k)
+            taper_f=tc.zeros_like(k)
             x=k>large_k_lower
-            taper_f[x]=np.cos((k[x]-large_k_lower)/(large_k_upper-large_k_lower)*np.pi/2.)
+            taper_f[x]=tc.cos((k[x]-large_k_lower)/(large_k_upper-large_k_lower)*np.pi/2.)
             x=k<large_k_lower and k>low_k_upper
             taper_f[x]=1
             x=k<low_k_upper
-            taper_f[x]=np.cos((k[x]-low_k_upper)/(low_k_upper-low_k_lower)*np.pi/2.)
+            taper_f[x]=tc.cos((k[x]-low_k_upper)/(low_k_upper-low_k_lower)*np.pi/2.)
             self.taper_f={'taper_f':taper_f,'k':k}
         return self.taper_f
 

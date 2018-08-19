@@ -71,43 +71,42 @@ class hankel_transform():
 
         l=tc.tensor(l,dtype=tc.double)
         theta=tc.tensor(theta,dtype=tc.double)
-        print(theta)
         self.logger.info ('nr:%s',len(theta))
         J=jn(j_nu,tc.ger(theta,l))
-        J_nu1=jn(j_nu+1,zeros)
+        J_nu1=tc.tensor(jn(j_nu+1,zeros),dtype=l.dtype)
         return l,l_max,theta,J,J_nu1,zeros
 
-    def _cl_grid(self,l_cl=[],cl=[],m1_m2=[],taper=False,**kwargs):
+    def _cl_grid(self,l_cl=None,cl=[],m1_m2=[],taper=False,**kwargs):
         if taper:
             sself.taper_f=self.taper(l=l_cl,**kwargs)
             cl=cl*taper_f
-        if l_cl==[]:#In this case pass a function that takes k with kwargs and outputs cl
+        if l_cl is None:#In this case pass a function that takes k with kwargs and outputs cl
             cl2=cl(l=self.l[m1_m2],**kwargs)
         else:
             cl_int=interp1d(l_cl,cl,bounds_error=False,fill_value=0,
                             kind='linear')
             cl2=cl_int(self.l[m1_m2])
-        return cl2
+        return tc.tensor(cl2,dtype=cl.dtype)
 
-    def _cl_cov_grid(self,l_cl=[],cl_cov=[],m1_m2=[],taper=False,**kwargs):
+    def _cl_cov_grid(self,l_cl=None,cl_cov=[],m1_m2=[],taper=False,**kwargs):
         if taper:#FIXME there is no check on change in taper_kwargs
             if self.taper_f2 is None or not tc.all(tc.isclose(self.taper_f['l'],l_cl)):
                 self.taper_f=self.taper(l=l_cl,**kwargs)
                 taper_f2=tc.ger(self.taper_f['taper_f'],self.taper_f['taper_f'])
                 self.taper_f2={'l':l_cl,'taper_f2':taper_f2}
             cl_cov=cl_cov*self.taper_f2['taper_f2']
-        if l_cl==[]:#In this case pass a function that takes k with kwargs and outputs cl
+        if l_cl is None:#In this case pass a function that takes k with kwargs and outputs cl
             cl2=cl_cov(l=self.l[m1_m2],**kwargs)
         else:
             cl_int=RectBivariateSpline(l_cl,l_cl,cl_cov,)#bounds_error=False,fill_value=0,
                             #kind='linear')
                     #interp2d is slow. Make sure l_cl is on regular grid.
             cl2=cl_int(self.l[m1_m2],self.l[m1_m2])
-        return cl2
+        return tc.tensor(cl2,dtype=cl_cov.dtype)
 
-    def projected_correlation(self,l_cl=[],cl=[],m1_m2=[],taper=False,**kwargs):
+    def projected_correlation(self,l_cl=None,cl=[],m1_m2=[],taper=False,**kwargs):
         cl2=self._cl_grid(l_cl=l_cl,cl=cl,m1_m2=m1_m2,taper=taper,**kwargs)
-        w=(self.J[m1_m2]*cl2/self.J_nu1[m1_m2]**2).sum(0)
+        w=(self.J[m1_m2]*cl2/self.J_nu1[m1_m2]**2).sum(1)
         w*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],w
 
@@ -120,16 +119,16 @@ class hankel_transform():
         w*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],w
 
-    def projected_covariance(self,l_cl=[],cl_cov=[],m1_m2=[],taper=False,**kwargs):
+    def projected_covariance(self,l_cl=None,cl_cov=[],m1_m2=[],taper=False,**kwargs):
         #when cl_cov can be written as vector, eg. gaussian covariance
         cl1=self._cl_grid(l_cl=l_cl,cl=cl_cov,m1_m2=m1_m2,taper=taper,**kwargs)
         # cov=np.dot(self.J[m1_m2],(self.J[m1_m2]*cl1*cl2/self.J_nu1[m1_m2]**2).T)
-        cov=tc.einsum('rk,k,sk->rs',self.J[m1_m2],cl1/self.J_nu1[m1_m2]**2,
-                    self.J[m1_m2],optimize=True)
+        cov=tc.einsum('rk,k,sk->rs',(self.J[m1_m2],cl1/self.J_nu1[m1_m2]**2,
+                    self.J[m1_m2]))#,optimize=True)
         cov*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],cov
 
-    def projected_covariance2(self,l_cl=[],cl_cov=[],m1_m2=[],taper=False,**kwargs):
+    def projected_covariance2(self,l_cl=None,cl_cov=[],m1_m2=[],taper=False,**kwargs):
         #when cl_cov is a 2-d matrix
         cl_cov2=cl_cov#self._cl_cov_grid(l_cl=l_cl,cl_cov=cl_cov,m1_m2=m1_m2,taper=taper,**kwargs)
         cov=tc.dot(self.J[m1_m2],tc.dot(self.J[m1_m2]/self.J_nu1[m1_m2]**2,cl_cov2).T)

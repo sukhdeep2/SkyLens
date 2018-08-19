@@ -124,14 +124,14 @@ class cov_3X2():
         self.l_cut_jnu['m1_m2s']=self.m1_m2s
         self.m1_m2s=self.HT.m1_m2s
         if self.HT.name=='Hankel':
-            self.l=np.hstack((self.HT.l[i] for i in self.m1_m2s))
+            self.l=tc.stack([self.HT.l[i] for i in self.m1_m2s])[0]
             for m1_m2 in self.m1_m2s:
-                self.l_cut_jnu[m1_m2]=np.isin(self.l,(self.HT.l[m1_m2]))
+                self.l_cut_jnu[m1_m2]=tc_isin(self.l,(self.HT.l[m1_m2]))
 
         if self.HT.name=='Wigner':
             self.l=self.HT.l
             for m1_m2 in self.m1_m2s:
-                self.l_cut_jnu[m1_m2]=np.isin(self.l,(self.l))
+                self.l_cut_jnu[m1_m2]=tc_isin(self.l,(self.l))
             #FIXME: This is ugly
 
     def set_bin_params(self):
