@@ -48,11 +48,12 @@ class Covariance_utils():
         if self.l_cut_jnu is None:
             #self.sigma_win=np.dot(self.Win**2*tc_gradient(self.l)*self.l,cls_lin.transpose(1,0))
             self.sigma_win=(self.Win**2*tc_gradient(self.l)*self.l*cls_lin).sum(1)
-        else: #FIXME: This is ugly. Only needed for hankel transform (not wigner). Remove if HT is deprecated.
+        else: 
+        #FIXME: This is ugly. Only needed for hankel transform (not wigner). Remove if HT is deprecated.
             self.sigma_win={}
             for m1_m2 in self.l_cut_jnu['m1_m2s']:
                 lc=self.l_cut_jnu[m1_m2]
-                self.sigma_win[m1_m2]=np.dot(self.Win[lc]**2*tc_gradient(self.l[lc])*self.l[lc],cls_lin[:,lc])
+                self.sigma_win[m1_m2]=(self.Win[lc]**2*tc_gradient(self.l[lc])*self.l[lc]*cls_lin[:,lc]).sum(1)
         #FIXME: This is ugly
 
     def corr_matrix(self,cov=[]):
