@@ -77,7 +77,7 @@ class Power_Spectra():
         self.cosmo_h=cosmo.clone(H0=100)
         #self.pk_func=self.camb_pk_too_many_z if pk_func is None else pk_func
         #self.pk_func=self.ccl_pk if pk_func is None else pk_func
-        self.pk_func=self.class_pk if pk_func is None else pk_func
+        self.pk_func=self.camb_pk_too_many_z if pk_func is None else pk_func
         self.SSV_cov=SSV_cov
         self.scenario = scenario
         self.pk=None
