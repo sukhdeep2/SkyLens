@@ -22,7 +22,7 @@ class wigner_transform():
         self.theta={}
         # self.theta=theta
         for (m1,m2) in m1_m2:
-            self.wig_d[(m1,m2)]=wigner_d(m1,m2,theta,self.l,)#ncpu=ncpu) #FIXME: Use the parallel version
+            self.wig_d[(m1,m2)]=wigner_d(m1,m2,theta,self.l)#ncpu=ncpu) #FIXME: Use the parallel version
             self.theta[(m1,m2)]=theta #FIXME: Ugly
 
 
