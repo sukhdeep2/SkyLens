@@ -23,11 +23,9 @@ c=c.to(u.km/u.second)
 
 class cov_3X2():
     def __init__(self,silence_camb=False,l=np.arange(2,2001),HT=None,Ang_PS=None,
-                cov_utils=None,logger=None,
-                lensing_utils=None,galaxy_utils=None,
-                zs_bins=None,zg_bins=None,
-                power_spectra_kwargs={},HT_kwargs=None,
-                z_PS=None,nz_PS=100,log_z_PS=True,z_PS_max=None,
+                cov_utils=None,logger=None,lensing_utils=None,galaxy_utils=None,
+                zs_bins=None,zg_bins=None,power_spectra_kwargs={},HT_kwargs=None,
+                z_PS=None,nz_PS=100,log_z_PS=True,#z_PS_max=None,
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
                 use_window=True,
                 sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,
@@ -52,6 +50,7 @@ class cov_3X2():
         self.do_xi=do_xi
         self.corrs=corrs
         self.l_cut_jnu=None
+        z_PS_max=zs_bins['zmax']
         if do_xi:
             self.set_HT(HT=HT,HT_kwargs=HT_kwargs)
 
@@ -327,8 +326,8 @@ class cov_3X2():
                                           bias_kwargs=bias_kwargs)
             self.SN[('galaxy','galaxy')]=self.galaxy_utils.SN
 
-        if self.Ang_PS.clz is None:
-            self.Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
+#         if self.Ang_PS.clz is None:
+        self.Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
                                 cosmo_params=cosmo_params)
 
         out={}
@@ -550,6 +549,12 @@ class cov_3X2():
                     D_final[i*len_bins:(i+1)*len_bins]=dat_c[indx]
                     i+=1
 
+
+        if not self.do_cov:
+            out={'cov':None}
+            out[est]=D_final
+            return out
+            
         cov_final=np.zeros((len(D_final),len(D_final)))-999.#np.int(nD2*(nD2+1)/2)
 
         indx0_c1=0

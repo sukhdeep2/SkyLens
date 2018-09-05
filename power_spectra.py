@@ -60,6 +60,7 @@ class_accuracy_settings={ #from Vanessa. To avoid class errors due to compiler i
             "k_step_super":0.0001,
             "k_step_super_reduction":0.1,
             'k_per_decade_for_pk': 20,
+#             'k_output_values': 2.0,
             'perturb_sampling_stepsize':0.01,
             'tol_perturb_integration':1.e-6,
             'halofit_k_per_decade': 3000. #you could try change this
@@ -77,7 +78,7 @@ class Power_Spectra():
         self.cosmo_h=cosmo.clone(H0=100)
         #self.pk_func=self.camb_pk_too_many_z if pk_func is None else pk_func
         #self.pk_func=self.ccl_pk if pk_func is None else pk_func
-        self.pk_func=self.camb_pk_too_many_z if pk_func is None else pk_func
+        self.pk_func=self.class_pk if pk_func is None else getattr(self,pk_func)
         self.SSV_cov=SSV_cov
         self.scenario = scenario
         self.pk=None
@@ -213,9 +214,14 @@ class Power_Spectra():
         nz=len(z)
 
         while i<nz:
-            pki,kh=self.camb_pk(z=z[i:i+z_step],pk_params=pk_params,cosmo_params=cosmo_params,return_s8=False)
+            p=self.camb_pk(z=z[i:i+z_step],pk_params=pk_params,cosmo_params=cosmo_params,return_s8=return_s8)
+            pki=p[0]
+            kh=p[1]
             pk=np.vstack((pk,pki)) if pk is not None else pki
             i+=z_step
+
+        if return_s8:
+            return pk,kh,p[2]
         return pk,kh
 
     def class_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
@@ -229,7 +235,7 @@ class Power_Spectra():
                             'omega_cdm':(cosmo_params['Om']-cosmo_params['Omb'])*h**2,
                             'A_s':cosmo_params['As'],'n_s':cosmo_params['ns'],
                             'output': 'mPk','z_max_pk':max(z)+0.1,
-                            'P_k_max_1/Mpc':pk_params['kmax']*h*1.01,
+                            'P_k_max_1/Mpc':pk_params['kmax']*h*1.1,
                     }
         if pk_params['non_linear']==1:
             class_params['non linear']='halofit'
@@ -240,7 +246,7 @@ class Power_Spectra():
             class_params['m_ncdm']=cosmo_params['mnu']
         class_params['N_ncdm']=3.04-class_params['N_ur']
 
-        if cosmo_params['w']!=-1:
+        if cosmo_params['w']!=-1 or cosmo_params['wa']!=0:
             class_params['Omega_fld']=cosmo_params['Oml']
             class_params['w0_fld']=cosmo_params['w']
             class_params['wa_fld']=cosmo_params['wa']

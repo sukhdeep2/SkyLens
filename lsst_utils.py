@@ -42,7 +42,7 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None,ns=0):
     return zs,p_zs,nz
 
 def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
-                    zp_sigma=None,zs=None):
+                    zp_sigma=None,zs=None,z_bins=None):
     """
         Setting source redshift bins in the format used in code.
         Need
@@ -57,18 +57,22 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
 
     if nz_bins is None:
         nz_bins=1
-    z_bins=np.linspace(min(zp)-0.0001,max(zp)+0.0001,nz_bins+1)
+        
+    if z_bins is None:
+        z_bins=np.linspace(min(zp)-0.0001,max(zp)+0.0001,nz_bins+1)
 
     if zs is None:
-        zs=np.linspace(0,2.5,100)
+        zs=np.linspace(0,max(z_bins)+1,100)
     dzs=np.gradient(zs)
     dzp=np.gradient(zp) if len(zp)>1 else [1]
     zp=np.array(zp)
 
-    zl_kernel=np.linspace(0,2,50)
+    zl_kernel=np.linspace(0,max(zs),50)
     lu=Lensing_utils()
     cosmo_h=cosmo_h_PL
 
+    zmax=max(z_bins)
+    
     for i in np.arange(nz_bins):
         zs_bins[i]={}
         indx=zp.searchsorted(z_bins[i:i+2])
@@ -95,8 +99,11 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
         zs_bins[i]['Norm']=np.sum(zs_bins[i]['pzdz'])
         sc=1./lu.sigma_crit(zl=zl_kernel,zs=zs[x],cosmo_h=cosmo_h)
         zs_bins[i]['lens_kernel']=np.dot(zs_bins[i]['pzdz'],sc)
+        
+        zmax=max([zmax,max(zs[x])])
     zs_bins['n_bins']=nz_bins #easy to remember the counts
     zs_bins['z_lens_kernel']=zl_kernel
+    zs_bins['zmax']=zmax
     return zs_bins
 
 def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
@@ -207,6 +214,40 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
     zg_bins['n_bins']=nz_bins #easy to remember the counts
     return zg_bins
 
+
+def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=26,nbins=3,z_sigma=0.01,z_bias=None,z_bins=None,
+                          ztrue_func=ztrue_given_pz_Gaussian):
+    
+    z=np.linspace(0,5,200)
+    pzs=lsst_pz_source(z=z)
+    N1=np.sum(pzs)
+    
+    x=z>zmin
+    x*=z<zmax
+    z=z[x]
+    pzs=pzs[x]
+    ns0=ns0*np.sum(pzs)/N1
+    print('ns0: ',ns0)
+    
+    if z_bins is None:
+        z_bins=np.linspace(zmin, min(2,zmax), nbins+1)
+        z_bins[-1]=zmax
+    
+    if z_bias is None:
+        z_bias=np.zeros_like(z)
+    else:
+        zb=interp1d(z_bias['z'],z_bias['b'],bounds_error=False,fill_value=0)
+        z_bias=zb(z)
+    if np.isscalar(z_sigma):
+        z_sigma=z_sigma*(1+z)
+    else:
+        zs=interp1d(z_sigma['z'],z_sigma['b'],bounds_error=False,fill_value=0)
+        z_sigma=zs(z)
+        
+    return source_tomo_bins(zp=z,p_zp=pzs,ns=ns0,nz_bins=nbins,
+                         ztrue_func=ztrue_func,zp_bias=z_bias,
+                        zp_sigma=z_sigma,z_bins=z_bins)
+
 def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits'):
     z_bins={}
     t=Table.read(fname,format='fits',hdu=6)
@@ -223,6 +264,7 @@ def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits'):
         z_bins[i]['Norm']=np.sum(z_bins[i]['pzdz'])
     z_bins['n_bins']=nz_bins
     z_bins['nz']=nz
+    z_bins['zmax']=max(t['Z_HIGH'])
     return z_bins
 
 
@@ -244,4 +286,5 @@ def Kids_bins(kids_fname='/home/deep/data/KiDS-450/Nz_DIR/Nz_DIR_Mean/Nz_DIR_z{z
         z_bins[i]['Norm']=np.sum(z_bins[i]['pzdz'])
     z_bins['n_bins']=nz_bins
     z_bins['nz']=nz
+    z_bins['zmax']=max(t['z'])+0.05
     return z_bins

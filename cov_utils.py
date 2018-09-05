@@ -33,7 +33,9 @@ class Covariance_utils():
         if self.use_window:
             self.Win=self.window_func(theta_win=self.theta_win,f_sky=f_sky)
         else:
-            self.Win=np.ones_like(self.l,dtype='float32')
+            self.Win=np.zeros_like(self.l,dtype='float32')
+            x=self.l==0
+            self.Win[x]=1.
         self.Om_W=4*np.pi*f_sky
         self.Win/=self.Om_W #FIXME: This thing has been forgotten and not used anywhere in the code.
 
