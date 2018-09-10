@@ -19,7 +19,7 @@ cosmo_h=cosmo.clone(H0=100)
 #c=c.to(u.km/u.second)
 
 cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817,'Om':cosmo.Om0,
-                'As':2.12e-09,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
+                'As':2.2e-09,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
                 'w':-1,'wa':0})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
 pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':5000}
@@ -62,7 +62,7 @@ class_accuracy_settings={ #from Vanessa. To avoid class errors due to compiler i
             'k_per_decade_for_pk': 20,
 #             'k_output_values': 2.0,
             'perturb_sampling_stepsize':0.01,
-            'tol_perturb_integration':1.e-6,
+            'tol_perturb_integration':1.e-4,
             'halofit_k_per_decade': 3000. #you could try change this
             }
 
@@ -234,7 +234,8 @@ class Power_Spectra():
         class_params={'h':h,'omega_b':cosmo_params['Omb']*h**2,
                             'omega_cdm':(cosmo_params['Om']-cosmo_params['Omb'])*h**2,
                             'A_s':cosmo_params['As'],'n_s':cosmo_params['ns'],
-                            'output': 'mPk','z_max_pk':max(z)+0.1,
+                            'output': 'mPk','z_max_pk':100, #max(z)*2, #to avoid class error. 
+                                                      #Allegedly a compiler error, whatever that means
                             'P_k_max_1/Mpc':pk_params['kmax']*h*1.1,
                     }
         if pk_params['non_linear']==1:
@@ -257,7 +258,11 @@ class Power_Spectra():
 
         cosmoC=Class()
         cosmoC.set(class_params)
-        cosmoC.compute()
+        try:
+            cosmoC.compute()
+        except Exception as err:
+            print(class_params, err)
+            raise Exception('Class crashed')
 
         k=self.kh*h
         pkC=np.array([[cosmoC.pk(ki,zj) for ki in k ]for zj in z])

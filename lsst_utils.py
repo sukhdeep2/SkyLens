@@ -216,7 +216,7 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
 
 
 def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=26,nbins=3,z_sigma=0.01,z_bias=None,z_bins=None,
-                          ztrue_func=ztrue_given_pz_Gaussian):
+                          ztrue_func=ztrue_given_pz_Gaussian,z_sigma_power=1):
     
     z=np.linspace(0,5,200)
     pzs=lsst_pz_source(z=z)
@@ -239,7 +239,7 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=26,nbins=3,z_sigma=0.01,z_bias=Non
         zb=interp1d(z_bias['z'],z_bias['b'],bounds_error=False,fill_value=0)
         z_bias=zb(z)
     if np.isscalar(z_sigma):
-        z_sigma=z_sigma*(1+z)
+        z_sigma=z_sigma*((1+z)**z_sigma_power)
     else:
         zs=interp1d(z_sigma['z'],z_sigma['b'],bounds_error=False,fill_value=0)
         z_sigma=zs(z)

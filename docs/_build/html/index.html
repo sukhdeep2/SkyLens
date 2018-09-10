@@ -1,0 +1,191 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Welcome to Covariance’s documentation! &#8212; Covariance 0.0 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="welcome-to-covariance-s-documentation">
+<h1>Welcome to Covariance’s documentation!<a class="headerlink" href="#welcome-to-covariance-s-documentation" title="Permalink to this headline">¶</a></h1>
+<div class="toctree-wrapper compound">
+</div>
+<span class="target" id="module-cov_3X2"></span><dl class="class">
+<dt id="cov_3X2.cov_3X2">
+<em class="property">class </em><code class="descclassname">cov_3X2.</code><code class="descname">cov_3X2</code><span class="sig-paren">(</span><em>silence_camb=False, l=array([   2,    3,    4, ..., 1998, 1999, 2000]), HT=None, Ang_PS=None, cov_utils=None, logger=None, lensing_utils=None, galaxy_utils=None, zs_bins=None, zg_bins=None, power_spectra_kwargs={}, HT_kwargs=None, z_PS=None, nz_PS=100, log_z_PS=True, do_cov=False, SSV_cov=False, tidal_SSV_cov=False, do_sample_variance=True, use_window=True, sigma_gamma=0.3, f_sky=0.3, l_bins=None, bin_cl=False, stack_data=False, bin_xi=False, do_xi=False, theta_bins=None, corrs=[('shear', 'shear')]</em><span class="sig-paren">)</span><a class="headerlink" href="#cov_3X2.cov_3X2" title="Permalink to this definition">¶</a></dt>
+<dd><dl class="method">
+<dt id="cov_3X2.cov_3X2.bin_cl_func">
+<code class="descname">bin_cl_func</code><span class="sig-paren">(</span><em>cl=None</em>, <em>cov=None</em><span class="sig-paren">)</span><a class="headerlink" href="#cov_3X2.cov_3X2.bin_cl_func" title="Permalink to this definition">¶</a></dt>
+<dd><p>bins the tomographic power spectra
+results: Either cl or covariance
+bin_cl: if true, then results has cl to be binned
+bin_cov: if true, then results has cov to be binned
+Both bin_cl and bin_cov can be true simulatenously.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="cov_3X2.cov_3X2.calc_cl">
+<code class="descname">calc_cl</code><span class="sig-paren">(</span><em>zs1=None</em>, <em>zs2=None</em><span class="sig-paren">)</span><a class="headerlink" href="#cov_3X2.cov_3X2.calc_cl" title="Permalink to this definition">¶</a></dt>
+<dd><p>Compute the angular power spectra, Cl between two source bins
+zs1, zs2: Source bins. Dicts containing information about the source bins</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="cov_3X2.cov_3X2.cl_cov">
+<code class="descname">cl_cov</code><span class="sig-paren">(</span><em>cls=None</em>, <em>zs_indx=[]</em>, <em>tracers=[]</em><span class="sig-paren">)</span><a class="headerlink" href="#cov_3X2.cov_3X2.cl_cov" title="Permalink to this definition">¶</a></dt>
+<dd><p>Computes the covariance between any two tomographic power spectra.
+cls: tomographic cls already computed before calling this function
+zs_indx: 4-d array, noting the indices of the source bins involved
+in the tomographic cls for which covariance is computed.
+For ex. covariance between 12, 56 tomographic cross correlations
+involve 1,2,5,6 source bins</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="cov_3X2.cov_3X2.cl_tomo">
+<code class="descname">cl_tomo</code><span class="sig-paren">(</span><em>cosmo_h=None, cosmo_params=None, pk_params=None, pk_func=None, corrs=[('shear', 'shear')], bias_kwargs={}, bias_func=None</em><span class="sig-paren">)</span><a class="headerlink" href="#cov_3X2.cov_3X2.cl_tomo" title="Permalink to this definition">¶</a></dt>
+<dd><p>Computes full tomographic power spectra and covariance, including shape noise. output is
+binned also if needed.
+Arguments are for the power spectra  and sigma_crit computation,
+if it needs to be called from here.
+source bins are already set. This function does set the sigma crit for sources.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="cov_3X2.cov_3X2.get_cl">
+<code class="descname">get_cl</code><span class="sig-paren">(</span><em>zs1_indx=-1</em>, <em>zs2_indx=-1</em>, <em>corr=('shear'</em>, <em>'shear')</em>, <em>pk_func=None</em>, <em>pk_params=None</em>, <em>cosmo_h=None</em>, <em>cosmo_params=None</em><span class="sig-paren">)</span><a class="headerlink" href="#cov_3X2.cov_3X2.get_cl" title="Permalink to this definition">¶</a></dt>
+<dd><p>Wrapper for calc_lens_lens_cl. Checks to make sure quantities such as power spectra and cosmology
+are available otherwise sets them to some default values.
+zs1_indx, zs2_indx: Indices of the source bins to be correlated.
+Others are arguments to be passed to power spectra function if it needs to be computed</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="cov_3X2.cov_3X2.set_bin_params">
+<code class="descname">set_bin_params</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#cov_3X2.cov_3X2.set_bin_params" title="Permalink to this definition">¶</a></dt>
+<dd><p>Setting up the binning functions to be used in binning the data</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="cov_3X2.cov_3X2.stack_dat">
+<code class="descname">stack_dat</code><span class="sig-paren">(</span><em>dat</em>, <em>corrs</em><span class="sig-paren">)</span><a class="headerlink" href="#cov_3X2.cov_3X2.stack_dat" title="Permalink to this definition">¶</a></dt>
+<dd><p>outputs from tomographic caluclations are dictionaries.
+This fucntion stacks them such that the cl or xi is a long
+1-d array and the covariance is N X N array.
+dat: output from tomographic calculations.
+XXX: reason that outputs tomographic bins are distionaries is that
+it make is easier to
+handle things such as binning, hankel transforms etc. We will keep this structure for now.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="cov_3X2.cov_3X2.xi_cov">
+<code class="descname">xi_cov</code><span class="sig-paren">(</span><em>cov_cl={}</em>, <em>m1_m2=None</em>, <em>m1_m2_cross=None</em>, <em>clr=None</em>, <em>clrk=None</em><span class="sig-paren">)</span><a class="headerlink" href="#cov_3X2.cov_3X2.xi_cov" title="Permalink to this definition">¶</a></dt>
+<dd><p>Computes covariance of xi, by performing 2-D hankel transform on covariance of Cl.
+In current implementation of hankel transform works only for m1_m2=m1_m2_cross.
+So no cross covariance between xi+ and xi-.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="cov_3X2.cov_3X2.xi_tomo">
+<code class="descname">xi_tomo</code><span class="sig-paren">(</span><em>cosmo_h=None, cosmo_params=None, pk_params=None, pk_func=None, corrs=[('shear', 'shear')]</em><span class="sig-paren">)</span><a class="headerlink" href="#cov_3X2.cov_3X2.xi_tomo" title="Permalink to this definition">¶</a></dt>
+<dd><p>Computed tomographic angular correlation functions. First calls the tomographic
+power spectra and covariance and then does the hankel transform and  binning.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="indices-and-tables">
+<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Permalink to this headline">¶</a></h1>
+<ul class="simple">
+<li><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></li>
+<li><a class="reference internal" href="py-modindex.html"><span class="std std-ref">Module Index</span></a></li>
+<li><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></li>
+</ul>
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="#">Covariance</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="#">Documentation overview</a><ul>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2018, Sukhdeep Singh.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.7.9</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.11</a>
+      
+      |
+      <a href="_sources/index.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

@@ -211,7 +211,7 @@ class cov_3X2():
             zs_indx: 4-d array, noting the indices of the source bins involved
             in the tomographic cls for which covariance is computed.
             For ex. covariance between 12, 56 tomographic cross correlations
-                    involve 1,2,5,6 source bins
+            involve 1,2,5,6 source bins
         """
         cov={}
         cov['final']=None
@@ -307,8 +307,6 @@ class cov_3X2():
             for i in np.arange(len(tracers)):
                 for j in np.arange(i,len(tracers)):
                     corrs2+=[(tracers[i],tracers[j])]
-
-        print(corrs2)
 
         if cosmo_h is None:
             cosmo_h=self.Ang_PS.PS.cosmo_h
@@ -529,7 +527,7 @@ class cov_3X2():
             if self.do_xi:
                 n_m1_m2=len(self.m1_m2s[corr])
             n_bins+=len(self.corr_indxs[corr])*n_m1_m2 #np.int64(nbins*(nbins-1.)/2.+nbins)
-        print(n_bins,len_bins,n_m1_m2)
+#         print(n_bins,len_bins,n_m1_m2)
         D_final=np.zeros(n_bins*len_bins)
 
         i=0
@@ -554,7 +552,7 @@ class cov_3X2():
             out={'cov':None}
             out[est]=D_final
             return out
-            
+
         cov_final=np.zeros((len(D_final),len(D_final)))-999.#np.int(nD2*(nD2+1)/2)
 
         indx0_c1=0
@@ -621,28 +619,6 @@ class cov_3X2():
 
                 indx0_c2+=n_indx2*len_bins*n_m1_m2_2
             indx0_c1+=n_indx1*len_bins*n_m1_m2_1
-
-            # dat2=dat['cov']
-            # for jD2 in np.arange(iD2,nD2):
-            #     if self.do_xi:
-            #         dat2=dat['cov'][D_keys[iD2]+D_keys[jD2]]
-            #
-            #     # i_indx=0
-            #     indx0_i=(iD2)*nX*nD
-            #     indx0_j=(jD2)*nX*nD
-            #     for i in np.arange(len(self.corr_ll_indxs)):
-            #         for j in np.arange(i,len(self.corr_ll_indxs)):
-            #             indx=self.corr_ll_indxs[i]+self.corr_ll_indxs[j]
-            #             # print(i,j,nX,indx0,nD2,np.int((nD2+1)/2),cov_final.shape)
-            #             if indx0_i==indx0_j:
-            #                 cov_final[ indx0_i+i*nX : indx0_i+(i+1)*nX , indx0_j+j*nX : indx0_j+(j+1)*nX] = dat2[indx]['final']
-            #                 cov_final[ indx0_j+j*nX : indx0_j+(j+1)*nX , indx0_i+i*nX : indx0_i+(i+1)*nX] = dat2[indx]['final']
-            #             if indx0_i!=indx0_j:
-            #                 cov_final[ indx0_i+j*nX : indx0_i+(j+1)*nX , indx0_j+i*nX : indx0_j+(i+1)*nX] = dat2[indx]['final']
-            #                 cov_final[ indx0_j+i*nX : indx0_j+(i+1)*nX , indx0_i+j*nX : indx0_i+(j+1)*nX] = dat2[indx]['final'].T
-            #
-            #                 cov_final[ indx0_i+i*nX : indx0_i+(i+1)*nX , indx0_j+j*nX : indx0_j+(j+1)*nX] = dat2[indx]['final']
-            #                 cov_final[ indx0_j+j*nX : indx0_j+(j+1)*nX , indx0_i+i*nX : indx0_i+(i+1)*nX] = dat2[indx]['final'].T
 
         out={'cov':cov_final}
         out[est]=D_final
