@@ -3,6 +3,7 @@ from scipy.special import binom,jn,loggamma
 from scipy.special import eval_jacobi as jacobi
 from multiprocessing import Pool,cpu_count
 from functools import partial
+import sparse
 
 def wigner_d(m1,m2,theta,l,l_use_bessel=1.e4):
     l0=np.copy(l)
@@ -51,12 +52,21 @@ def wigner_d_parallel(m1,m2,theta,l,ncpu=None,l_use_bessel=1.e4):
 def log_factorial(n):
     return loggamma(n+1)
 
-def Wigner3j_log(j_1, j_2, j_3, m_1, m_2, m_3):
+def Wigner3j(m_1, m_2, m_3,j_1, j_2, j_3):
     """Calculate the Wigner 3j symbol `Wigner3j(j_1,j_2,j_3,m_1,m_2,m_3)`
 
-    This function is copied with minor modification from
+    This function is inspired from implementation in 
     sympy.physics.Wigner, as written by Jens Rasch.
+    https://docs.sympy.org/latest/modules/physics/wigner.html
+    
+    We have modified the implementation to use log_factorial so as to 
+    avoid dealing with large numbers. This function also accepts 
+    j_1,j_2,j_3 as 1d arrays (can be of different size) and returns
+    a sparse matrix of size n_1 X n_2 X n_3, where n_i is the length of j_i.
+    m_i should be integer scalars.
+    For sparse package, see https://pypi.org/project/sparse/  
 
+    Following from sympy implementation:
     The inputs must be integers.  (Half integer arguments are
     sacrificed so that we can use numba.)  Nonzero return quantities
     only occur when the `j`s obey the triangle inequality (any two
@@ -66,52 +76,92 @@ def Wigner3j_log(j_1, j_2, j_3, m_1, m_2, m_3):
     ========
 
     >>> from spherical_functions import Wigner3j
-    >>> Wigner3j(2, 6, 4, 0, 0, 0)
+    >>> Wigner3j_log(2, 6, 4, 0, 0, 0)
     0.186989398002
-    >>> Wigner3j(2, 6, 4, 0, 0, 1)
+    >>> Wigner3j_log(2, 6, 4, 0, 0, 1)
     0
-
     """
-
-    #     log_factorial=lambda n: loggamma(n+1)
-
+    j_1=j_1.reshape(len(np.atleast_1d(j_1)),1,1)
+    j_2=j_2.reshape(1,len(np.atleast_1d(j_2)),1)
+    j_3=j_3.reshape(1,1,len(np.atleast_1d(j_3)))
+    
     if (m_1 + m_2 + m_3 != 0):
-        return 0
-    if ( (abs(m_1) > j_1) or (abs(m_2) > j_2) or (abs(m_3) > j_3) ):
-        return 0
-    prefid = (1 if (j_1 - j_2 - m_3) % 2 == 0 else -1)
+        return np.zeros_like(j_1+j_2+j_3,dtype='float64')
+    
+    x0=np.logical_not(np.any([  j_1 + j_2 - j_3<0, #triangle inequalities
+                                j_1 - j_2 + j_3<0, 
+                                -j_1 + j_2 + j_3<0, 
+                                abs(m_1) > j_1+j_2*0+j_3*0, #|m_i|<j_i
+                                abs(m_2) > j_2+j_1*0+j_3*0,
+                                abs(m_3) > j_3+j_2*0+j_1*0
+                             ],axis=0))
+    
+    a={1:(j_1 + j_2 - j_3)[x0]}
+    
     m_3 = -m_3
-    a1 = j_1 + j_2 - j_3
-    a2 = j_1 - j_2 + j_3
-    a3 = -j_1 + j_2 + j_3
-    if (a1 < 0) or a2<0 or a3<0:
-        return 0
-
-    log_argsqrt = ( log_factorial(j_1 + j_2 - j_3) +
-                log_factorial(j_1 - j_2 + j_3) +
-                log_factorial(-j_1 + j_2 + j_3) +
-                log_factorial(j_1 - m_1) +
-                log_factorial(j_1 + m_1) +
-                log_factorial(j_2 - m_2) +
-                log_factorial(j_2 + m_2) +
-                log_factorial(j_3 - m_3) +
-                log_factorial(j_3 + m_3) ) - log_factorial(j_1 + j_2 + j_3 + 1)
-
+    
+    log_argsqrt =(  log_factorial(j_1 - m_1) +
+                    log_factorial(j_1 + m_1) +
+                    log_factorial(j_2 - m_2) +
+                    log_factorial(j_2 + m_2) +
+                    log_factorial(j_3 - m_3) +
+                    log_factorial(j_3 + m_3)
+                 )[x0]
+    
+    log_argsqrt+=(log_factorial(a[1]) +
+                log_factorial(( j_1 - j_2 + j_3)[x0]) +
+                log_factorial((-j_1 + j_2 + j_3)[x0]) - log_factorial((j_1+j_2+j_3)[x0]+ 1))
+    
     log_ressqrt=0.5*log_argsqrt
+    log_argsqrt=None
+            
+#     imin = max(-j_3 + j_1 + m_2, max(-j_3 + j_2 - m_1, 0)) 
+    imin_t=(-j_3 + j_2 - m_1 +j_1*0 ).clip(min=0)[x0]
+    imin = (-j_3 + j_1 + m_2 +j_2*0)[x0]
+    imin[imin<imin_t]=imin_t[imin<imin_t]
+    imin_t=None
 
-    imin = max(-j_3 + j_1 + m_2, max(-j_3 + j_2 - m_1, 0))
-    imax = min(j_2 + m_2, min(j_1 - m_1, j_1 + j_2 - j_3))
+#     imax = min(j_2 + m_2, min(j_1 - m_1, j_1 + j_2 - j_3))    
+    imax_t=(j_1 - m_1 + j_2*0+j_3*0)[x0]
+    imax =(j_1 + j_2 - j_3)[x0]
+    imax[imax>imax_t]=imax_t[imax>imax_t]
+    imax_t=(j_2 + m_2 + j_1*0+j_3*0)[x0]
+    imax[imax>imax_t]=imax_t[imax>imax_t]
+    imax_t=None
 
-    sumres = 0.0
-    ii=np.arange(imin, imax + 1)
 
-    log_den = ( log_factorial(ii) +
-                log_factorial(ii + j_3 - j_1 - m_2) +
-                log_factorial(j_2 + m_2 - ii) +
-                log_factorial(j_1 - ii - m_1) +
-                log_factorial(ii + j_3 - j_2 + m_1) +
-                log_factorial(j_1 + j_2 - j_3 - ii) )
-    sgn=np.ones_like(ii) #-1
-    sgn[ii % 2 == 1]=-1
-    sumres +=np.sum(np.exp(log_ressqrt-log_den)*sgn)  #1.0 / den
-    return sumres * prefid #ressqrt taken inside sumres calc
+    iis=np.arange(np.amin(imin), np.amax(imax) + 1) #no need to use x0 here. Can also lead to somewhat wrong answers
+    sgns=np.ones_like(iis,dtype='int')*-1
+    sgns[iis%2==0]=1
+    
+    b1=(j_3 - j_1 - m_2 +j_2*0)[x0]
+    b2=(j_2 + m_2 +j_1*0+j_3*0)[x0]
+    b3=(j_1-m1 +j_2*0+j_3*0)[x0]
+    b4=(j_3 - j_2 + m_1 +j_1*0)[x0]
+    sumres_t=np.zeros_like(b1,dtype='float')
+    
+    for i in np.arange(len(iis)):
+        ii=iis[i]
+        x=np.logical_not(np.logical_or(ii<imin,ii>imax))
+        log_den =( log_factorial(ii) +
+                    log_factorial( b1[x] + ii ) +
+                    log_factorial( b2[x] - ii) +
+                    log_factorial( b3[x] - ii) +
+                    log_factorial( b4[x] + ii ) +
+                    log_factorial(a[1][x] - ii) )
+        sumres_ii=np.exp(log_ressqrt[x]-log_den)*sgns[i]
+        sumres_t[x]+=sumres_ii
+ 
+    prefid = np.ones_like(x0,dtype='int8') # (1 if (j_1 - j_2 - m_3) % 2 == 0 else -1)
+    prefid[(j_1 - j_2 - m_3+j_3*0) % 2 == 1]=-1
+    return sparse.COO(np.where(x0),data=sumres_t*prefid[x0])    #ressqrt taken inside sumres calc
+
+def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None):
+    if ncpu is None:
+        ncpu=cpu_count()-2
+    p=Pool(ncpu)
+    d_mat=sparse.stack(p.map( partial(Wigner3j, m_1, m_2, m_3,j_1, j_2), j_3,
+                                 chunksize=max(1,np.int(len(j_3)/ncpu/10))
+                        )  )
+    p.close()
+    return d_mat[:,:,:,0].transpose((1,2,0))

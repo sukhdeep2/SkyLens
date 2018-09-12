@@ -4,6 +4,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 from scipy.integrate import quad as scipy_int1d
 from scipy.special import jn, jn_zeros
+from wigner_functions import *
 
 
 d2r=np.pi/180.
@@ -11,13 +12,16 @@ sky_area=np.pi*4/(d2r)**2 #in degrees
 
 
 class Covariance_utils():
-    def __init__(self,f_sky=0,l=None,logger=None,l_cut_jnu=None,do_sample_variance=True,use_window=True):
+    def __init__(self,f_sky=0,l=None,logger=None,l_cut_jnu=None,do_sample_variance=True,use_window=True,window_l=None,window_file=None,wig_3j=None):
         self.logger=logger
         self.l=l
+        self.window_l=window_l
+        self.window_file=window_file
         self.l_cut_jnu=l_cut_jnu #this is needed for hankel_transform case for xi. Need separate sigma_window calc.
         self.f_sky=f_sky
 
         self.use_window=use_window
+        self.wig_3j=wig_3j
         self.sample_variance_f=1
         if not do_sample_variance:
             self.sample_variance_f=0 #remove sample_variance from gaussian part
@@ -31,7 +35,12 @@ class Covariance_utils():
     def set_window_params(self,f_sky=None):
         self.theta_win=np.sqrt(f_sky*sky_area)
         if self.use_window:
-            self.Win=self.window_func(theta_win=self.theta_win,f_sky=f_sky)
+            self.window_func()
+            if self.wig_3j is None:
+                m_1=0#FIXME: Use proper spins (m_i) here
+                m_2=0
+                self.wig_3j=Wigner3j_parallel( m_1, m_2, 0, self.l, self.l, self.window_l) 
+            self.coupling_M=np.dot(self.wig_3j**2,self.Win*(2*self.window_l+1))
         else:
             self.Win=np.zeros_like(self.l,dtype='float32')
             x=self.l==0
@@ -39,12 +48,19 @@ class Covariance_utils():
         self.Om_W=4*np.pi*f_sky
         self.Win/=self.Om_W #FIXME: This thing has been forgotten and not used anywhere in the code.
 
-    def window_func(self,theta_win=None,f_sky=None):
-        l=self.l
-        theta_win*=d2r
+    def window_func(self):
+        if self.window_file is not None:
+            self.window_l,self.Win=np.genfromtxt(self.window_file)
+            return 
+        
+        if self.window_l is None:
+            self.window_l=np.arange(100)+1
+            
+        l=self.window_l    
+        theta_win=self.theta_win*d2r
         l_th=l*theta_win
-        W=2*jn(1,l_th)/l_th*4*np.pi*f_sky
-        return W
+        W=2*jn(1,l_th)/l_th*4*np.pi*self.f_sky
+        return 
 
     def sigma_win_calc(self,cls_lin):
         if self.l_cut_jnu is None:
