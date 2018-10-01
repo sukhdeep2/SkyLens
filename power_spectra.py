@@ -303,17 +303,21 @@ class Power_Spectra():
     def R1_calc(self,k=None,pk=None,k_NonLinear=3.2,axis=0): #eq 2.5, R1, Barriera+ 2017
         G1=26./21.*np.ones_like(k)
         x=k>k_NonLinear
-        G1[x]*=k_NonLinear/k[x]
+#         G1[x]*=k_NonLinear/k[x]
+        B1=0.75
+        G1[x]=B1+(G1[x]-B1)*(k_NonLinear/k[x])**0.5
         dpk=np.gradient(np.log(pk),axis=axis)/np.gradient(np.log(k),axis=0)
-        R=1-1./3*dpk+G1
+        R=1 - 1./3*dpk + G1
         return R
 
     def R_K_calc(self,k=None,pk=None,k_NonLinear=3.2,axis=0): #eq 2.5, R1
-        G1=26./21.*np.ones_like(k)
+        GK=8./7.*np.ones_like(k)
         x=k>k_NonLinear
-        G1[x]*=k_NonLinear/k[x]
+        BK=2.2
+        GK[x]=BK+(GK[x]-BK)*(k_NonLinear/k[x])**0.5
         dpk=np.gradient(np.log(pk),axis=axis)/np.gradient(np.log(k),axis=0)
-        R=12./13*G1-dpk
+#         R=12./13*G1-dpk
+        R=GK-dpk
         return R
 
     def reset(self):

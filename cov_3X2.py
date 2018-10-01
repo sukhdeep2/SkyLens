@@ -27,8 +27,8 @@ class cov_3X2():
                 zs_bins=None,zg_bins=None,power_spectra_kwargs={},HT_kwargs=None,
                 z_PS=None,nz_PS=100,log_z_PS=True,#z_PS_max=None,
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
-                use_window=True,
-                sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,
+                use_window=True,window_file=None,
+                sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,pseudo_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 corrs=[('shear','shear')]):
         self.logger=logger
@@ -51,6 +51,8 @@ class cov_3X2():
         self.corrs=corrs
         self.l_cut_jnu=None
         z_PS_max=zs_bins['zmax']
+        self.use_window=use_window
+
         if do_xi:
             self.set_HT(HT=HT,HT_kwargs=HT_kwargs)
 
@@ -61,8 +63,8 @@ class cov_3X2():
 
         self.cov_utils=cov_utils
         if cov_utils is None:
-            self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,
-                                            l_cut_jnu=self.l_cut_jnu,
+            self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,pseudo_cl=pseudo_cl,
+                                            l_cut_jnu=self.l_cut_jnu,window_file=window_file,do_xi=do_xi,
                                             do_sample_variance=do_sample_variance,use_window=use_window)
 
         self.Ang_PS=Ang_PS
@@ -79,6 +81,7 @@ class cov_3X2():
         if galaxy_utils is None:
             self.galaxy_utils=Galaxy_utils(zg_bins=zg_bins,logger=self.logger,l=self.l,
                                             z_th=self.Ang_PS.z)
+
         self.z_bins={}
         self.z_bins['shear']=self.lensing_utils.zs_bins
         #self.z_bins['kappa']=self.lensing_utils.zk_bins
@@ -118,6 +121,14 @@ class cov_3X2():
         self.m1_m2s[('galaxy','shear')]=[(0,2)] #FIXME: check the order in covariance case
         self.m1_m2s[('galaxy','galaxy')]=[(0,0)]
 
+        self.Win=1.
+        if use_window and self.do_xi:
+            th,self.Win=self.HT.projected_correlation(l_cl=self.cov_utils.window_l,
+                                            m1_m2=(0,0),cl=self.cov_utils.Win)
+            self.m1_m2s[('window')]=[(0,0)]
+            self.Win=self.binning.bin_1d(xi=self.Win,bin_utils=self.xi_bin_utils[(0,0)])
+
+
     def set_HT(self,HT=None,HT_kwargs=None):
         self.HT=HT
         if HT is None:
@@ -133,9 +144,9 @@ class cov_3X2():
         self.l_cut_jnu={}
         self.m1_m2s=self.HT.m1_m2s
         self.l_cut_jnu['m1_m2s']=self.m1_m2s
-        self.m1_m2s=self.HT.m1_m2s
+
         if self.HT.name=='Hankel':
-            self.l=np.hstack((self.HT.l[i] for i in self.m1_m2s))
+            self.l=np.unique(np.hstack((self.HT.l[i] for i in self.m1_m2s)))
             for m1_m2 in self.m1_m2s:
                 self.l_cut_jnu[m1_m2]=np.isin(self.l,(self.HT.l[m1_m2]))
 
@@ -218,7 +229,7 @@ class cov_3X2():
         l=self.l
 
         cov['G'],cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,
-                                                            self.SN,tracers,zs_indx,self.do_xi)
+                                                self.SN,tracers,zs_indx,self.do_xi)
 
         cov['final']=cov['G']
 
@@ -380,7 +391,7 @@ class cov_3X2():
             cov_xi['final']=np.zeros((n,n))
             return cov_xi
 
-        Norm= self.cov_utils.Om_W
+        Norm= self.Win*self.cov_utils.Om_W**2 #FIXME: Make sure this is correct
         th0,cov_xi['G']=self.HT.projected_covariance(l_cl=self.l,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,
                                                      cl_cov=cov_cl['G1423']+cov_cl['G1324'])
 
@@ -399,15 +410,16 @@ class cov_3X2():
                                     (clr).T*sig_cL,clr,self.HT.J[m1_m2_cross],optimize=True)
 
                 self.cov_SSC_nobin[m1_m2]=sig_cL
-                cov_SSC*=(2.*self.HT.l_max[m1_m2]**2/self.HT.zeros[m1_m2][-1]**2)/(2*np.pi)/Norm
+                cov_SSC*=(2.*self.HT.l_max[m1_m2]**2/self.HT.zeros[m1_m2][-1]**2)/(2*np.pi)
 
             elif self.HT.name=='Wigner':
-                cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.wig_d[m1_m2]*np.sqrt(self.HT.norm)/Norm,
+                cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.wig_d[m1_m2]*np.sqrt(self.HT.norm),
                                 (clr).T*sig_cL,clr,np.sqrt(self.HT.wig_d[m1_m2_cross]),optimize=True)
                                 #FIXME: This is likely to be broken.
 
             cov_xi['SSC']=self.binning.bin_2d(r=th0/d2r,cov=cov_SSC,r_bins=self.theta_bins,
                                                     r_dim=2,bin_utils=self.xi_bin_utils[m1_m2])
+            cov_xi['SSC']/=Norm
             cov_xi['final']+=cov_xi['SSC']
             # cov_xi['final']=cov_xi['SSC']+cov_xi['G']
 

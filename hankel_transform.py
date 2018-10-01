@@ -25,7 +25,8 @@ class hankel_transform():
         if len(m1_m2)>1:
             self.logger.warning('cross covariance not implemented with Hankel Transform. m1_m2s: %s',m1_m2)
         for i in m1_m2:
-            self.l[i],self.l_max[i],self.theta[i],self.J[i],self.J_nu1[i],self.zeros[i]=self.get_k_r_j(j_nu=np.absolute(i[1]-i[0]),
+            self.l[i],self.l_max[i],self.theta[i],self.J[i],self.J_nu1[i],self.zeros[i]=self.get_k_r_j(
+                                                   j_nu=np.absolute(i[1]-i[0]),
                                                    n_zeros=n_zeros,theta_min=theta_min,theta_max=theta_max,
                                                    l_max=l_max,l_min=l_min,n_zeros_step=n_zeros_step,
                                                    prune_theta=prune_theta,

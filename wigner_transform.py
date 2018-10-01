@@ -6,7 +6,7 @@ import numpy as np
 import itertools
 
 class wigner_transform():
-    def __init__(self,theta=[],l=[],m1_m2=[(0,0)],logger=None,ncpu=None,**kwargs):
+    def __init__(self,theta=[],l=[],m1_m2=[(0,0)],logger=None,ncpu=None,use_window=False,**kwargs):
         self.name='Wigner'
         self.logger=logger
         self.l=l

@@ -7,7 +7,7 @@ from astropy.table import Table
 cosmo_h_PL=cosmo.clone(H0=100)
 
 
-def lsst_pz_source(alpha=1.24,z0=0.51,beta=1.01,z=[]):
+def lsst_pz_source(alpha=2,z0=0.11,beta=0.68,z=[]): #alpha=1.24,z0=0.51,beta=1.01,z=[]
     p_zs=z**alpha*np.exp(-(z/z0)**beta)
     p_zs/=np.sum(np.gradient(z)*p_zs)
     return p_zs
@@ -215,10 +215,10 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
     return zg_bins
 
 
-def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=26,nbins=3,z_sigma=0.01,z_bias=None,z_bins=None,
+def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=None,z_bins=None,
                           ztrue_func=ztrue_given_pz_Gaussian,z_sigma_power=1):
     
-    z=np.linspace(0,5,200)
+    z=np.linspace(0,3.5,200)
     pzs=lsst_pz_source(z=z)
     N1=np.sum(pzs)
     
