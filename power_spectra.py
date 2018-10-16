@@ -1,6 +1,6 @@
-import camb
-from camb import model, initialpower
-import pyccl
+#import camb
+#from camb import model, initialpower
+#import pyccl
 import os,sys
 from classy import Class
 sys.path.insert(0,'./')
@@ -22,11 +22,11 @@ cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817
                 'As':2.2e-09,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
                 'w':-1,'wa':0})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
-pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':5000}
+pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':5000,'scenario':'eagle'}
 
 # baryonic scenario option:
 # "owls_AGN","owls_DBLIMFV1618","owls_NOSN","owls_NOSN_NOZCOOL","owls_NOZCOOL","owls_REF","owls_WDENS"
-# "owls_WML1V848","owls_WML4","ill1","mb2","eagle","HzAGN"
+# "owls_WML1V848","owls_WML4","illustris","mb2","eagle","HzAGN"
 
 
 Bins_z_HzAGN   = np.array([4.9285,4.249,3.7384,3.33445,3.00295,1.96615,1.02715,0.519195,0.22878,0.017865,0.0])
@@ -45,7 +45,7 @@ zbin_logPkR = {"owls_AGN":Bins_z_OWLS,
                "owls_WDENS":Bins_z_OWLS,
                "owls_WML1V848":Bins_z_OWLS,
                "owls_WML4":Bins_z_OWLS,
-               "ill1":Bins_z_ill1,
+               "illustris":Bins_z_ill1,
                "mb2":Bins_z_mb2,
                "eagle":Bins_z_eagle,
                "HzAGN":Bins_z_HzAGN
@@ -274,13 +274,24 @@ class Power_Spectra():
         else:
             return pkC,self.kh
 
-    def bary_pk(self,z,scenario=None,cosmo_params=None,pk_params=None,return_s8=False):
-        if scenario is None:
-            scenario = self.scenario
+    def bary_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
 
-        out=self.pk_func(z,cosmo_params=cosmo_params,pk_params=pk_params,return_s8=return_s8)
+        if pk_params is None:
+            pk_params=self.pk_params
+        if cosmo_params is None:
+            cosmo_params=self.cosmo_params
+        scenario = pk_params['scenario']
+
+        out=self.class_pk(z,cosmo_params=cosmo_params,pk_params=pk_params,return_s8=return_s8)
         pk=out[0]
         kh=out[1]
+        
+        if scenario is None or scenario is 'dmo':
+            if return_s8:
+                s8=out[2]
+                return pk,kh,s8
+            else:
+                return pk,kh
 
         data_dir = "/home/hungjinh/Research/cov_baryon_proj/code/cosmic_shear/Pk_ratio/"
         infile_logPkRatio = data_dir + "logPkRatio_" + scenario + ".dat"
