@@ -3,7 +3,7 @@ from scipy.special import binom,jn,loggamma
 from scipy.special import eval_jacobi as jacobi
 from multiprocessing import Pool,cpu_count
 from functools import partial
-import sparse
+# import sparse
 
 def wigner_d(m1,m2,theta,l,l_use_bessel=1.e4):
     l0=np.copy(l)
