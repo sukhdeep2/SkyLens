@@ -52,6 +52,7 @@ class cov_3X2():
         self.l_cut_jnu=None
         z_PS_max=zs_bins['zmax']
         self.use_window=use_window
+        self.pseudo_cl=pseudo_cl
 
         if do_xi:
             self.set_HT(HT=HT,HT_kwargs=HT_kwargs)
@@ -186,6 +187,7 @@ class cov_3X2():
 
         cl/=self.Ang_PS.cl_f**2# cl correction from Kilbinger+ 2017
         # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
+
         return cl
 
 #     @jit
@@ -265,6 +267,18 @@ class cov_3X2():
             cl_none,cov[k]=self.bin_cl_func(cov=cov[k])
         return cov
 
+    def calc_pseudo_cl(self,cl=None,cov=None):
+        if not self.pseudo_cl:
+            return cl,cov
+        coupling_M=self.cov_utils.coupling_M
+        pcl=None
+        pcov=None
+        if cl is not None:
+            pcl=np.dot(cl,coupling_M)
+        if cov is not None:
+            pcov=np.dot(coupling_M,np.dot(cov,coupling_M)) #FIXME: check this with Planck paper
+        return pcl,pcov
+
     def bin_cl_func(self,cl=None,cov=None):
         """
             bins the tomographic power spectra
@@ -273,14 +287,15 @@ class cov_3X2():
             bin_cov: if true, then results has cov to be binned
             Both bin_cl and bin_cov can be true simulatenously.
         """
-        # results_b={}
-        cl_b=cl
-        cov_b=cov
+        pcl,pcov=self.calc_pseudo_cl(cl=cl,cov=cov)
+        #we need to keep cl separate from pcl for covariance
+        cl_b=pcl
+        cov_b=pcov
         if self.bin_cl:
             if not cl is None:
-                cl_b=self.binning.bin_1d(xi=cl,bin_utils=self.cl_bin_utils)
+                cl_b=self.binning.bin_1d(xi=pcl,bin_utils=self.cl_bin_utils)
             if not cov is None:
-                cov_b=self.binning.bin_2d(r=self.l,cov=cov,r_bins=self.l_bins,r_dim=2
+                cov_b=self.binning.bin_2d(r=self.l,cov=pcov,r_bins=self.l_bins,r_dim=2
                                             ,bin_utils=self.cl_bin_utils)
         return cl_b,cov_b
 

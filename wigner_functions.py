@@ -85,9 +85,6 @@ def Wigner3j(m_1, m_2, m_3,j_1, j_2, j_3):
     j_2=j_2.reshape(1,len(np.atleast_1d(j_2)),1)
     j_3=j_3.reshape(1,1,len(np.atleast_1d(j_3)))
 
-    if (m_1 + m_2 + m_3 != 0):
-        return np.zeros_like(j_1+j_2+j_3,dtype='float64')
-
     x0=np.logical_not(np.any([  j_1 + j_2 - j_3<0, #triangle inequalities
                                 j_1 - j_2 + j_3<0,
                                 -j_1 + j_2 + j_3<0,
@@ -96,6 +93,10 @@ def Wigner3j(m_1, m_2, m_3,j_1, j_2, j_3):
                                 abs(m_3) > j_3+j_2*0+j_1*0
                              ],axis=0))
 
+    if (m_1 + m_2 + m_3 != 0 or x0.sum()==0):
+        return np.zeros_like(j_1+j_2+j_3,dtype='float64')
+
+    
     a={1:(j_1 + j_2 - j_3)[x0]}
 
     m_3 = -m_3
@@ -149,8 +150,10 @@ def Wigner3j(m_1, m_2, m_3,j_1, j_2, j_3):
                     log_factorial( b3[x] - ii) +
                     log_factorial( b4[x] + ii ) +
                     log_factorial(a[1][x] - ii) )
-        sumres_ii=np.exp(log_ressqrt[x]-log_den)*sgns[i]
+        sumres_ii=np.exp(-log_den)*sgns[i]
         sumres_t[x]+=sumres_ii
+ 
+    sumres_t[x]=np.exp(np.log(sumres_t[x])+log_ressqrt[x])
 
     prefid = np.ones_like(x0,dtype='int8') # (1 if (j_1 - j_2 - m_3) % 2 == 0 else -1)
     prefid[(j_1 - j_2 - m_3+j_3*0) % 2 == 1]=-1

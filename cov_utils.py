@@ -67,12 +67,13 @@ class Covariance_utils():
         if self.window_l is None:
             self.window_l=np.arange(100)
 
-        l=self.l
+        l=np.logspace(-2,2,1000)#self.l
         theta_win=self.theta_win*d2r
         l_th=l*theta_win
-        self.Win0=2*jn(1,l_th)/l_th*4*np.pi*self.f_sky
-        win_i=interp1d(l,self.Win0,bounds_error=False,fill_value=0)
+        Win0=2*jn(1,l_th)/l_th*4*np.pi*self.f_sky
+        win_i=interp1d(l,Win0,bounds_error=False,fill_value=0)
         self.Win=win_i(self.window_l) #this will be useful for SSV
+        self.Win0=win_i(self.l)
         return 0
 
     def sigma_win_calc(self,cls_lin):
