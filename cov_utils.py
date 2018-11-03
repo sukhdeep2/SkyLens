@@ -5,7 +5,7 @@ from scipy.interpolate import interp1d
 from scipy.integrate import quad as scipy_int1d
 from scipy.special import jn, jn_zeros
 from wigner_functions import *
-
+import healpy as hp
 
 d2r=np.pi/180.
 sky_area=np.pi*4/(d2r)**2 #in degrees
@@ -36,15 +36,15 @@ class Covariance_utils():
                                                                     #binning later
 
     def set_window_params(self,f_sky=None):
-        self.theta_win=np.sqrt(f_sky*sky_area)
         self.Om_W=4*np.pi*f_sky
         if self.use_window:
             self.window_func()
             if not self.do_xi and self.pseudo_cl:
                 if self.wig_3j is None: #FIXME: not using for correlation function for now. Memeory issues among others.
-                    m_1=0#FIXME: Use proper spins (m_i) here
+                    m_1=0 #FIXME: Use proper spins (m_i) here
                     m_2=0
                     self.wig_3j=Wigner3j_parallel( m_1, m_2, 0, self.l, self.l, self.window_l)
+                    print('wg_3j max:',self.wig_3j.todense().max())
                 self.coupling_M=np.dot(self.wig_3j**2,self.Win*(2*self.window_l+1))
         else:
             self.Win=np.zeros_like(self.l,dtype='float32')
@@ -66,11 +66,16 @@ class Covariance_utils():
 
         if self.window_l is None:
             self.window_l=np.arange(100)
+        NP=hp.nside2npix(256)
+        M=np.zeros(NP)
+        M[:np.int(NP*self.f_sky)]=1
+        Win0=hp.sphtfunc.anafast(M)
+        l=np.arange(len(Win0))
 
-        l=np.logspace(-2,2,1000)#self.l
-        theta_win=self.theta_win*d2r
-        l_th=l*theta_win
-        Win0=2*jn(1,l_th)/l_th*4*np.pi*self.f_sky
+#         l=np.logspace(-2,2,1000)#self.l
+#         theta_win=self.theta_win*d2r
+#         l_th=l*theta_win
+#         Win0=2*jn(1,l_th)/l_th*4*np.pi*self.f_sky
         win_i=interp1d(l,Win0,bounds_error=False,fill_value=0)
         self.Win=win_i(self.window_l) #this will be useful for SSV
         self.Win0=win_i(self.l)
@@ -100,6 +105,7 @@ class Covariance_utils():
 
         """
         # print(cls[(tracers[0],tracers[2])].keys())
+            
         G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f
              # + (SN.get((tracers[0],tracers[2]))[:,z_indx[0], z_indx[2] ]  or 0)
              + (SN[(tracers[0],tracers[2])][:,z_indx[0], z_indx[2] ] if SN.get((tracers[0],tracers[2])) is not None else 0)
@@ -120,7 +126,11 @@ class Covariance_utils():
              # + (SN.get((tracers[1],tracers[2]))[:,z_indx[1], z_indx[2] ] or 0)
              + (SN[(tracers[1],tracers[2])][:,z_indx[1], z_indx[2] ] if SN.get((tracers[1],tracers[2])) is not None else 0)
                 )
-
+        
+        if do_xi and np.all(np.array(tracers)=='shear'): #FIXME: Temporary fix for shear-shear. Check ggl as well
+            G1324+=(SN[(tracers[0],tracers[2])][:,z_indx[0], z_indx[2] ] if SN.get((tracers[0],tracers[2])) is not None else 0)*(SN[(tracers[1],tracers[3])][:,z_indx[1], z_indx[3] ] if SN.get((tracers[1],tracers[3])) is not None else 0)
+            G1423+=(SN[(tracers[0],tracers[3])][:,z_indx[0], z_indx[3] ] if SN.get((tracers[0],tracers[3])) is not None else 0)*(SN[(tracers[1],tracers[2])][:,z_indx[1], z_indx[2] ] if SN.get((tracers[1],tracers[2])) is not None else 0)
+                
         G=None
         if not do_xi:
             G=np.diag(G1423+G1324)

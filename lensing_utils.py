@@ -19,13 +19,17 @@ class Lensing_utils():
         ns=1 #different for different z_source. should be property of z_source
         self.sigma_gamma=sigma_gamma
         self.logger=logger
-        self.SN0=sigma_gamma**2/(ns*3600./d2r**2)
+        self.SN0=sigma_gamma**2/(ns*3600./d2r**2) #FIXME: Note that for correlation function,
+                                                    #sigma_gamma should be per component.
         #Gravitaional const to get Rho crit in right units
         self.G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)
         self.G2*=8*np.pi/3.
         if zs_bins is not None: #sometimes we call this class just to access some of the functions
-            self.zs_bins=zs_bins
-            self.set_shape_noise()
+            self.set_zbins(zs_bins)
+
+    def set_zbins(self,z_bins={}):
+        self.zs_bins=z_bins
+        self.set_shape_noise()
 
     def Rho_crit(self,cosmo_h=None):
         #G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)

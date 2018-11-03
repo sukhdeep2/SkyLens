@@ -21,7 +21,7 @@ class binning():
         bu['binning_mat']=binning_mat
 
         r2=np.sort(np.unique(np.append(r,r_bins))) #this takes care of problems around bin edges
-        dr=np.gradient(r2)
+        dr=np.gradient(r2) #FIXME: Check accuracy
         r2_idx=[i for i in np.arange(len(r2)) if r2[i] in r]
         dr=dr[r2_idx]
         bu['r_dr']=r**(r_dim-1)*dr
@@ -55,7 +55,7 @@ class binning():
         xi_b/=bin_utils['norm']
         return xi_b
 
-    def bin_2d(self,r=[],cov=[],r_bins=[],r_dim=2,bin_utils=None):
+    def bin_2d(self,cov=[],bin_utils=None):
         #r_dr=bin_utils['r_dr']
         #cov_r_dr=cov*bin_utils['r_dr_m'][2]#np.outer(r_dr,r_dr)
         binning_mat=bin_utils['binning_mat']

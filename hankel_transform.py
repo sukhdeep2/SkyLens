@@ -156,3 +156,11 @@ class hankel_transform():
                         self.J[m1_m2]*cl1*cl2*cl3/self.J_nu1[m1_m2]**2)
         skew*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],skew
+
+    
+def covariance_brute_force(l=[],theta=[],cl12=[],j_nu=0):
+    J=jn(j_nu,np.outer(theta,l))
+    dl=np.gradient(l)
+    cov=np.dot(J,(J*cl12*l*dl).T)
+    cov/=2*np.pi
+    return cov

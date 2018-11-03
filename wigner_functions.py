@@ -3,7 +3,7 @@ from scipy.special import binom,jn,loggamma
 from scipy.special import eval_jacobi as jacobi
 from multiprocessing import Pool,cpu_count
 from functools import partial
-# import sparse
+import sparse
 
 def wigner_d(m1,m2,theta,l,l_use_bessel=1.e4):
     l0=np.copy(l)
@@ -150,10 +150,10 @@ def Wigner3j(m_1, m_2, m_3,j_1, j_2, j_3):
                     log_factorial( b3[x] - ii) +
                     log_factorial( b4[x] + ii ) +
                     log_factorial(a[1][x] - ii) )
-        sumres_ii=np.exp(-log_den)*sgns[i]
+        sumres_ii=np.exp(sumres_t-log_den)*sgns[i] #FIXME: This has numerical issues.
         sumres_t[x]+=sumres_ii
  
-    sumres_t[x]=np.exp(np.log(sumres_t[x])+log_ressqrt[x])
+#     sumres_t=np.exp(log_ressqrt+np.log(np.absolute(sumres_t)))*np.sign(sumres_t)
 
     prefid = np.ones_like(x0,dtype='int8') # (1 if (j_1 - j_2 - m_3) % 2 == 0 else -1)
     prefid[(j_1 - j_2 - m_3+j_3*0) % 2 == 1]=-1

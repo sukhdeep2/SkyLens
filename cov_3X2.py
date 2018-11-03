@@ -24,7 +24,8 @@ c=c.to(u.km/u.second)
 class cov_3X2():
     def __init__(self,silence_camb=False,l=np.arange(2,2001),HT=None,Ang_PS=None,
                 cov_utils=None,logger=None,lensing_utils=None,galaxy_utils=None,
-                zs_bins=None,zg_bins=None,power_spectra_kwargs={},HT_kwargs=None,
+                zs_bins=None,zg_bins=None,galaxy_bias_func=None,
+                power_spectra_kwargs={},HT_kwargs=None,
                 z_PS=None,nz_PS=100,log_z_PS=True,#z_PS_max=None,
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
                 use_window=True,window_file=None,
@@ -81,7 +82,7 @@ class cov_3X2():
         self.galaxy_utils=galaxy_utils
         if galaxy_utils is None:
             self.galaxy_utils=Galaxy_utils(zg_bins=zg_bins,logger=self.logger,l=self.l,
-                                            z_th=self.Ang_PS.z)
+                                            z_th=self.Ang_PS.z,bias_func=galaxy_bias_func)
 
         self.z_bins={}
         self.z_bins['shear']=self.lensing_utils.zs_bins
@@ -129,6 +130,16 @@ class cov_3X2():
             self.m1_m2s[('window')]=[(0,0)]
             self.Win=self.binning.bin_1d(xi=self.Win,bin_utils=self.xi_bin_utils[(0,0)])
 
+    def update_zbins(self,z_bins={},probe='shear'):
+        if probe=='shear':
+            self.lensing_utils.set_zbins(z_bins)
+
+        if probe=='galaxy':
+            self.galaxy_utils.set_zbins(z_bins)
+        self.z_bins['shear']=self.lensing_utils.zs_bins
+        #self.z_bins['kappa']=self.lensing_utils.zk_bins
+        self.z_bins['galaxy']=self.galaxy_utils.zg_bins
+        return
 
     def set_HT(self,HT=None,HT_kwargs=None):
         self.HT=HT
@@ -172,7 +183,7 @@ class cov_3X2():
                                                     r_bins=self.theta_bins,
                                                     r_dim=2,mat_dims=[1,2])
 
-    def calc_cl(self,zs1=None,zs2=None):
+    def calc_cl(self,zs1=None,zs2=None,corr=None):
         """
             Compute the angular power spectra, Cl between two source bins
             zs1, zs2: Source bins. Dicts containing information about the source bins
@@ -182,12 +193,17 @@ class cov_3X2():
         f=self.Ang_PS.cl_f
         sc=zs1['kernel_int']*zs2['kernel_int']
 
-        # cl=np.dot(sc*clz['dchi'],cls)
-        cl=np.dot(cls.T*sc,clz['dchi'])
+        dchi=np.copy(clz['dchi'])
+        if corr[0]=='galaxy':  #take care of different factors of c/H in different correlations.
+                                #Default is for shear. For every replacement of shear with galaxy, remove 1 factor.
+            dchi/=clz['cH']
+        if corr[1]=='galaxy':
+            dchi/=clz['cH']
 
-        cl/=self.Ang_PS.cl_f**2# cl correction from Kilbinger+ 2017
-        # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
+        cl=np.dot(cls.T*sc,dchi)
 
+        #cl/=self.Ang_PS.cl_f**2 # cl correction from Kilbinger+ 2017
+                # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
         return cl
 
 #     @jit
@@ -205,14 +221,7 @@ class cov_3X2():
         zs1=self.z_bins[corr[0]][zs1_indx]#.copy() #we will modify these locally
         zs2=self.z_bins[corr[1]][zs2_indx]#.copy()
 
-        # if zs1['kernel'] is None or zs2['kernel'] is None:
-        #     self.lensing_utils.set_zs_sigc(cosmo_h=cosmo_h,zl=self.Ang_PS.z)
-        #
-        # if self.Ang_PS.clz is None:
-        #     self.Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
-        #                         cosmo_params=cosmo_params)
-
-        cl=self.calc_cl(zs1=zs1,zs2=zs2)
+        cl=self.calc_cl(zs1=zs1,zs2=zs2,corr=corr)
 
         return cl
 
@@ -232,7 +241,7 @@ class cov_3X2():
 
         cov['G'],cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,
                                                 self.SN,tracers,zs_indx,self.do_xi)
-
+        
         cov['final']=cov['G']
 
         cov['SSC']=None
@@ -295,8 +304,7 @@ class cov_3X2():
             if not cl is None:
                 cl_b=self.binning.bin_1d(xi=pcl,bin_utils=self.cl_bin_utils)
             if not cov is None:
-                cov_b=self.binning.bin_2d(r=self.l,cov=pcov,r_bins=self.l_bins,r_dim=2
-                                            ,bin_utils=self.cl_bin_utils)
+                cov_b=self.binning.bin_2d(cov=pcov,bin_utils=self.cl_bin_utils)
         return cl_b,cov_b
 
     def combine_cl_tomo(self,cl_compute_dict={},corr=None):
@@ -311,7 +319,7 @@ class cov_3X2():
 
 
     def cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
-                corrs=[('shear','shear')],bias_kwargs={},bias_func=None):
+                corrs=None,bias_kwargs={},bias_func=None):
         """
          Computes full tomographic power spectra and covariance, including shape noise. output is
          binned also if needed.
@@ -321,6 +329,8 @@ class cov_3X2():
         """
 
         l=self.l
+        if corrs is None:
+            corrs=self.corrs
 
         #tracers=[j for i in corrs for j in i]
         tracers=np.unique([j for i in corrs for j in i])
@@ -344,7 +354,7 @@ class cov_3X2():
             self.SN[('shear','shear')]=self.lensing_utils.SN
         if 'galaxy' in tracers:
             if bias_func is None:
-                bias_func=self.galaxy_utils.linear_bias_powerlaw
+                bias_func='constant_bias'
                 bias_kwargs={'b1':1,'b2':1}
             self.galaxy_utils.set_zg_bias(cosmo_h=cosmo_h,zl=self.Ang_PS.z,bias_func=bias_func,
                                           bias_kwargs=bias_kwargs)
@@ -370,7 +380,7 @@ class cov_3X2():
                                         pk_func=pk_func,corr=corr)
 
                 cl[corr2][(j,i)]=cl[corr][(i,j)]#useful in gaussian covariance calculation.
-            cl_b=delayed(self.combine_cl_tomo)(cl[corr],corr=corr)
+            cl_b[corr]=delayed(self.combine_cl_tomo)(cl[corr],corr=corr)
 
         if self.do_cov:
             for corr1 in corrs:
@@ -387,7 +397,7 @@ class cov_3X2():
                             cov[corr1+corr2][indx]=delayed(self.cl_cov)(cls=cl, zs_indx=indx,
                                                                         tracers=corr1+corr2)
 
-        out_stack=delayed(self.stack_dat)({'cov':cov,'cl':cl_b},corrs=corrs)
+        out_stack=delayed(self.stack_dat)({'cov':cov,'cl_b':cl_b},corrs=corrs)
         return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl}
 
     def xi_cov(self,cov_cl={},m1_m2=None,m1_m2_cross=None,clr=None,clrk=None):
@@ -406,12 +416,11 @@ class cov_3X2():
             cov_xi['final']=np.zeros((n,n))
             return cov_xi
 
-        Norm= self.Win*self.cov_utils.Om_W**2 #FIXME: Make sure this is correct
+        Norm= self.Win*self.cov_utils.Om_W**1 #FIXME: Make sure this is correct
         th0,cov_xi['G']=self.HT.projected_covariance(l_cl=self.l,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,
                                                      cl_cov=cov_cl['G1423']+cov_cl['G1324'])
-
-        cov_xi['G']=self.binning.bin_2d(r=th0/d2r,cov=cov_xi['G'],r_bins=self.theta_bins,
-                                                r_dim=2,bin_utils=self.xi_bin_utils[m1_m2])
+        # print(cov_cl['G1423'].max(),cov_cl['G1324'].max())
+        cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=self.xi_bin_utils[m1_m2])
         #binning is cheap
 
         cov_xi['G']/=Norm
@@ -432,8 +441,7 @@ class cov_3X2():
                                 (clr).T*sig_cL,clr,np.sqrt(self.HT.wig_d[m1_m2_cross]),optimize=True)
                                 #FIXME: This is likely to be broken.
 
-            cov_xi['SSC']=self.binning.bin_2d(r=th0/d2r,cov=cov_SSC,r_bins=self.theta_bins,
-                                                    r_dim=2,bin_utils=self.xi_bin_utils[m1_m2])
+            cov_xi['SSC']=self.binning.bin_2d(cov=cov_SSC,bin_utils=self.xi_bin_utils[m1_m2])
             cov_xi['SSC']/=Norm
             cov_xi['final']+=cov_xi['SSC']
             # cov_xi['final']=cov_xi['SSC']+cov_xi['G']
@@ -545,9 +553,12 @@ class cov_3X2():
             est='xi'
             len_bins=len(self.theta_bins)-1
         else:
-            est='cl'
+            est='cl_b'
             n_m1_m2=1
-            len_bins=len(self.l_bins)-1
+            if self.l_bins is not None:
+                len_bins=len(self.l_bins)-1
+            else:
+                len_bins=len(self.l)
 
         n_bins=0
         for corr in corrs:
@@ -565,9 +576,10 @@ class cov_3X2():
                 n_m1_m2=len(m1_m2)
 
             for im in np.arange(n_m1_m2):
-                dat_c=dat[est][corr]
                 if self.do_xi:
                     dat_c=dat[est][corr][m1_m2[im]]
+                else:
+                    dat_c=dat[est][corr][corr] #cl_b gets keys twice. dask won't allow standard dict merge
 
                 for indx in self.corr_indxs[corr]:
                     # print(len_bins,dat_c[indx].shape)

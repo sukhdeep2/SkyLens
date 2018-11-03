@@ -17,13 +17,22 @@ class Galaxy_utils():
     def __init__(self,zg_bins=None,bias_func=None,logger=None,l=None,z_th=None):
         self.l=l
         self.z_th=z_th
-        self.zg_bins=zg_bins
+        self.zg_bins=None
         if zg_bins is not None: #sometimes we call this class just to access some of the functions
-            self.set_zg_to_zth()
-            self.set_shot_noise()
-            self.bias_func=bias_func
-            if bias_func is None:
-                self.bias_func=self.linear_bias_powerlaw
+            self.set_zbins(zg_bins,bias_func=bias_func)
+
+    def set_zbins(self,z_bins,bias_func=None):
+        self.zg_bins=z_bins
+        self.set_zg_to_zth()
+        self.set_shot_noise()
+
+        if bias_func is None:
+            self.bias_func=self.linear_bias_powerlaw
+        else:
+            try:
+                self.bias_func=getattr(self,bias_func)
+            except:
+                self.bias_func=bias_func
 
     def set_zg_to_zth(self):
         dz_th=np.gradient(self.z_th)
@@ -34,7 +43,7 @@ class Galaxy_utils():
             pz_zth=pz_int(self.z_th)
             self.zg_bins[i]['z']=self.z_th
             self.zg_bins[i]['dz']=dz_th
-            norm=np.sum(self.z_th*dz_th*pz_zth)
+            norm=np.sum(dz_th*pz_zth)
             self.zg_bins[i]['pz']=pz_zth/norm
             self.zg_bins[i]['pzdz']=dz_th*self.zg_bins[i]['pz'] #FIXME: This can mess things up
             self.zg_bins[i]['Norm']=1
@@ -42,9 +51,6 @@ class Galaxy_utils():
             if hasattr(self.zg_bins[i]['W'],"__len__"):
                 W_int=interp1d(zb[i]['z'],W,bounds_error=False,fill_value=0)
                 self.zg_bins[i]['W']=W_int(self.z_th)
-
-
-
 
     def shot_noise_calc(self,zg1=None,zg2=None):
         if not np.array_equal(zg1['z'],zg2['z']):
@@ -79,6 +85,9 @@ class Galaxy_utils():
             self.SN[:,i,i]=self.zg_bins[i]['SN']
 
 
+    def constant_bias(self,z=[],b=1,**kwargs):
+        return b*np.outer(np.ones_like(z),np.ones_like(self.l))
+
     def linear_bias_powerlaw(self,z=[],cosmo_h=None,b1=None,b2=None):
         return np.outer(b1*(1+z)**b2,np.ones_like(self.l)+self.l/self.l[-1]) #FIXME: This might need to change to account
 
@@ -93,10 +102,7 @@ class Galaxy_utils():
         for i in np.arange(self.ng_bins):
             self.zg_bins[i]['kernel']=self.bias_func(z=self.zg_bins[i]['z'],
                                                         cosmo_h=cosmo_h,**bias_kwargs)
-            # self.zg_bins[i]['kernel_int']=np.dot(self.zg_bins[i]['pzdz'],self.zg_bins[i]['kernel'])
-            # self.zg_bins[i]['kernel_int']/=self.zg_bins[i]['Norm']
-            self.zg_bins[i]['kernel_int']=self.zg_bins[i]['kernel'].T*self.zg_bins[i]['pzdz']
-            # self.zg_bins[i]['kernel_int']=self.zg_bins[i]['kernel_int'].T
+            self.zg_bins[i]['kernel_int']=self.zg_bins[i]['kernel'].T*self.zg_bins[i]['pz'] #FIXME: this should be ok since we dot by dz_l in the cl function in 3X2.
 
     def reset_zg(self):
         """

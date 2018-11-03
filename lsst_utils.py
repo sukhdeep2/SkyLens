@@ -104,6 +104,11 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     zs_bins['n_bins']=nz_bins #easy to remember the counts
     zs_bins['z_lens_kernel']=zl_kernel
     zs_bins['zmax']=zmax
+    zs_bins['zp']=zp
+    zs_bins['pz']=p_zp
+    zs_bins['z_bins']=z_bins
+    zs_bins['zp_sigma']=zp_sigma
+    zs_bins['zp_bias']=zp_bias
     return zs_bins
 
 def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
@@ -171,7 +176,7 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
                 tomography is based on lens redshift, then this arrays contains those redshifts.
         ns: The number density for each bin to compute shot noise.
     """
-    z_bins={}
+    zg_bins={}
 
     if nz_bins is None:
         nz_bins=1
@@ -236,13 +241,19 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
     if z_bias is None:
         z_bias=np.zeros_like(z)
     else:
-        zb=interp1d(z_bias['z'],z_bias['b'],bounds_error=False,fill_value=0)
-        z_bias=zb(z)
+        try:
+            zb=interp1d(z_bias['z'],z_bias['b'],bounds_error=False,fill_value=0)
+            z_bias=zb(z)
+        except:#FIXME: Ugly
+            do_nothing=1
     if np.isscalar(z_sigma):
         z_sigma=z_sigma*((1+z)**z_sigma_power)
     else:
-        zs=interp1d(z_sigma['z'],z_sigma['b'],bounds_error=False,fill_value=0)
-        z_sigma=zs(z)
+        try:
+            zs=interp1d(z_sigma['z'],z_sigma['b'],bounds_error=False,fill_value=0)
+            z_sigma=zs(z)
+        except: #FIXME: Ugly
+            do_nothing=1
         
     return source_tomo_bins(zp=z,p_zp=pzs,ns=ns0,nz_bins=nbins,
                          ztrue_func=ztrue_func,zp_bias=z_bias,
@@ -250,13 +261,21 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
 
 def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits'):
     z_bins={}
-    t=Table.read(fname,format='fits',hdu=6)
+    try:
+        t=Table.read(fname,format='fits',hdu=6)
+        dz=t['Z_HIGH']-t['Z_LOW']
+        zmax=max(t['Z_HIGH'])
+    except:
+        t=np.genfromtxt(fname,names=('Z_MID','BIN1','BIN2','BIN3','BIN4'))
+        dz=np.gradient(t['Z_MID'])
+        zmax=max(t['Z_MID'])+dz[-1]/2.
+        
     nz_bins=4
     nz=[1.496,1.5189,1.5949,0.7949]
     for i in np.arange(nz_bins):
         z_bins[i]={}
         z_bins[i]['z']=t['Z_MID']
-        z_bins[i]['dz']=t['Z_HIGH']-t['Z_LOW']
+        z_bins[i]['dz']=dz
         z_bins[i]['nz']=nz[i]
         z_bins[i]['pz']=t['BIN'+str(i+1)]
         z_bins[i]['W']=1.
@@ -264,7 +283,7 @@ def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits'):
         z_bins[i]['Norm']=np.sum(z_bins[i]['pzdz'])
     z_bins['n_bins']=nz_bins
     z_bins['nz']=nz
-    z_bins['zmax']=max(t['Z_HIGH'])
+    z_bins['zmax']=zmax
     return z_bins
 
 
