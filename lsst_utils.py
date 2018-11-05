@@ -259,6 +259,36 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
                          ztrue_func=ztrue_func,zp_bias=z_bias,
                         zp_sigma=z_sigma,z_bins=z_bins)
 
+
+def DES_lens_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits'):
+    z_bins={}
+    try:
+        t=Table.read(fname,format='fits',hdu=6)
+        dz=t['Z_HIGH']-t['Z_LOW']
+        zmax=max(t['Z_HIGH'])
+    except:
+        t=np.genfromtxt(fname,names=('Z_MID','BIN1','BIN2','BIN3','BIN4','BIN5'))
+        dz=np.gradient(t['Z_MID'])
+        zmax=max(t['Z_MID'])+dz[-1]/2.
+        
+    nz_bins=5
+    nz=[0.0134,0.0343,0.0505,0.0301,0.0089]
+    bz=[1.44,1.70,1.698,1.997,2.058]
+    for i in np.arange(nz_bins):
+        z_bins[i]={}
+        z_bins[i]['z']=t['Z_MID']
+        z_bins[i]['dz']=dz
+        z_bins[i]['nz']=nz[i]
+        z_bins[i]['b1']=bz[i]
+        z_bins[i]['pz']=t['BIN'+str(i+1)]
+        z_bins[i]['W']=1.
+        z_bins[i]['pzdz']=z_bins[i]['pz']*z_bins[i]['dz']
+        z_bins[i]['Norm']=np.sum(z_bins[i]['pzdz'])
+    z_bins['n_bins']=nz_bins
+    z_bins['nz']=nz
+    z_bins['zmax']=zmax
+    return z_bins
+
 def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits'):
     z_bins={}
     try:

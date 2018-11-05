@@ -18,6 +18,7 @@ class Galaxy_utils():
         self.l=l
         self.z_th=z_th
         self.zg_bins=None
+        self.nz_F=60*60/d2r**2 #this is conversion factor assuming input nz is in arcmin**-2
         if zg_bins is not None: #sometimes we call this class just to access some of the functions
             self.set_zbins(zg_bins,bias_func=bias_func)
 
@@ -27,7 +28,7 @@ class Galaxy_utils():
         self.set_shot_noise()
 
         if bias_func is None:
-            self.bias_func=self.linear_bias_powerlaw
+            self.bias_func=self.constant_bias
         else:
             try:
                 self.bias_func=getattr(self,bias_func)
@@ -47,6 +48,7 @@ class Galaxy_utils():
             self.zg_bins[i]['pz']=pz_zth/norm
             self.zg_bins[i]['pzdz']=dz_th*self.zg_bins[i]['pz'] #FIXME: This can mess things up
             self.zg_bins[i]['Norm']=1
+            self.zg_bins[i]['nz']*=self.nz_F
             self.zg_bins[i]['lens_kernel']=None
             if hasattr(self.zg_bins[i]['W'],"__len__"):
                 W_int=interp1d(zb[i]['z'],W,bounds_error=False,fill_value=0)
@@ -85,11 +87,14 @@ class Galaxy_utils():
             self.SN[:,i,i]=self.zg_bins[i]['SN']
 
 
-    def constant_bias(self,z=[],b=1,**kwargs):
-        return b*np.outer(np.ones_like(z),np.ones_like(self.l))
+    def constant_bias(self,z_bin={},**kwargs):
+        b=z_bin['b1']
+        return b*np.outer(np.ones_like(z_bin['z']),np.ones_like(self.l))
 
-    def linear_bias_powerlaw(self,z=[],cosmo_h=None,b1=None,b2=None):
-        return np.outer(b1*(1+z)**b2,np.ones_like(self.l)+self.l/self.l[-1]) #FIXME: This might need to change to account
+    def linear_bias_powerlaw(self,z_bin={},cosmo_h=None):
+        b1=z_bin['b1']
+        b2=z_bin['b2']
+        return np.outer(b1*(1+z_bin['z'])**b2,np.ones_like(self.l)+self.l/self.l[-1]) #FIXME: This might need to change to account
 
     def set_zg_bias(self,cosmo_h=None,bias_kwargs={},bias_func=None,zl=[]):
         """
@@ -100,7 +105,7 @@ class Galaxy_utils():
         # i.e not repeat for every ij combo
 
         for i in np.arange(self.ng_bins):
-            self.zg_bins[i]['kernel']=self.bias_func(z=self.zg_bins[i]['z'],
+            self.zg_bins[i]['kernel']=self.bias_func(z_bin=self.zg_bins[i],
                                                         cosmo_h=cosmo_h,**bias_kwargs)
             self.zg_bins[i]['kernel_int']=self.zg_bins[i]['kernel'].T*self.zg_bins[i]['pz'] #FIXME: this should be ok since we dot by dz_l in the cl function in 3X2.
 

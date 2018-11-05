@@ -454,7 +454,7 @@ class cov_3X2():
         return xi_b
 
     def xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
-                corrs=[('shear','shear')]):
+                corrs=None):
         """
             Computed tomographic angular correlation functions. First calls the tomographic
             power spectra and covariance and then does the hankel transform and  binning.
@@ -468,6 +468,8 @@ class cov_3X2():
 
         if cosmo_h is None:
             cosmo_h=self.Ang_PS.PS.cosmo_h
+        if corrs is None:
+            corrs=self.corrs
 
         #Donot use delayed here. Leads to error/repeated calculations
         cls_tomo_nu=self.cl_tomo(cosmo_h=cosmo_h,cosmo_params=cosmo_params,
