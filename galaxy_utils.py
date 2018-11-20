@@ -78,10 +78,10 @@ class Galaxy_utils():
                     tomography is based on lens redshift, then this arrays contains those redshifts.
             ns: The number density for each bin to compute shot noise.
         """
-        self.ng_bins=self.zg_bins['n_bins']
-        self.SN=np.zeros((1,self.ng_bins,self.ng_bins)) #if self.do_cov else None
+        n_bins=self.zg_bins['n_bins']
+        self.SN=np.zeros((1,n_bins,n_bins)) #if self.do_cov else None
 
-        for i in np.arange(self.ng_bins):
+        for i in np.arange(self.zg_bins['n_bins']):
             self.zg_bins[i]['SN']=self.shot_noise_calc(zg1=self.zg_bins[i],
                                                                     zg2=self.zg_bins[i])
             self.SN[:,i,i]=self.zg_bins[i]['SN']
@@ -104,7 +104,7 @@ class Galaxy_utils():
         #We need to compute these only once in every run
         # i.e not repeat for every ij combo
 
-        for i in np.arange(self.ng_bins):
+        for i in np.arange(self.zg_bins['n_bins']):
             self.zg_bins[i]['kernel']=self.bias_func(z_bin=self.zg_bins[i],
                                                         cosmo_h=cosmo_h,**bias_kwargs)
             self.zg_bins[i]['kernel_int']=self.zg_bins[i]['kernel'].T*self.zg_bins[i]['pz'] #FIXME: this should be ok since we dot by dz_l in the cl function in 3X2.
@@ -113,6 +113,6 @@ class Galaxy_utils():
         """
             Reset cosmology dependent values for each source bin
         """
-        for i in np.arange(self.ng_bins):
+        for i in np.arange(self.zg_bins['n_bins']):
             self.zg_bins[i]['kernel']=None
             self.zg_bins[i]['kernel_int']=None

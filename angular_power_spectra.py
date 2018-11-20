@@ -14,11 +14,12 @@ c=c.to(u.km/u.second)
 
 class Angular_power_spectra():
     def __init__(self,silence_camb=False,l=np.arange(2,2001),power_spectra_kwargs={},
-                z_PS=None,nz_PS=100,log_z_PS=False,z_PS_max=None,logger=None,
+                z_PS=None,nz_PS=100,log_z_PS=False,z_PS_max=None,logger=None,window_l=None,
                 SSV_cov=False,tracer='kappa',cov_utils=None):
         self.logger=logger
         self.PS=Power_Spectra(silence_camb=silence_camb,SSV_cov=SSV_cov,**power_spectra_kwargs)
         self.l=l
+        self.window_l=window_l
         self.cl_f=(l+0.5)**2/(l*(l+1.)) # cl correction from Kilbinger+ 2017
         self.tracer=tracer
 
@@ -77,9 +78,10 @@ class Angular_power_spectra():
         RKls=None
         cls_lin=None #cls from linear power spectra, to compute \delta_window for SSV
         if self.SSV_cov: #things needed to compute SSV cov
+            nl_w=len(self.window_l)
             Rls=np.zeros((nz,nl),dtype='float32')
             RKls=np.zeros((nz,nl),dtype='float32')
-            cls_lin=np.zeros((nz,nl),dtype='float32')#*u.Mpc#**2
+            cls_lin=np.zeros((nz,nl_w),dtype='float32')#*u.Mpc#**2
 
         cH=c/(cosmo_h.efunc(self.z)*cosmo_h.H0)
         cH=cH.value
@@ -98,7 +100,7 @@ class Angular_power_spectra():
             if self.SSV_cov:
                 Rls[i][:]+=k_to_l(l,lz,self.PS.R1[i])
                 RKls[i][:]+=k_to_l(l,lz,self.PS.Rk[i])
-                cls_lin[i][:]+=k_to_l(l,lz,self.PS.pk_lin[i]/DC_i**2)
+                cls_lin[i][:]+=k_to_l(self.window_l,lz,self.PS.pk_lin[i]/DC_i**2)
 
 
             #cl*=2./np.pi #comparison with CAMB requires this.

@@ -24,6 +24,7 @@ class Lensing_utils():
         #Gravitaional const to get Rho crit in right units
         self.G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)
         self.G2*=8*np.pi/3.
+        self.zs_bins=zs_bins
         if zs_bins is not None: #sometimes we call this class just to access some of the functions
             self.set_zbins(zs_bins)
 

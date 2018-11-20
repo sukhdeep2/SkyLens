@@ -5,7 +5,8 @@ from lensing_utils import *
 from astropy.cosmology import Planck15 as cosmo
 from astropy.table import Table
 cosmo_h_PL=cosmo.clone(H0=100)
-
+from cov_3X2 import *
+import healpy as hp
 
 def lsst_pz_source(alpha=2,z0=0.11,beta=0.68,z=[]): #alpha=1.24,z0=0.51,beta=1.01,z=[]
     p_zs=z**alpha*np.exp(-(z/z0)**beta)
@@ -41,8 +42,35 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None,ns=0):
     nz=dzs*p_zs*ns
     return zs,p_zs,nz
 
+def set_window(zs_bins={},f_sky=0.3,nside=256):
+    l0=np.linspace(0,512,dtype='int')
+    corr=('galaxy','galaxy')
+    kappa0=cov_3X2(zg_bins=zs_bins,do_cov=False,bin_cl=False,l_bins=None,l=l0, zs_bins=None,use_window=False,
+                   corrs=[corr])
+    npix0=hp.nside2npix(nside)
+        
+    npix=np.int(npix0*f_sky)
+    cl0G=kappa0.cl_tomo()
+    mask=np.ones(npix0,dtype='bool')
+    mask[int(npix):]=0
+    
+    cl_map0=hp.ma(np.ones(npix0))
+    cl_map0[~mask]=hp.UNSEEN
+    
+    zs_bins['window0']=cl_map0
+    zs_bins['window0_alm']=hp.map2alm(cl_map0)
+
+    for i in np.arange(zs_bins['n_bins']):
+        cl_i=cl0G['cl'][corr][(i,i)].compute()
+        cl_map=hp.ma(1+hp.synfast(cl_i,nside=nside))
+        cl_map[~mask]=hp.UNSEEN
+        zs_bins[i]['window']=cl_map
+        zs_bins[i]['window_alm']=hp.map2alm(cl_map)
+    
+    return zs_bins
+
 def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
-                    zp_sigma=None,zs=None,z_bins=None):
+                    zp_sigma=None,zs=None,z_bins=None,f_sky=0.3,nside=256,use_window=False):
     """
         Setting source redshift bins in the format used in code.
         Need
@@ -99,6 +127,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
         zs_bins[i]['Norm']=np.sum(zs_bins[i]['pzdz'])
         sc=1./lu.sigma_crit(zl=zl_kernel,zs=zs[x],cosmo_h=cosmo_h)
         zs_bins[i]['lens_kernel']=np.dot(zs_bins[i]['pzdz'],sc)
+        zs_bins[i]['b1']=1
         
         zmax=max([zmax,max(zs[x])])
     zs_bins['n_bins']=nz_bins #easy to remember the counts
@@ -109,6 +138,8 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     zs_bins['z_bins']=z_bins
     zs_bins['zp_sigma']=zp_sigma
     zs_bins['zp_bias']=zp_bias
+    if use_window:
+        zs_bins=set_window(zs_bins=zs_bins,f_sky=f_sky,nside=nside)
     return zs_bins
 
 def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
@@ -165,7 +196,7 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
 
 
 def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bias=None,
-                    zp_sigma=None,zg=None):
+                    zp_sigma=None,zg=None,f_sky=0.3,nside=256,use_window=False):
     """
         Setting source redshift bins in the format used in code.
         Need
@@ -217,11 +248,13 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
         zg_bins[i]['pzdz']=zg_bins[i]['pz']*zg_bins[i]['dz']
         zg_bins[i]['Norm']=np.sum(zg_bins[i]['pzdz'])
     zg_bins['n_bins']=nz_bins #easy to remember the counts
+    if use_window:
+        zg_bins=set_window(zs_bins=zg_bins,f_sky=f_sky,nside=nside)
     return zg_bins
 
 
 def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=None,z_bins=None,
-                          ztrue_func=ztrue_given_pz_Gaussian,z_sigma_power=1):
+                          ztrue_func=ztrue_given_pz_Gaussian,z_sigma_power=1,f_sky=0.3,nside=256,use_window=False):
     
     z=np.linspace(0,3.5,200)
     pzs=lsst_pz_source(z=z)
@@ -257,7 +290,8 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
         
     return source_tomo_bins(zp=z,p_zp=pzs,ns=ns0,nz_bins=nbins,
                          ztrue_func=ztrue_func,zp_bias=z_bias,
-                        zp_sigma=z_sigma,z_bins=z_bins)
+                        zp_sigma=z_sigma,z_bins=z_bins,f_sky=f_sky,nside=nside,
+                           use_window=use_window)
 
 
 def DES_lens_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits'):

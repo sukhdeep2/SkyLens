@@ -3,7 +3,6 @@ import dask
 from dask import delayed
 from power_spectra import *
 from angular_power_spectra import *
-from lsst_utils import *
 from hankel_transform import *
 from wigner_transform import *
 from binning import *
@@ -28,7 +27,7 @@ class cov_3X2():
                 power_spectra_kwargs={},HT_kwargs=None,
                 z_PS=None,nz_PS=100,log_z_PS=True,#z_PS_max=None,
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
-                use_window=True,window_file=None,
+                use_window=True,window_file=None,window_lmax=None,
                 sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,pseudo_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 corrs=[('shear','shear')]):
@@ -51,7 +50,15 @@ class cov_3X2():
         self.do_xi=do_xi
         self.corrs=corrs
         self.l_cut_jnu=None
-        z_PS_max=zs_bins['zmax']
+
+        self.window_lmax=100 if window_lmax is None else window_lmax
+        self.window_l=np.arange(self.window_lmax+1)
+        self.f_sky=f_sky
+
+        if ('shear','shear') in corrs:
+            z_PS_max=zs_bins['zmax']
+        else:
+            z_PS_max=zg_bins['zmax']
         self.use_window=use_window
         self.pseudo_cl=pseudo_cl
 
@@ -67,14 +74,15 @@ class cov_3X2():
         if cov_utils is None:
             self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,pseudo_cl=pseudo_cl,
                                             l_cut_jnu=self.l_cut_jnu,window_file=window_file,do_xi=do_xi,
-                                            do_sample_variance=do_sample_variance,use_window=use_window)
+                                            do_sample_variance=do_sample_variance,use_window=use_window,
+                                            window_l=self.window_l)
 
         self.Ang_PS=Ang_PS
         if Ang_PS is None:
             self.Ang_PS=Angular_power_spectra(silence_camb=silence_camb,
                                 SSV_cov=SSV_cov,l=self.l,logger=self.logger,
                                 power_spectra_kwargs=power_spectra_kwargs,
-                                cov_utils=self.cov_utils,
+                                cov_utils=self.cov_utils,window_l=self.window_l,
                                 z_PS=z_PS,nz_PS=nz_PS,log_z_PS=log_z_PS,
                                 z_PS_max=z_PS_max)
                         #FIXME: Need a dict for these args
@@ -100,8 +108,11 @@ class cov_3X2():
         self.corr_indxs={}
         self.m1_m2s={}
 
-        n_s_bins=self.z_bins['shear']['n_bins']
+        n_s_bins=0
         n_g_bins=0
+        if self.lensing_utils.zs_bins is not None:
+            n_s_bins=self.z_bins['shear']['n_bins']
+
         if self.galaxy_utils.zg_bins is not None:
             n_g_bins=self.z_bins['galaxy']['n_bins']
 
@@ -119,16 +130,21 @@ class cov_3X2():
         self.corr_indxs[('shear','galaxy')]=[ k for l in [[(i,j) for i in np.arange(
                                         n_s_bins)] for j in np.arange(n_g_bins)] for k in l]
 
+        self.stack_indxs=self.corr_indxs.copy()
+
+
         self.m1_m2s[('shear','shear')]=[(2,2),(2,-2)]
         self.m1_m2s[('galaxy','shear')]=[(0,2)] #FIXME: check the order in covariance case
+        self.m1_m2s[('shear','galaxy')]=[(2,0)] #FIXME: check the order in covariance case
         self.m1_m2s[('galaxy','galaxy')]=[(0,0)]
+        self.m1_m2s[('window')]=[(0,0)]
 
-        self.Win=1.
-        if use_window and self.do_xi:
-            th,self.Win=self.HT.projected_correlation(l_cl=self.cov_utils.window_l,
-                                            m1_m2=(0,0),cl=self.cov_utils.Win)
-            self.m1_m2s[('window')]=[(0,0)]
-            self.Win=self.binning.bin_1d(xi=self.Win,bin_utils=self.xi_bin_utils[(0,0)])
+        if not use_window:
+            self.coupling_M=np.diag(np.ones_like(self.l))
+            self.coupling_G=np.diag(1./self.cov_utils.gaussian_cov_norm)
+#         self.Win=1
+#         if use_window:
+        self.set_window()
 
     def update_zbins(self,z_bins={},probe='shear'):
         if probe=='shear':
@@ -140,6 +156,110 @@ class cov_3X2():
         #self.z_bins['kappa']=self.lensing_utils.zk_bins
         self.z_bins['galaxy']=self.galaxy_utils.zg_bins
         return
+
+
+    def coupling_matrix(self,win):
+        return np.dot(self.wig_3j**2,win*(2*self.window_l+1))/4./np.pi/(2*self.l+1) #FIXME: check the order of division by l.
+
+    def get_window_power(self,z_bin1,z_bin2,z_bin3=None,z_bin4=None):
+        win={}
+        if not self.use_window:
+            win={'cl':self.f_sky, 'M':self.coupling_M}
+            if z_bin3 is not None:
+                win={'cl1324':self.f_sky,'M1324':self.coupling_G, 'M1423':self.coupling_G, 'cl1423':self.f_sky}
+            return win
+        alm1=z_bin1['window_alm']
+        alm2=z_bin2['window_alm']
+        do_cov=False
+        if z_bin3 is not None:
+            alm13=hp.map2alm(z_bin1['window']*z_bin3['window'])
+            alm24=hp.map2alm(z_bin2['window']*z_bin4['window'])
+
+            alm14=hp.map2alm(z_bin1['window']*z_bin4['window'])
+            alm23=hp.map2alm(z_bin2['window']*z_bin3['window'])
+            do_cov=True
+
+        if not do_cov:
+            win['cl']=hp.alm2cl(alms1=alm1,alms2=alm2,lmax_out=self.window_lmax) #This is f_sky*cl.
+            win['M']=self.coupling_matrix(win['cl'])*(2*self.l[:,None]+1) #FIXME: check ordering
+        if do_cov:
+            win['cl1324']=hp.alm2cl(alms1=alm13,alms2=alm24,lmax_out=self.window_lmax) #This is f_sky*cl.
+            win['cl1423']=hp.alm2cl(alms1=alm14,alms2=alm23,lmax_out=self.window_lmax)
+            win['M1324']=self.coupling_matrix(win['cl1324'])
+            win['M1423']=self.coupling_matrix(win['cl1423'])
+
+#         win_xi=None
+#         if self.do_xi:
+#             if not do_cov:
+#                 th,win['xi']=self.HT.projected_correlation(l_cl=window_l,m1_m2=(0,0),cl=win['cl'])
+#             if do_cov:
+#                 th,win['xi1324']=self.HT.projected_covariance(l_cl=window_l,m1_m2=(0,0),m1_m2_cross=(0,0),cl_cov=win['cl1324'])
+#                 th,win['xi1423']=self.HT.projected_covariance(l_cl=window_l,m1_m2=(0,0),m1_m2_cross=(0,0),cl_cov=win['cl1423'])
+        return win
+
+    def set_window(self):
+        if self.use_window:
+            self.wig_3j=Wigner3j_parallel( 0, 0, 0, self.l, self.l, self.window_l)
+            print('wigner done')
+        self.Win={'cl':{},'xi':{}}
+        for corr in self.corrs:
+            self.Win['cl'][corr]={}
+            self.Win['xi'][corr]={}
+            self.Win[corr]={}
+            for (i,j) in self.corr_indxs[corr]:
+                zb1=self.z_bins[corr[0]][i]
+                zb2=self.z_bins[corr[1]][j]
+                self.Win[corr][(i,j)]=delayed(self.get_window_power)(zb1,zb2)
+
+        if self.do_cov:
+            self.Win['cov']={'cl':{},'xi':{}}
+            for ic1 in np.arange(len(self.corrs)):
+                corr1=self.corrs[ic1]
+                indxs_1=self.corr_indxs[corr1]
+                n_indx1=len(indxs_1)
+
+                for ic2 in np.arange(ic1,len(self.corrs)):
+                    corr2=self.corrs[ic2]
+                    indxs_2=self.corr_indxs[corr2]
+                    n_indx2=len(indxs_2)
+
+                    corr=corr1+corr2
+                    corr2=corr2+corr1
+                    self.Win['cov'][corr]={}
+                    self.Win['cov'][corr2]={}
+
+                    for i1 in np.arange(n_indx1):
+                        start2=0
+                        indx1=indxs_1[i1]
+                        if corr1==corr2:
+                            start2=i1
+                        for i2 in np.arange(start2,n_indx2):
+                            indx2=indxs_2[i2]
+                            indxs=indx1+indx2
+                            indxs2=indx2+indx1
+                            zb1=self.z_bins[corr1[0]][indx1[0]]
+                            zb2=self.z_bins[corr1[1]][indx1[1]]
+                            zb3=self.z_bins[corr2[0]][indx2[0]]
+                            zb4=self.z_bins[corr2[1]][indx2[1]]
+                            self.Win['cov'][corr][indxs]=delayed(self.get_window_power)(zb1,zb2,z_bin3=zb3,z_bin4=zb4)
+                            self.Win['cov'][corr][indxs2]=self.Win['cov'][corr][indxs]
+                            self.Win['cov'][corr2][indxs2]=self.Win['cov'][corr][indxs]
+                            self.Win['cov'][corr2][indxs]=self.Win['cov'][corr][indxs]
+
+        for corr in self.Win.keys():
+                if 'cl' in corr or 'xi' in corr or 'cov' in corr:
+                    continue
+                for indx in self.Win[corr].keys():
+                    self.Win[corr][indx]=self.Win[corr][indx].compute()
+
+        if self.do_cov:
+            for corr in self.Win['cov'].keys():
+                if 'cl' in corr or 'xi' in corr or 'cov' in corr:
+                    continue
+                for indx in self.Win['cov'][corr].keys():
+                    self.Win['cov'][corr][indx]=self.Win['cov'][corr][indx].compute()
+
+        return self.Win
 
     def set_HT(self,HT=None,HT_kwargs=None):
         self.HT=HT
@@ -239,10 +359,15 @@ class cov_3X2():
         cov['final']=None
         l=self.l
 
-        cov['G'],cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,
+        cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,
                                                 self.SN,tracers,zs_indx,self.do_xi)
-        
+
+        cov['G']=cov['G1324']*self.Win['cov'][tracers][zs_indx]['M1324']
+        cov['G']+=cov['G1423']*self.Win['cov'][tracers][zs_indx]['M1423']
         cov['final']=cov['G']
+
+        cov['G1324']=None
+        cov['G1423']=None #save memory
 
         cov['SSC']=None
         if self.SSV_cov:
@@ -258,9 +383,9 @@ class cov_3X2():
 
             sig_cL*=self.Ang_PS.clz['dchi']
 
-            if self.do_xi:
-                cov['kernel']=sig_cL
-                return cov
+#             if self.do_xi:
+#                 cov['kernel']=sig_cL
+#                 return cov
 
             sig_cL*=sigma_win
 
@@ -273,7 +398,7 @@ class cov_3X2():
             cov['final']+=cov['SSC']
 
         for k in ['G','SSC','final']:#no need to bin G1324 and G1423
-            cl_none,cov[k]=self.bin_cl_func(cov=cov[k])
+            cl_none,cov[k+'_b']=self.bin_cl_func(cov=cov[k])
         return cov
 
     def calc_pseudo_cl(self,cl=None,cov=None):
@@ -400,13 +525,13 @@ class cov_3X2():
         out_stack=delayed(self.stack_dat)({'cov':cov,'cl_b':cl_b},corrs=corrs)
         return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl}
 
-    def xi_cov(self,cov_cl={},m1_m2=None,m1_m2_cross=None,clr=None,clrk=None):
+    def xi_cov(self,cov_cl={},m1_m2=None,m1_m2_cross=None,clr=None,clrk=None,z_indx=[],tracers=[]):
         """
             Computes covariance of xi, by performing 2-D hankel transform on covariance of Cl.
             In current implementation of hankel transform works only for m1_m2=m1_m2_cross.
             So no cross covariance between xi+ and xi-.
         """
-        #FIXME: Implement the cross covariance
+
         if m1_m2_cross is None:
             m1_m2_cross=m1_m2
         cov_xi={}
@@ -416,35 +541,55 @@ class cov_3X2():
             cov_xi['final']=np.zeros((n,n))
             return cov_xi
 
-        Norm= self.Win*self.cov_utils.Om_W**1 #FIXME: Make sure this is correct
-        th0,cov_xi['G']=self.HT.projected_covariance(l_cl=self.l,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,
-                                                     cl_cov=cov_cl['G1423']+cov_cl['G1324'])
-        # print(cov_cl['G1423'].max(),cov_cl['G1324'].max())
+        SN1324=0
+        SN1423=0
+
+        if np.all(np.array(tracers)=='shear'):
+            SN1324,SN1423=self.cov_utils.shear_SN(self.SN,tracers,z_indx)
+            SN1324*=self.Win['cov'][tracers][z_indx]['M1324']
+            SN1423*=self.Win['cov'][tracers][z_indx]['M1423']
+            if not m1_m2==m1_m2_cross: #cross between xi+ and xi-
+                SN1324*=-1
+                SN1423*=-1
+
+        Norm=self.cov_utils.Om_W #FIXME: Make sure this is correct
+
+        cov_cl_G=cov_cl['G']+SN1423+SN1324
+        cov_cl_G*=self.cov_utils.gaussian_cov_norm
+        cov_cl_G/=Norm
+        if self.SSV_cov:
+            cov_cl_G+=cov_cl['SSC']
+
+        th0,cov_xi['G']=self.HT.projected_covariance2(l_cl=self.l,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,
+                            cl_cov=cov_cl_G)
+
         cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=self.xi_bin_utils[m1_m2])
         #binning is cheap
 
-        cov_xi['G']/=Norm
         cov_xi['final']=cov_xi['G']
-        if self.SSV_cov:
-            sig_cL=cov_cl['kernel']*self.cov_utils.sigma_win[m1_m2]
+#         if self.SSV_cov:
+#             sig_cL=cov_cl['kernel']*self.cov_utils.sigma_win[m1_m2]
 
-            #tidal term is added to clr in the calling function
-            if self.HT.name=='Hankel':
-                cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.J[m1_m2]/self.HT.J_nu1[m1_m2]**2,
-                                    (clr).T*sig_cL,clr,self.HT.J[m1_m2_cross],optimize=True)
+#             #tidal term is added to clr in the calling function
+#             if self.HT.name=='Hankel':
+#                 cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.J[m1_m2]/self.HT.J_nu1[m1_m2]**2,
+#                                     (clr).T*sig_cL,clr,self.HT.J[m1_m2_cross],optimize=True)
 
-                self.cov_SSC_nobin[m1_m2]=sig_cL
-                cov_SSC*=(2.*self.HT.l_max[m1_m2]**2/self.HT.zeros[m1_m2][-1]**2)/(2*np.pi)
+#                 self.cov_SSC_nobin[m1_m2]=sig_cL
+#                 cov_SSC*=(2.*self.HT.l_max[m1_m2]**2/self.HT.zeros[m1_m2][-1]**2)/(2*np.pi)
 
-            elif self.HT.name=='Wigner':
-                cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.wig_d[m1_m2]*np.sqrt(self.HT.norm),
-                                (clr).T*sig_cL,clr,np.sqrt(self.HT.wig_d[m1_m2_cross]),optimize=True)
-                                #FIXME: This is likely to be broken.
+#             elif self.HT.name=='Wigner':
+#                 cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.wig_d[m1_m2]*np.sqrt(self.HT.norm),
+#                                 (clr).T*sig_cL,clr,np.sqrt(self.HT.wig_d[m1_m2_cross]),optimize=True)
+#                                 #FIXME: This is likely to be broken.
 
-            cov_xi['SSC']=self.binning.bin_2d(cov=cov_SSC,bin_utils=self.xi_bin_utils[m1_m2])
-            cov_xi['SSC']/=Norm
-            cov_xi['final']+=cov_xi['SSC']
-            # cov_xi['final']=cov_xi['SSC']+cov_xi['G']
+#             th0,cov_SSC=self.HT.projected_covariance2(l_cl=self.l,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,
+#                             cl_cov=cov_cl['SSC'])
+
+#             cov_xi['SSC']=self.binning.bin_2d(cov=cov_SSC,bin_utils=self.xi_bin_utils[m1_m2])
+#             cov_xi['SSC']/=Norm
+#             cov_xi['final']+=cov_xi['SSC']
+#             # cov_xi['final']=cov_xi['SSC']+cov_xi['G']
 
         return cov_xi
 
@@ -530,7 +675,8 @@ class cov_3X2():
                                 for i2 in np.arange(start2,len(indxs_2)):
                                     indx=indxs_1[i1]+indxs_2[i2]
                                     cov_xi[corr][m1_m2+m1_m2_cross][indx]=delayed(self.xi_cov)(cov_cl=cov_cl[indx]#.compute()
-                                                                    ,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,clr=clr)
+                                                                    ,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,clr=clr,
+                                                                    z_indx=indx,tracers=corr)
         out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi},corrs=corrs)
         out['xi']=xi
         out['cov']=cov_xi
@@ -538,7 +684,7 @@ class cov_3X2():
         return out
 
 
-    def stack_dat(self,dat,corrs):
+    def stack_dat(self,dat,corrs,corr_indxs=None):
         """
             outputs from tomographic caluclations are dictionaries.
             This fucntion stacks them such that the cl or xi is a long
@@ -549,7 +695,8 @@ class cov_3X2():
             handle things such as binning, hankel transforms etc. We will keep this structure for now.
         """
 
-
+        if corr_indxs is None:
+            corr_indxs=self.stack_indxs
 
         if self.do_xi:
             est='xi'
@@ -566,7 +713,7 @@ class cov_3X2():
         for corr in corrs:
             if self.do_xi:
                 n_m1_m2=len(self.m1_m2s[corr])
-            n_bins+=len(self.corr_indxs[corr])*n_m1_m2 #np.int64(nbins*(nbins-1.)/2.+nbins)
+            n_bins+=len(corr_indxs[corr])*n_m1_m2 #np.int64(nbins*(nbins-1.)/2.+nbins)
 #         print(n_bins,len_bins,n_m1_m2)
         D_final=np.zeros(n_bins*len_bins)
 
@@ -583,11 +730,10 @@ class cov_3X2():
                 else:
                     dat_c=dat[est][corr][corr] #cl_b gets keys twice. dask won't allow standard dict merge
 
-                for indx in self.corr_indxs[corr]:
+                for indx in corr_indxs[corr]:
                     # print(len_bins,dat_c[indx].shape)
                     D_final[i*len_bins:(i+1)*len_bins]=dat_c[indx]
                     i+=1
-
 
         if not self.do_cov:
             out={'cov':None}
@@ -599,14 +745,14 @@ class cov_3X2():
         indx0_c1=0
         for ic1 in np.arange(len(corrs)):
             corr1=corrs[ic1]
-            indxs_1=self.corr_indxs[corr1]
+            indxs_1=corr_indxs[corr1]
             n_indx1=len(indxs_1)
             # indx0_c1=(ic1)*n_indx1*len_bins
 
             indx0_c2=indx0_c1
             for ic2 in np.arange(ic1,len(corrs)):
                 corr2=corrs[ic2]
-                indxs_2=self.corr_indxs[corr2]
+                indxs_2=corr_indxs[corr2]
                 n_indx2=len(indxs_2)
                 # indx0_c2=(ic2)*n_indx2*len_bins
 
@@ -638,7 +784,7 @@ class cov_3X2():
                                 if self.do_xi:
                                     cov_here=dat['cov'][corr][m1_m2_1[im1]+m1_m2_2[im2]][indx]['final']
                                 else:
-                                    cov_here=dat['cov'][corr][indx]['final']
+                                    cov_here=dat['cov'][corr][indx]['final_b']
 
                                 # if im1==im2:
                                 i=indx0_c1+indx0_1+indx0_m1
