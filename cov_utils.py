@@ -54,7 +54,7 @@ class Covariance_utils():
         #     self.Win[x]=1.
         #     self.Win0=np.copy(self.Win)
 
-        self.Win/=self.Om_W #FIXME: This thing has been forgotten and not used anywhere in the code.
+        self.Win/=self.Om_W 
         self.Win0/=self.Om_W
 
     def window_func(self):
@@ -68,16 +68,19 @@ class Covariance_utils():
 
         if self.window_l is None:
             self.window_l=np.arange(100)
-        NP=hp.nside2npix(256)
-        M=np.zeros(NP)
-        M[:np.int(NP*self.f_sky)]=1
-        Win0=hp.sphtfunc.anafast(M)/self.f_sky
-        l=np.arange(len(Win0))
 
-#         l=np.logspace(-2,2,1000)#self.l
-#         theta_win=self.theta_win*d2r
-#         l_th=l*theta_win
-#         Win0=2*jn(1,l_th)/l_th*4*np.pi*self.f_sky
+#         NP=hp.nside2npix(256)
+#         M=np.zeros(NP)
+#         M[:np.int(NP*self.f_sky)]=1
+#         Win0=hp.sphtfunc.anafast(M)/self.f_sky
+#         l=np.arange(len(Win0))
+
+        l=self.window_l
+        theta_win=np.sqrt(self.Om_W/np.pi)
+        l_th=l*theta_win
+        Win0=2*jn(1,l_th)/l_th
+        Win0=np.nan_to_num(Win0)
+        
         win_i=interp1d(l,Win0,bounds_error=False,fill_value=0)
         self.Win=win_i(self.window_l) #this will be useful for SSV
         self.Win0=win_i(self.l)

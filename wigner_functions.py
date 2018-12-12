@@ -106,7 +106,7 @@ def Wigner3j(m_1, m_2, m_3,j_1, j_2, j_3):
     if (m_1 + m_2 + m_3 != 0 or x0.sum()==0):
         return np.zeros_like(j_1+j_2+j_3,dtype='float64')
 
-    
+
     a={1:(j_1 + j_2 - j_3)[x0]}
 
     m_3 = -m_3
@@ -162,7 +162,7 @@ def Wigner3j(m_1, m_2, m_3,j_1, j_2, j_3):
                     log_factorial(a[1][x] - ii) )
         sumres_ii=np.exp(sumres_t-log_den)*sgns[i] #FIXME: This has numerical issues.
         sumres_t[x]+=sumres_ii
- 
+
 #     sumres_t=np.exp(log_ressqrt+np.log(np.absolute(sumres_t)))*np.sign(sumres_t)
 
     prefid = np.ones_like(x0,dtype='int8') # (1 if (j_1 - j_2 - m_3) % 2 == 0 else -1)
@@ -355,14 +355,14 @@ def _calc_factlist(nn):
 
 def wigner_3j_3(m1,m2,m3,js):
 #     return wigner_3j_2(js[0],js[1],js[2],m1,m2,m3)#.evalf()
-    return wigner_3j(js[0],js[1],js[2],m1,m2,m3)#.evalf()
+    return np.float32(wigner_3j(js[0],js[1],js[2],m1,m2,m3))#.evalf()
 
 from itertools import product as Comb
 def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None):
     if ncpu is None:
         ncpu=cpu_count()-2
     p=Pool(ncpu)
-    
+
     n1=len(j_1)
     n2=len(j_2)
     n3=len(j_3)
@@ -371,9 +371,8 @@ def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None):
 #     print(c.shape)
     j_max=np.amax(j_1.max()+j_2.max()+j_3.max()+1)
     _calc_factlist(j_max)
-    
+
     d_mat=np.array(p.map(partial(wigner_3j_3, m_1, m_2, m_3),c,chunksize=10))
     p.close()
     d_mat=d_mat.reshape(n1,n2,n3)
     return d_mat
-

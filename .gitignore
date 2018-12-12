@@ -10,3 +10,4 @@
 *dask-worker-space/*
 *mydask.png*
 *.dat
+*.pkl

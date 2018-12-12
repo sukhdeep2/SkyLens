@@ -9,6 +9,7 @@ from binning import *
 from cov_utils import *
 from lensing_utils import *
 from galaxy_utils import *
+from window_utils import *
 from astropy.constants import c,G
 from astropy import units as u
 import numpy as np
@@ -62,6 +63,7 @@ class cov_3X2():
         self.use_window=use_window
         self.pseudo_cl=pseudo_cl
 
+        self.HT=None
         if do_xi:
             self.set_HT(HT=HT,HT_kwargs=HT_kwargs)
 
@@ -139,12 +141,13 @@ class cov_3X2():
         self.m1_m2s[('galaxy','galaxy')]=[(0,0)]
         self.m1_m2s[('window')]=[(0,0)]
 
-        if not use_window:
-            self.coupling_M=np.diag(np.ones_like(self.l))
-            self.coupling_G=np.diag(1./self.cov_utils.gaussian_cov_norm)
+        self.Win=window_utils(window_l=self.window_l,l=self.l,corrs=self.corrs,m1_m2s=self.m1_m2s,\
+                        use_window=use_window,do_cov=self.do_cov,cov_utils=self.cov_utils,f_sky=f_sky,
+                        corr_indxs=self.corr_indxs,z_bins=self.z_bins,window_lmax=self.window_lmax,
+                        HT=self.HT,do_xi=self.do_xi,xi_bin_utils=self.xi_bin_utils)
 #         self.Win=1
 #         if use_window:
-        self.set_window()
+        # self.Win.set_window()
 
     def update_zbins(self,z_bins={},probe='shear'):
         if probe=='shear':
@@ -156,110 +159,6 @@ class cov_3X2():
         #self.z_bins['kappa']=self.lensing_utils.zk_bins
         self.z_bins['galaxy']=self.galaxy_utils.zg_bins
         return
-
-
-    def coupling_matrix(self,win):
-        return np.dot(self.wig_3j**2,win*(2*self.window_l+1))/4./np.pi/(2*self.l+1) #FIXME: check the order of division by l.
-
-    def get_window_power(self,z_bin1,z_bin2,z_bin3=None,z_bin4=None):
-        win={}
-        if not self.use_window:
-            win={'cl':self.f_sky, 'M':self.coupling_M}
-            if z_bin3 is not None:
-                win={'cl1324':self.f_sky,'M1324':self.coupling_G, 'M1423':self.coupling_G, 'cl1423':self.f_sky}
-            return win
-        alm1=z_bin1['window_alm']
-        alm2=z_bin2['window_alm']
-        do_cov=False
-        if z_bin3 is not None:
-            alm13=hp.map2alm(z_bin1['window']*z_bin3['window'])
-            alm24=hp.map2alm(z_bin2['window']*z_bin4['window'])
-
-            alm14=hp.map2alm(z_bin1['window']*z_bin4['window'])
-            alm23=hp.map2alm(z_bin2['window']*z_bin3['window'])
-            do_cov=True
-
-        if not do_cov:
-            win['cl']=hp.alm2cl(alms1=alm1,alms2=alm2,lmax_out=self.window_lmax) #This is f_sky*cl.
-            win['M']=self.coupling_matrix(win['cl'])*(2*self.l[:,None]+1) #FIXME: check ordering
-        if do_cov:
-            win['cl1324']=hp.alm2cl(alms1=alm13,alms2=alm24,lmax_out=self.window_lmax) #This is f_sky*cl.
-            win['cl1423']=hp.alm2cl(alms1=alm14,alms2=alm23,lmax_out=self.window_lmax)
-            win['M1324']=self.coupling_matrix(win['cl1324'])
-            win['M1423']=self.coupling_matrix(win['cl1423'])
-
-#         win_xi=None
-#         if self.do_xi:
-#             if not do_cov:
-#                 th,win['xi']=self.HT.projected_correlation(l_cl=window_l,m1_m2=(0,0),cl=win['cl'])
-#             if do_cov:
-#                 th,win['xi1324']=self.HT.projected_covariance(l_cl=window_l,m1_m2=(0,0),m1_m2_cross=(0,0),cl_cov=win['cl1324'])
-#                 th,win['xi1423']=self.HT.projected_covariance(l_cl=window_l,m1_m2=(0,0),m1_m2_cross=(0,0),cl_cov=win['cl1423'])
-        return win
-
-    def set_window(self):
-        if self.use_window:
-            self.wig_3j=Wigner3j_parallel( 0, 0, 0, self.l, self.l, self.window_l)
-            print('wigner done')
-        self.Win={'cl':{},'xi':{}}
-        for corr in self.corrs:
-            self.Win['cl'][corr]={}
-            self.Win['xi'][corr]={}
-            self.Win[corr]={}
-            for (i,j) in self.corr_indxs[corr]:
-                zb1=self.z_bins[corr[0]][i]
-                zb2=self.z_bins[corr[1]][j]
-                self.Win[corr][(i,j)]=delayed(self.get_window_power)(zb1,zb2)
-
-        if self.do_cov:
-            self.Win['cov']={'cl':{},'xi':{}}
-            for ic1 in np.arange(len(self.corrs)):
-                corr1=self.corrs[ic1]
-                indxs_1=self.corr_indxs[corr1]
-                n_indx1=len(indxs_1)
-
-                for ic2 in np.arange(ic1,len(self.corrs)):
-                    corr2=self.corrs[ic2]
-                    indxs_2=self.corr_indxs[corr2]
-                    n_indx2=len(indxs_2)
-
-                    corr=corr1+corr2
-                    corr2=corr2+corr1
-                    self.Win['cov'][corr]={}
-                    self.Win['cov'][corr2]={}
-
-                    for i1 in np.arange(n_indx1):
-                        start2=0
-                        indx1=indxs_1[i1]
-                        if corr1==corr2:
-                            start2=i1
-                        for i2 in np.arange(start2,n_indx2):
-                            indx2=indxs_2[i2]
-                            indxs=indx1+indx2
-                            indxs2=indx2+indx1
-                            zb1=self.z_bins[corr1[0]][indx1[0]]
-                            zb2=self.z_bins[corr1[1]][indx1[1]]
-                            zb3=self.z_bins[corr2[0]][indx2[0]]
-                            zb4=self.z_bins[corr2[1]][indx2[1]]
-                            self.Win['cov'][corr][indxs]=delayed(self.get_window_power)(zb1,zb2,z_bin3=zb3,z_bin4=zb4)
-                            self.Win['cov'][corr][indxs2]=self.Win['cov'][corr][indxs]
-                            self.Win['cov'][corr2][indxs2]=self.Win['cov'][corr][indxs]
-                            self.Win['cov'][corr2][indxs]=self.Win['cov'][corr][indxs]
-
-        for corr in self.Win.keys():
-                if 'cl' in corr or 'xi' in corr or 'cov' in corr:
-                    continue
-                for indx in self.Win[corr].keys():
-                    self.Win[corr][indx]=self.Win[corr][indx].compute()
-
-        if self.do_cov:
-            for corr in self.Win['cov'].keys():
-                if 'cl' in corr or 'xi' in corr or 'cov' in corr:
-                    continue
-                for indx in self.Win['cov'][corr].keys():
-                    self.Win['cov'][corr][indx]=self.Win['cov'][corr][indx].compute()
-
-        return self.Win
 
     def set_HT(self,HT=None,HT_kwargs=None):
         self.HT=HT
@@ -296,8 +195,8 @@ class cov_3X2():
         if self.bin_cl:
             self.cl_bin_utils=self.binning.bin_utils(r=self.l,r_bins=self.l_bins,
                                                 r_dim=2,mat_dims=[1,2])
+        self.xi_bin_utils={}
         if self.do_xi and self.bin_xi:
-            self.xi_bin_utils={}
             for m1_m2 in self.m1_m2s:
                 self.xi_bin_utils[m1_m2]=self.binning.bin_utils(r=self.HT.theta[m1_m2]/d2r,
                                                     r_bins=self.theta_bins,
@@ -362,8 +261,9 @@ class cov_3X2():
         cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,
                                                 self.SN,tracers,zs_indx,self.do_xi)
 
-        cov['G']=cov['G1324']*self.Win['cov'][tracers][zs_indx]['M1324']
-        cov['G']+=cov['G1423']*self.Win['cov'][tracers][zs_indx]['M1423']
+        print(self.Win.Win.keys())
+        cov['G']=cov['G1324']*self.Win.Win['cov'][tracers][zs_indx]['M1324']
+        cov['G']+=cov['G1423']*self.Win.Win['cov'][tracers][zs_indx]['M1423']
         cov['final']=cov['G']
 
         cov['G1324']=None
@@ -391,27 +291,20 @@ class cov_3X2():
 
             clr=self.Ang_PS.clz['clsR']
             if self.tidal_SSV_cov:
-                clr+=self.Ang_PS.clz['clsRK']/6.
+                clr=self.Ang_PS.clz['clsR']+ self.Ang_PS.clz['clsRK']/6.
 
             # cov['SSC_dd']=np.dot((clr1).T*sig_cL,clr1)
             cov['SSC']=np.dot((clr).T*sig_cL,clr)
-            cov['final']+=cov['SSC']
+            cov['final']=cov['G']+cov['SSC']
 
-        for k in ['G','SSC','final']:#no need to bin G1324 and G1423
+        for k in ['final','G','SSC']:#no need to bin G1324 and G1423
             cl_none,cov[k+'_b']=self.bin_cl_func(cov=cov[k])
-        return cov
 
-    def calc_pseudo_cl(self,cl=None,cov=None):
-        if not self.pseudo_cl:
-            return cl,cov
-        coupling_M=self.cov_utils.coupling_M
-        pcl=None
-        pcov=None
-        if cl is not None:
-            pcl=np.dot(cl,coupling_M)
-        if cov is not None:
-            pcov=np.dot(coupling_M,np.dot(cov,coupling_M)) #FIXME: check this with Planck paper
-        return pcl,pcov
+#         if not self.do_xi:
+#             cov['SSC']=None
+#             cov['G']=None
+
+        return cov
 
     def bin_cl_func(self,cl=None,cov=None):
         """
@@ -421,15 +314,13 @@ class cov_3X2():
             bin_cov: if true, then results has cov to be binned
             Both bin_cl and bin_cov can be true simulatenously.
         """
-        pcl,pcov=self.calc_pseudo_cl(cl=cl,cov=cov)
-        #we need to keep cl separate from pcl for covariance
-        cl_b=pcl
-        cov_b=pcov
+        cl_b=None
+        cov_b=None
         if self.bin_cl:
             if not cl is None:
-                cl_b=self.binning.bin_1d(xi=pcl,bin_utils=self.cl_bin_utils)
+                cl_b=self.binning.bin_1d(xi=cl,bin_utils=self.cl_bin_utils)
             if not cov is None:
-                cov_b=self.binning.bin_2d(cov=pcov,bin_utils=self.cl_bin_utils)
+                cov_b=self.binning.bin_2d(cov=cov,bin_utils=self.cl_bin_utils)
         return cl_b,cov_b
 
     def combine_cl_tomo(self,cl_compute_dict={},corr=None):
@@ -438,6 +329,7 @@ class cov_3X2():
 
         for (i,j) in self.corr_indxs[corr]+self.cov_indxs:
             clij=cl_compute_dict[(i,j)]
+            clij=clij@self.Win.Win[corr][(i,j)]['M'] #pseudo cl
             cl_b[corr][(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
             cl_b[corr2][(j,i)]=cl_b[corr][(i,j)]
         return cl_b
@@ -485,7 +377,6 @@ class cov_3X2():
                                           bias_kwargs=bias_kwargs)
             self.SN[('galaxy','galaxy')]=self.galaxy_utils.SN
 
-#         if self.Ang_PS.clz is None:
         self.Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
                                 cosmo_params=cosmo_params)
 
@@ -506,6 +397,7 @@ class cov_3X2():
 
                 cl[corr2][(j,i)]=cl[corr][(i,j)]#useful in gaussian covariance calculation.
             cl_b[corr]=delayed(self.combine_cl_tomo)(cl[corr],corr=corr)
+            cl_b[corr2]=cl_b[corr]
 
         if self.do_cov:
             for corr1 in corrs:
@@ -522,7 +414,7 @@ class cov_3X2():
                             cov[corr1+corr2][indx]=delayed(self.cl_cov)(cls=cl, zs_indx=indx,
                                                                         tracers=corr1+corr2)
 
-        out_stack=delayed(self.stack_dat)({'cov':cov,'cl_b':cl_b},corrs=corrs)
+        out_stack=delayed(self.stack_dat)({'cov':cov,'cl_b':cl_b,'est':'cl_b'},corrs=corrs)
         return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl}
 
     def xi_cov(self,cov_cl={},m1_m2=None,m1_m2_cross=None,clr=None,clrk=None,z_indx=[],tracers=[]):
@@ -546,8 +438,8 @@ class cov_3X2():
 
         if np.all(np.array(tracers)=='shear'):
             SN1324,SN1423=self.cov_utils.shear_SN(self.SN,tracers,z_indx)
-            SN1324*=self.Win['cov'][tracers][z_indx]['M1324']
-            SN1423*=self.Win['cov'][tracers][z_indx]['M1423']
+            SN1324*=self.Win.Win['cov'][tracers][z_indx]['M1324']
+            SN1423*=self.Win.Win['cov'][tracers][z_indx]['M1423']
             if not m1_m2==m1_m2_cross: #cross between xi+ and xi-
                 SN1324*=-1
                 SN1423*=-1
@@ -593,9 +485,11 @@ class cov_3X2():
 
         return cov_xi
 
-    def get_xi(self,cl=[],m1_m2=[]):
+    def get_xi(self,cls={},m1_m2=[],corr=None,indxs=None):
+        cl=cls[corr][indxs]@self.Win.Win[corr][indxs]['M']
         th,xi=self.HT.projected_correlation(l_cl=self.l,m1_m2=m1_m2,cl=cl)
         xi_b=self.binning.bin_1d(xi=xi,bin_utils=self.xi_bin_utils[m1_m2])
+        xi_b/=self.Win.Win[corr][indxs]['xi_b']
         return xi_b
 
     def xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
@@ -633,9 +527,9 @@ class cov_3X2():
             for im in np.arange(len(m1_m2s)):
                 m1_m2=m1_m2s[im]
                 xi[corr][m1_m2]={}
-                for (i,j) in self.corr_indxs[corr]:
-                    xi[corr][m1_m2][(i,j)]=delayed(self.get_xi)(cl=cl[corr][(i,j)]#.compute()
-                                                        ,m1_m2=m1_m2)
+                for indx in self.corr_indxs[corr]:
+                    xi[corr][m1_m2][indx]=delayed(self.get_xi)(cls=cl,corr=corr,indxs=indx,
+                                                        m1_m2=m1_m2)
         if self.do_cov:
             for corr1 in corrs:
                 for corr2 in corrs:
@@ -677,7 +571,7 @@ class cov_3X2():
                                     cov_xi[corr][m1_m2+m1_m2_cross][indx]=delayed(self.xi_cov)(cov_cl=cov_cl[indx]#.compute()
                                                                     ,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,clr=clr,
                                                                     z_indx=indx,tracers=corr)
-        out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi},corrs=corrs)
+        out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi,'est':'xi'},corrs=corrs)
         out['xi']=xi
         out['cov']=cov_xi
         out['cl']=cls_tomo_nu
@@ -698,11 +592,11 @@ class cov_3X2():
         if corr_indxs is None:
             corr_indxs=self.stack_indxs
 
-        if self.do_xi:
-            est='xi'
+        est=dat['est']
+        if est=='xi':
             len_bins=len(self.theta_bins)-1
         else:
-            est='cl_b'
+            #est='cl_b'
             n_m1_m2=1
             if self.l_bins is not None:
                 len_bins=len(self.l_bins)-1
@@ -711,7 +605,7 @@ class cov_3X2():
 
         n_bins=0
         for corr in corrs:
-            if self.do_xi:
+            if est=='xi':
                 n_m1_m2=len(self.m1_m2s[corr])
             n_bins+=len(corr_indxs[corr])*n_m1_m2 #np.int64(nbins*(nbins-1.)/2.+nbins)
 #         print(n_bins,len_bins,n_m1_m2)
@@ -720,12 +614,12 @@ class cov_3X2():
         i=0
         for corr in corrs:
             n_m1_m2=1
-            if self.do_xi:
+            if est=='xi':
                 m1_m2=self.m1_m2s[corr]
                 n_m1_m2=len(m1_m2)
 
             for im in np.arange(n_m1_m2):
-                if self.do_xi:
+                if est=='xi':
                     dat_c=dat[est][corr][m1_m2[im]]
                 else:
                     dat_c=dat[est][corr][corr] #cl_b gets keys twice. dask won't allow standard dict merge
@@ -759,7 +653,7 @@ class cov_3X2():
                 corr=corr1+corr2
                 n_m1_m2_1=1
                 n_m1_m2_2=1
-                if self.do_xi:
+                if est=='xi':
                     m1_m2_1=self.m1_m2s[corr1]
                     m1_m2_2=self.m1_m2s[corr2]
                     n_m1_m2_1=len(m1_m2_1)
@@ -781,7 +675,7 @@ class cov_3X2():
                                 indx0_2=(i2)*len_bins
                                 indx=indxs_1[i1]+indxs_2[i2]
 
-                                if self.do_xi:
+                                if est=='xi':
                                     cov_here=dat['cov'][corr][m1_m2_1[im1]+m1_m2_2[im2]][indx]['final']
                                 else:
                                     cov_here=dat['cov'][corr][indx]['final_b']

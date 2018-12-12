@@ -48,7 +48,7 @@ class Galaxy_utils():
             self.zg_bins[i]['pz']=pz_zth/norm
             self.zg_bins[i]['pzdz']=dz_th*self.zg_bins[i]['pz'] #FIXME: This can mess things up
             self.zg_bins[i]['Norm']=1
-            self.zg_bins[i]['nz']*=self.nz_F
+            self.zg_bins[i]['nz_rad']=self.zg_bins[i]['nz']*self.nz_F
             self.zg_bins[i]['lens_kernel']=None
             if hasattr(self.zg_bins[i]['W'],"__len__"):
                 W_int=interp1d(zb[i]['z'],W,bounds_error=False,fill_value=0)
@@ -59,10 +59,10 @@ class Galaxy_utils():
             return 0
         if np.any(np.isinf(zg1['nz'])) or np.any(np.isinf(zg2['nz'])):
             return 0
-        SN=np.sum(zg1['W']*zg2['W']*zg1['nz']) #FIXME: Check this
+        SN=np.sum(zg1['W']*zg2['W']*zg1['nz_rad']) #FIXME: Check this
         #Assumption: ns(z)=ns*pzg*dzg
-        SN/=np.sum(zg1['nz']*zg1['W'])
-        SN/=np.sum(zg2['nz']*zg2['W'])
+        SN/=np.sum(zg1['nz_rad']*zg1['W'])
+        SN/=np.sum(zg2['nz_rad']*zg2['W'])
         return SN
         # XXX Make sure pzg are properly normalized
 

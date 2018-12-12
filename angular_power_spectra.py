@@ -55,10 +55,10 @@ class Angular_power_spectra():
     def angular_power_z(self,z=None,pk_params=None,cosmo_h=None,
                     cosmo_params=None,pk_func=None):
         """
-             This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts. The shape of the output is l,nz, where nz is the number of z bins.
+             This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts. 
+             The shape of the output is l,nz, where nz is the number of z bins.
         """
-        if self.clz is not None:
-            return
+
         if cosmo_h is None:
             cosmo_h=self.PS.cosmo_h
 
@@ -69,9 +69,7 @@ class Angular_power_spectra():
         nz=len(z)
         nl=len(l)
 
-        #XXX At some point this should be moved to power spectra, pk and SSV, especially if doing 3X2
-        if self.PS.pk is None:
-            self.PS.get_pk(z=z,pk_params=pk_params,cosmo_params=cosmo_params)
+        self.PS.get_pk(z=z,pk_params=pk_params,cosmo_params=cosmo_params)
         cls=np.zeros((nz,nl),dtype='float32')#*u.Mpc#**2
 
         Rls=None #pk response functions, used for SSV calculations

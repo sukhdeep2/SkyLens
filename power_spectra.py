@@ -88,11 +88,16 @@ class Power_Spectra():
 
 
     def get_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
+        pk_func=self.pk_func
+        
+        if pk_params is not None:
+            if pk_params.get('pk_func'):
+                pk_func=getattr(self,pk_params['pk_func'])
         if return_s8:
-            self.pk,self.kh,self.s8=self.pk_func(z,cosmo_params=cosmo_params,
+            self.pk,self.kh,self.s8=pk_func(z,cosmo_params=cosmo_params,
                             pk_params=pk_params,return_s8=return_s8)
         else:
-            self.pk,self.kh=self.pk_func(z,cosmo_params=cosmo_params,
+            self.pk,self.kh=pk_func(z,cosmo_params=cosmo_params,
                             pk_params=pk_params,return_s8=return_s8)
         if self.SSV_cov:
             self.get_SSV_terms(z,cosmo_params=cosmo_params,
@@ -274,7 +279,7 @@ class Power_Spectra():
         else:
             return pkC,self.kh
 
-    def bary_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
+    def baryon_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
 
         if pk_params is None:
             pk_params=self.pk_params
@@ -286,14 +291,16 @@ class Power_Spectra():
         pk=out[0]
         kh=out[1]
         
-        if scenario is None or scenario is 'dmo':
+        non_linear=pk_params['non_linear'] if pk_params.get('non_linear') is not None else 1
+        
+        if scenario is None or scenario is 'dmo' or non_linear==0:
             if return_s8:
                 s8=out[2]
                 return pk,kh,s8
             else:
                 return pk,kh
 
-        data_dir = "/home/hungjinh/Research/cov_baryon_proj/code/cosmic_shear/Pk_ratio/"
+        data_dir = "./Pk_ratio/"
         infile_logPkRatio = data_dir + "logPkRatio_" + scenario + ".dat"
         Arr2D_logPkratio = pd.read_csv(infile_logPkRatio,sep='\s+')
         Bins_log_k_Mpc = np.array(Arr2D_logPkratio["logk"])

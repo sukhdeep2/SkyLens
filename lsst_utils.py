@@ -48,15 +48,15 @@ def set_window(zs_bins={},f_sky=0.3,nside=256):
     kappa0=cov_3X2(zg_bins=zs_bins,do_cov=False,bin_cl=False,l_bins=None,l=l0, zs_bins=None,use_window=False,
                    corrs=[corr])
     npix0=hp.nside2npix(nside)
-        
+
     npix=np.int(npix0*f_sky)
     cl0G=kappa0.cl_tomo()
     mask=np.ones(npix0,dtype='bool')
     mask[int(npix):]=0
-    
+
     cl_map0=hp.ma(np.ones(npix0))
     cl_map0[~mask]=hp.UNSEEN
-    
+
     zs_bins['window0']=cl_map0
     zs_bins['window0_alm']=hp.map2alm(cl_map0)
 
@@ -64,9 +64,10 @@ def set_window(zs_bins={},f_sky=0.3,nside=256):
         cl_i=cl0G['cl'][corr][(i,i)].compute()
         cl_map=hp.ma(1+hp.synfast(cl_i,nside=nside))
         cl_map[~mask]=hp.UNSEEN
+        # cl_map.mask=mask
         zs_bins[i]['window']=cl_map
         zs_bins[i]['window_alm']=hp.map2alm(cl_map)
-    
+
     return zs_bins
 
 def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
@@ -85,7 +86,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
 
     if nz_bins is None:
         nz_bins=1
-        
+
     if z_bins is None:
         z_bins=np.linspace(min(zp)-0.0001,max(zp)+0.0001,nz_bins+1)
 
@@ -100,7 +101,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     cosmo_h=cosmo_h_PL
 
     zmax=max(z_bins)
-    
+
     for i in np.arange(nz_bins):
         zs_bins[i]={}
         indx=zp.searchsorted(z_bins[i:i+2])
@@ -128,7 +129,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
         sc=1./lu.sigma_crit(zl=zl_kernel,zs=zs[x],cosmo_h=cosmo_h)
         zs_bins[i]['lens_kernel']=np.dot(zs_bins[i]['pzdz'],sc)
         zs_bins[i]['b1']=1
-        
+
         zmax=max([zmax,max(zs[x])])
     zs_bins['n_bins']=nz_bins #easy to remember the counts
     zs_bins['z_lens_kernel']=zl_kernel
@@ -255,22 +256,22 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
 
 def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=None,z_bins=None,
                           ztrue_func=ztrue_given_pz_Gaussian,z_sigma_power=1,f_sky=0.3,nside=256,use_window=False):
-    
+
     z=np.linspace(0,3.5,200)
     pzs=lsst_pz_source(z=z)
     N1=np.sum(pzs)
-    
+
     x=z>zmin
     x*=z<zmax
     z=z[x]
     pzs=pzs[x]
     ns0=ns0*np.sum(pzs)/N1
     print('ns0: ',ns0)
-    
+
     if z_bins is None:
         z_bins=np.linspace(zmin, min(2,zmax), nbins+1)
         z_bins[-1]=zmax
-    
+
     if z_bias is None:
         z_bias=np.zeros_like(z)
     else:
@@ -287,7 +288,7 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
             z_sigma=zs(z)
         except: #FIXME: Ugly
             do_nothing=1
-        
+
     return source_tomo_bins(zp=z,p_zp=pzs,ns=ns0,nz_bins=nbins,
                          ztrue_func=ztrue_func,zp_bias=z_bias,
                         zp_sigma=z_sigma,z_bins=z_bins,f_sky=f_sky,nside=nside,
@@ -304,7 +305,7 @@ def DES_lens_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits'):
         t=np.genfromtxt(fname,names=('Z_MID','BIN1','BIN2','BIN3','BIN4','BIN5'))
         dz=np.gradient(t['Z_MID'])
         zmax=max(t['Z_MID'])+dz[-1]/2.
-        
+
     nz_bins=5
     nz=[0.0134,0.0343,0.0505,0.0301,0.0089]
     bz=[1.44,1.70,1.698,1.997,2.058]
@@ -333,7 +334,7 @@ def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits'):
         t=np.genfromtxt(fname,names=('Z_MID','BIN1','BIN2','BIN3','BIN4'))
         dz=np.gradient(t['Z_MID'])
         zmax=max(t['Z_MID'])+dz[-1]/2.
-        
+
     nz_bins=4
     nz=[1.496,1.5189,1.5949,0.7949]
     for i in np.arange(nz_bins):
