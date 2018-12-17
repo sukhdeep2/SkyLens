@@ -353,26 +353,106 @@ def _calc_factlist(nn):
     return _Factlist[:int(nn) + 1]
 
 
-def wigner_3j_3(m1,m2,m3,js):
-#     return wigner_3j_2(js[0],js[1],js[2],m1,m2,m3)#.evalf()
-    return np.float32(wigner_3j(js[0],js[1],js[2],m1,m2,m3))#.evalf()
+def wigner_3j_asym(j_1,j_2,j_3,m_1,m_2,m_3): #assume j1,j2>>j3... not very accurate.. only seems to work when j1==j2
+    sj=(j_1+j_2+1)
+    th=np.arccos((m_1-m_2)/sj)
+    wd=wigner_d(m_3,j_2-j_1,np.atleast_1d(th),j_3)[0,0]
+    return ((-1)**(j_2+m_2))*wd/np.sqrt(sj)
+
+def wigner_3j_000(j_1,j_2,j_3,m_1,m_2,m_3): #m1=m2=m3=0.. Hivon+ 2002
+    J=j_1+j_2+j_3
+    logwj=log_factorial(J/2)
+    logwj-=log_factorial(J/2-j_1)
+    logwj-=log_factorial(J/2-j_2)
+    logwj-=log_factorial(J/2-j_3)
+    logwj-=0.5*log_factorial(J+1)
+    logwj+=0.5*log_factorial(J-2*j_1)
+    logwj+=0.5*log_factorial(J-2*j_2)
+    logwj+=0.5*log_factorial(J-2*j_3)
+    wj=(-1)**(J/2)*np.exp(logwj)
+#     x=J%2==1 #already applied in calling functions
+#     wj[x]=0
+    return np.real(wj) 
+
+def wigner_3j_3(asym_fact,m1,m2,m3,js):
+    if np.all(np.array(js)>np.absolute([m1,m2,m3])*asym_fact) and np.sum(js)%2==0:
+        return np.float32(wigner_3j_000(js[0],js[1],js[2],m1,m2,m3))
+    return np.float32(wigner_3j(js[0],js[1],js[2],m1,m2,m3)) #.evalf()
 
 from itertools import product as Comb
-def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None):
+import time
+def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None,asym_fact=np.inf):
     if ncpu is None:
         ncpu=cpu_count()-2
-    p=Pool(ncpu)
+   
+    t1=time.time()
+    j_max=np.amax(j_1.max()+j_2.max()+j_3.max()+1)
+    _calc_factlist(j_max)
 
     n1=len(j_1)
     n2=len(j_2)
     n3=len(j_3)
 
-    c=np.array(list(Comb(j_1,j_2,j_3)))
-#     print(c.shape)
-    j_max=np.amax(j_1.max()+j_2.max()+j_3.max()+1)
-    _calc_factlist(j_max)
+    c=np.array(np.meshgrid(j_1,j_2,j_3,indexing='ij')).T.reshape(-1,3) #only needed to put cuts below. Otherwise Comb is better
 
-    d_mat=np.array(p.map(partial(wigner_3j_3, m_1, m_2, m_3),c,chunksize=10))
-    p.close()
-    d_mat=d_mat.reshape(n1,n2,n3)
-    return d_mat
+#     print('cmax',np.amax(c,axis=0))
+    
+    x=c[:,0]+c[:,1]-c[:,2]>=0
+    x*=c[:,0]-c[:,1]+c[:,2]>=0
+    x*=-c[:,0]+c[:,1]+c[:,2]>=0
+    
+    marr=np.array([m_1,m_2,m_3])
+    
+#     x*=(c>=np.abs(marr)).prod(axis=1)
+    x*=abs(m_1) <= c[:,0]
+    x*=abs(m_2) <= c[:,1]
+    x*=abs(m_3) <= c[:,2]
+
+    if np.all(marr==0):
+        x*=(c[:,0]+c[:,1]+c[:,2])%2==0
+    elif np.all(c>=np.absolute(marr)*asym_fact):
+        x*=(c[:,0]+c[:,1]+c[:,2])%2==0
+        
+    c=c[x]
+    
+    x2=c>=np.absolute(marr)*asym_fact
+    x2=x2.prod(axis=1)==1
+    
+    t2=time.time()
+    t3=t2
+    dd=np.zeros((n1,n2,n3),dtype='float32')
+    
+    if np.all(marr==0) or np.all(x2):
+        d_mat=wigner_3j_000(c[:,0],c[:,1],c[:,2],m_1,m_2,m_3)
+        indx1=np.searchsorted(j_1,c[:,0])
+        indx2=np.searchsorted(j_2,c[:,1])
+        indx3=np.searchsorted(j_3,c[:,2])
+        dd[indx1,indx2,indx3]=d_mat
+
+    else:
+        d_mat=wigner_3j_000(c[x2][:,0],c[x2][:,1],c[x2][:,2],m_1,m_2,m_3)
+        indx1=np.searchsorted(j_1,c[x2][:,0]) #FIXME: check this
+        indx2=np.searchsorted(j_2,c[x2][:,1])
+        indx3=np.searchsorted(j_3,c[x2][:,2])
+        dd[indx1,indx2,indx3]=d_mat
+        
+        t3=time.time()
+        
+        if not np.all(x2):
+            c=c[~x2]
+            p=Pool(ncpu)
+            d_mat2=p.map(partial(wigner_3j_3,asym_fact, m_1, m_2, m_3),c,chunksize=100)
+            p.close()
+            indx1=np.searchsorted(j_1,c[:,0])
+            indx2=np.searchsorted(j_2,c[:,1])
+            indx3=np.searchsorted(j_3,c[:,2])
+            dd[indx1,indx2,indx3]=d_mat2
+            t4=time.time()
+            print(j_3,j_1.max(),j_2.max(),'done','wig time,size: ',t4-t3,c.size,np.amax(c,axis=0))
+    tf=time.time()
+#     print(j_3,j_1.max(),j_2.max(),'done',t2-t1,t3-t2,tf-t3,tf-t1)
+    return dd
+#     c=Comb(j_1,j_2,j_3) #slower
+#     d_mat=p.map(partial(wigner_3j_3, m_1, m_2, m_3),c,chunksize=100)
+#     d_mat=np.array(d_mat).reshape(n1,n2,n3) #when not putting any cuts on c
+#     return d_mat

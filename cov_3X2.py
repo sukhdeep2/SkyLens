@@ -245,7 +245,7 @@ class cov_3X2():
         return cl
 
 #     @jit#(nopython=True)
-    def cl_cov(self,cls=None, zs_indx=[],tracers=[]):
+    def cl_cov(self,cls=None, zs_indx=[],tracers=[],Win=None):
         """
             Computes the covariance between any two tomographic power spectra.
             cls: tomographic cls already computed before calling this function
@@ -261,9 +261,8 @@ class cov_3X2():
         cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,
                                                 self.SN,tracers,zs_indx,self.do_xi)
 
-        print(self.Win.Win.keys())
-        cov['G']=cov['G1324']*self.Win.Win['cov'][tracers][zs_indx]['M1324']
-        cov['G']+=cov['G1423']*self.Win.Win['cov'][tracers][zs_indx]['M1423']
+        cov['G']=cov['G1324']*Win['cov'][tracers][zs_indx]['M1324']
+        cov['G']+=cov['G1423']*Win['cov'][tracers][zs_indx]['M1423']
         cov['final']=cov['G']
 
         cov['G1324']=None
@@ -323,13 +322,13 @@ class cov_3X2():
                 cov_b=self.binning.bin_2d(cov=cov,bin_utils=self.cl_bin_utils)
         return cl_b,cov_b
 
-    def combine_cl_tomo(self,cl_compute_dict={},corr=None):
+    def combine_cl_tomo(self,cl_compute_dict={},corr=None,Win=None):
         corr2=corr[::-1]
         cl_b={corr:{},corr2:{}}
 
         for (i,j) in self.corr_indxs[corr]+self.cov_indxs:
             clij=cl_compute_dict[(i,j)]
-            clij=clij@self.Win.Win[corr][(i,j)]['M'] #pseudo cl
+            clij=clij@Win[corr][(i,j)]['M'] #pseudo cl
             cl_b[corr][(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
             cl_b[corr2][(j,i)]=cl_b[corr][(i,j)]
         return cl_b
@@ -396,7 +395,7 @@ class cov_3X2():
                                         pk_func=pk_func,corr=corr)
 
                 cl[corr2][(j,i)]=cl[corr][(i,j)]#useful in gaussian covariance calculation.
-            cl_b[corr]=delayed(self.combine_cl_tomo)(cl[corr],corr=corr)
+            cl_b[corr]=delayed(self.combine_cl_tomo)(cl[corr],corr=corr,Win=self.Win.Win)
             cl_b[corr2]=cl_b[corr]
 
         if self.do_cov:
@@ -411,19 +410,22 @@ class cov_3X2():
                             start_j=i
                         for j in np.arange(start_j,len(corr2_indxs)):
                             indx=corr1_indxs[i]+corr2_indxs[j]
-                            cov[corr1+corr2][indx]=delayed(self.cl_cov)(cls=cl, zs_indx=indx,
+                            cov[corr1+corr2][indx]=delayed(self.cl_cov)(cls=cl, zs_indx=indx,Win=self.Win.Win,
                                                                         tracers=corr1+corr2)
 
         out_stack=delayed(self.stack_dat)({'cov':cov,'cl_b':cl_b,'est':'cl_b'},corrs=corrs)
         return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl}
 
-    def xi_cov(self,cov_cl={},m1_m2=None,m1_m2_cross=None,clr=None,clrk=None,z_indx=[],tracers=[]):
+    def xi_cov(self,cov_cl={},m1_m2=None,m1_m2_cross=None,clr=None,clrk=None,indxs_1=[],indxs_2=[],corr1=[],corr2=[],
+               Win=None):
         """
             Computes covariance of xi, by performing 2-D hankel transform on covariance of Cl.
             In current implementation of hankel transform works only for m1_m2=m1_m2_cross.
             So no cross covariance between xi+ and xi-.
         """
 
+        z_indx=indxs_1+indxs_2
+        tracers=corr1+corr2
         if m1_m2_cross is None:
             m1_m2_cross=m1_m2
         cov_xi={}
@@ -438,8 +440,8 @@ class cov_3X2():
 
         if np.all(np.array(tracers)=='shear'):
             SN1324,SN1423=self.cov_utils.shear_SN(self.SN,tracers,z_indx)
-            SN1324*=self.Win.Win['cov'][tracers][z_indx]['M1324']
-            SN1423*=self.Win.Win['cov'][tracers][z_indx]['M1423']
+            SN1324*=Win['cov'][tracers][z_indx]['M1324']
+            SN1423*=Win['cov'][tracers][z_indx]['M1423']
             if not m1_m2==m1_m2_cross: #cross between xi+ and xi-
                 SN1324*=-1
                 SN1423*=-1
@@ -447,18 +449,25 @@ class cov_3X2():
         Norm=self.cov_utils.Om_W #FIXME: Make sure this is correct
 
         cov_cl_G=cov_cl['G']+SN1423+SN1324
-        cov_cl_G*=self.cov_utils.gaussian_cov_norm
-        cov_cl_G/=Norm
-        if self.SSV_cov:
-            cov_cl_G+=cov_cl['SSC']
+        cov_cl_G*=self.cov_utils.gaussian_cov_norm/Norm #this is (2*l+1)/4pi
 
         th0,cov_xi['G']=self.HT.projected_covariance2(l_cl=self.l,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,
                             cl_cov=cov_cl_G)
 
         cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=self.xi_bin_utils[m1_m2])
         #binning is cheap
+        cov_xi['G']/=(Win[corr1][indxs_1]['xi_b'])
+        cov_xi['G']/=(Win[corr2][indxs_2]['xi_b'])
 
         cov_xi['final']=cov_xi['G']
+        
+        if self.SSV_cov:
+            th0,cov_xi['SSC']=self.HT.projected_covariance2(l_cl=self.l,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,
+                            cl_cov=cov_cl['SSC'])
+            cov_xi['SSC']=self.binning.bin_2d(cov=cov_xi['SSC'],bin_utils=self.xi_bin_utils[m1_m2])
+            cov_xi['final']=cov_xi['G']+cov_xi['SSC']
+
+
 #         if self.SSV_cov:
 #             sig_cL=cov_cl['kernel']*self.cov_utils.sigma_win[m1_m2]
 
@@ -485,11 +494,11 @@ class cov_3X2():
 
         return cov_xi
 
-    def get_xi(self,cls={},m1_m2=[],corr=None,indxs=None):
-        cl=cls[corr][indxs]@self.Win.Win[corr][indxs]['M']
+    def get_xi(self,cls={},m1_m2=[],corr=None,indxs=None,Win=None):
+        cl=cls[corr][indxs]@Win[corr][indxs]['M']
         th,xi=self.HT.projected_correlation(l_cl=self.l,m1_m2=m1_m2,cl=cl)
         xi_b=self.binning.bin_1d(xi=xi,bin_utils=self.xi_bin_utils[m1_m2])
-        xi_b/=self.Win.Win[corr][indxs]['xi_b']
+        xi_b/=(Win[corr][indxs]['xi_b'])
         return xi_b
 
     def xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
@@ -529,7 +538,7 @@ class cov_3X2():
                 xi[corr][m1_m2]={}
                 for indx in self.corr_indxs[corr]:
                     xi[corr][m1_m2][indx]=delayed(self.get_xi)(cls=cl,corr=corr,indxs=indx,
-                                                        m1_m2=m1_m2)
+                                                        m1_m2=m1_m2,Win=self.Win.Win)
         if self.do_cov:
             for corr1 in corrs:
                 for corr2 in corrs:
@@ -570,7 +579,9 @@ class cov_3X2():
                                     indx=indxs_1[i1]+indxs_2[i2]
                                     cov_xi[corr][m1_m2+m1_m2_cross][indx]=delayed(self.xi_cov)(cov_cl=cov_cl[indx]#.compute()
                                                                     ,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,clr=clr,
-                                                                    z_indx=indx,tracers=corr)
+                                                                    Win=self.Win.Win,
+                                                                    indxs_1=indxs_1[i1],indxs_2=indxs_2[i2],corr1=corr1,corr2=corr2
+                                                                    )
         out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi,'est':'xi'},corrs=corrs)
         out['xi']=xi
         out['cov']=cov_xi
