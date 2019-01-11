@@ -28,7 +28,7 @@ class cov_3X2():
                 power_spectra_kwargs={},HT_kwargs=None,
                 z_PS=None,nz_PS=100,log_z_PS=True,#z_PS_max=None,
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
-                use_window=True,window_file=None,window_lmax=None,
+                use_window=True,window_file=None,window_lmax=None,store_win=False,Win=None,
                 sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,pseudo_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 corrs=[('shear','shear')]):
@@ -143,8 +143,8 @@ class cov_3X2():
 
         self.Win=window_utils(window_l=self.window_l,l=self.l,corrs=self.corrs,m1_m2s=self.m1_m2s,\
                         use_window=use_window,do_cov=self.do_cov,cov_utils=self.cov_utils,f_sky=f_sky,
-                        corr_indxs=self.corr_indxs,z_bins=self.z_bins,window_lmax=self.window_lmax,
-                        HT=self.HT,do_xi=self.do_xi,xi_bin_utils=self.xi_bin_utils)
+                        corr_indxs=self.corr_indxs,z_bins=self.z_bins,window_lmax=self.window_lmax,Win=Win,
+                        HT=self.HT,do_xi=self.do_xi,xi_bin_utils=self.xi_bin_utils,store_win=store_win)
 #         self.Win=1
 #         if use_window:
         # self.Win.set_window()
@@ -256,7 +256,6 @@ class cov_3X2():
         """
         cov={}
         cov['final']=None
-        l=self.l
 
         cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,
                                                 self.SN,tracers,zs_indx,self.do_xi)
@@ -264,9 +263,11 @@ class cov_3X2():
         cov['G']=cov['G1324']*Win['cov'][tracers][zs_indx]['M1324']
         cov['G']+=cov['G1423']*Win['cov'][tracers][zs_indx]['M1423']
         cov['final']=cov['G']
-
+        
         cov['G1324']=None
-        cov['G1423']=None #save memory
+        cov['G1423']=None
+#         del cov['G1324']
+#         del cov['G1423'] #save memory
 
         cov['SSC']=None
         if self.SSV_cov:
@@ -282,10 +283,6 @@ class cov_3X2():
 
             sig_cL*=self.Ang_PS.clz['dchi']
 
-#             if self.do_xi:
-#                 cov['kernel']=sig_cL
-#                 return cov
-
             sig_cL*=sigma_win
 
             clr=self.Ang_PS.clz['clsR']
@@ -298,11 +295,8 @@ class cov_3X2():
 
         for k in ['final','G','SSC']:#no need to bin G1324 and G1423
             cl_none,cov[k+'_b']=self.bin_cl_func(cov=cov[k])
-
-#         if not self.do_xi:
-#             cov['SSC']=None
-#             cov['G']=None
-
+            if not self.do_xi:
+                cov[k]=None
         return cov
 
     def bin_cl_func(self,cl=None,cov=None):
@@ -335,7 +329,7 @@ class cov_3X2():
 
 
     def cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
-                corrs=None,bias_kwargs={},bias_func=None):
+                corrs=None,bias_kwargs={},bias_func=None,stack_corr_indxs=None):
         """
          Computes full tomographic power spectra and covariance, including shape noise. output is
          binned also if needed.
@@ -397,7 +391,7 @@ class cov_3X2():
                 cl[corr2][(j,i)]=cl[corr][(i,j)]#useful in gaussian covariance calculation.
             cl_b[corr]=delayed(self.combine_cl_tomo)(cl[corr],corr=corr,Win=self.Win.Win)
             cl_b[corr2]=cl_b[corr]
-
+        print('cl dict done')
         if self.do_cov:
             for corr1 in corrs:
                 corr1_indxs=self.corr_indxs[(corr1[0],corr1[1])]
@@ -413,7 +407,7 @@ class cov_3X2():
                             cov[corr1+corr2][indx]=delayed(self.cl_cov)(cls=cl, zs_indx=indx,Win=self.Win.Win,
                                                                         tracers=corr1+corr2)
 
-        out_stack=delayed(self.stack_dat)({'cov':cov,'cl_b':cl_b,'est':'cl_b'},corrs=corrs)
+        out_stack=delayed(self.stack_dat)({'cov':cov,'cl_b':cl_b,'est':'cl_b'},corrs=corrs,corr_indxs=stack_corr_indxs)
         return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl}
 
     def xi_cov(self,cov_cl={},m1_m2=None,m1_m2_cross=None,clr=None,clrk=None,indxs_1=[],indxs_2=[],corr1=[],corr2=[],
@@ -449,7 +443,9 @@ class cov_3X2():
         Norm=self.cov_utils.Om_W #FIXME: Make sure this is correct
 
         cov_cl_G=cov_cl['G']+SN1423+SN1324
-        cov_cl_G*=self.cov_utils.gaussian_cov_norm/Norm #this is (2*l+1)/4pi
+        
+        cov_cl_G*=self.cov_utils.gaussian_cov_norm_2D
+        cov_cl_G/=Norm #this is (2*l+1)/4pi
 
         th0,cov_xi['G']=self.HT.projected_covariance2(l_cl=self.l,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,
                             cl_cov=cov_cl_G)
@@ -466,31 +462,6 @@ class cov_3X2():
                             cl_cov=cov_cl['SSC'])
             cov_xi['SSC']=self.binning.bin_2d(cov=cov_xi['SSC'],bin_utils=self.xi_bin_utils[m1_m2])
             cov_xi['final']=cov_xi['G']+cov_xi['SSC']
-
-
-#         if self.SSV_cov:
-#             sig_cL=cov_cl['kernel']*self.cov_utils.sigma_win[m1_m2]
-
-#             #tidal term is added to clr in the calling function
-#             if self.HT.name=='Hankel':
-#                 cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.J[m1_m2]/self.HT.J_nu1[m1_m2]**2,
-#                                     (clr).T*sig_cL,clr,self.HT.J[m1_m2_cross],optimize=True)
-
-#                 self.cov_SSC_nobin[m1_m2]=sig_cL
-#                 cov_SSC*=(2.*self.HT.l_max[m1_m2]**2/self.HT.zeros[m1_m2][-1]**2)/(2*np.pi)
-
-#             elif self.HT.name=='Wigner':
-#                 cov_SSC=np.einsum('rk,kz,zl,sl->rs',self.HT.wig_d[m1_m2]*np.sqrt(self.HT.norm),
-#                                 (clr).T*sig_cL,clr,np.sqrt(self.HT.wig_d[m1_m2_cross]),optimize=True)
-#                                 #FIXME: This is likely to be broken.
-
-#             th0,cov_SSC=self.HT.projected_covariance2(l_cl=self.l,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,
-#                             cl_cov=cov_cl['SSC'])
-
-#             cov_xi['SSC']=self.binning.bin_2d(cov=cov_SSC,bin_utils=self.xi_bin_utils[m1_m2])
-#             cov_xi['SSC']/=Norm
-#             cov_xi['final']+=cov_xi['SSC']
-#             # cov_xi['final']=cov_xi['SSC']+cov_xi['G']
 
         return cov_xi
 

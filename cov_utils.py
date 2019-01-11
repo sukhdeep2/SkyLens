@@ -35,6 +35,7 @@ class Covariance_utils():
         self.gaussian_cov_norm=(2.*l+1.)*self.f_sky*np.gradient(l) #need Delta l here. Even when
                                                         #binning later
                                                         #take care of f_sky elsewhere
+        self.gaussian_cov_norm_2D=np.outer(np.sqrt(self.gaussian_cov_norm),np.sqrt(self.gaussian_cov_norm))
 
     def set_window_params(self,f_sky=None):
         self.Om_W=4*np.pi*f_sky
