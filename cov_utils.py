@@ -14,7 +14,7 @@ sky_area=np.pi*4/(d2r)**2 #in degrees
 class Covariance_utils():
     def __init__(self,f_sky=0,l=None,logger=None,l_cut_jnu=None,do_sample_variance=True,
                  use_window=True,window_l=None,window_file=None,wig_3j=None, do_xi=False,
-                pseudo_cl=False):
+                ):
         self.logger=logger
         self.l=l
         self.window_l=window_l
@@ -22,7 +22,7 @@ class Covariance_utils():
         self.l_cut_jnu=l_cut_jnu #this is needed for hankel_transform case for xi. Need separate sigma_window calc.
         self.f_sky=f_sky
         self.do_xi=do_xi
-        self.pseudo_cl=pseudo_cl
+#         self.pseudo_cl=pseudo_cl
 
         self.use_window=use_window
         self.wig_3j=wig_3j
@@ -30,30 +30,16 @@ class Covariance_utils():
         if not do_sample_variance:
             self.sample_variance_f=0 #remove sample_variance from gaussian part
 
-        self.set_window_params(f_sky=self.f_sky)
+        self.set_window_params()
 
-        self.gaussian_cov_norm=(2.*l+1.)*self.f_sky*np.gradient(l) #need Delta l here. Even when
+        self.gaussian_cov_norm=(2.*l+1.)*np.gradient(l) #need Delta l here. Even when
                                                         #binning later
-                                                        #take care of f_sky elsewhere
+                                                        #take care of f_sky later
         self.gaussian_cov_norm_2D=np.outer(np.sqrt(self.gaussian_cov_norm),np.sqrt(self.gaussian_cov_norm))
 
-    def set_window_params(self,f_sky=None):
-        self.Om_W=4*np.pi*f_sky
+    def set_window_params(self):
+        self.Om_W=4*np.pi  #multiply f_sky later.
         self.window_func()
-        # if self.use_window:
-        #     self.window_func()
-        #     # if not self.do_xi and self.pseudo_cl:
-        #     #     if self.wig_3j is None: #FIXME: not using for correlation function for now. Memeory issues among others.
-        #     #         m_1=0 #FIXME: Use proper spins (m_i) here
-        #     #         m_2=0
-        #     #         self.wig_3j=Wigner3j_parallel( m_1, m_2, 0, self.l, self.l, self.window_l)
-        #     #         print('wg_3j max:',self.wig_3j.todense().max())
-        #     #     self.coupling_M=np.dot(self.wig_3j**2,self.Win*(2*self.window_l+1))
-        # else:
-        #     self.Win=np.zeros_like(self.l,dtype='float32')
-        #     x=self.l==0
-        #     self.Win[x]=1.
-        #     self.Win0=np.copy(self.Win)
 
         self.Win/=self.Om_W 
         self.Win0/=self.Om_W

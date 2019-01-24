@@ -26,10 +26,10 @@ class cov_3X2():
                 cov_utils=None,logger=None,lensing_utils=None,galaxy_utils=None,
                 zs_bins=None,zg_bins=None,galaxy_bias_func=None,
                 power_spectra_kwargs={},HT_kwargs=None,
-                z_PS=None,nz_PS=100,log_z_PS=True,#z_PS_max=None,
+                z_PS=None,nz_PS=100,log_z_PS=True,
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
                 use_window=True,window_file=None,window_lmax=None,store_win=False,Win=None,
-                sigma_gamma=0.3,f_sky=0.3,l_bins=None,bin_cl=False,pseudo_cl=False,
+                sigma_gamma=0.3,f_sky=None,l_bins=None,bin_cl=False,#pseudo_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 corrs=[('shear','shear')]):
         self.logger=logger
@@ -54,14 +54,14 @@ class cov_3X2():
 
         self.window_lmax=100 if window_lmax is None else window_lmax
         self.window_l=np.arange(self.window_lmax+1)
-        self.f_sky=f_sky
+        self.f_sky=f_sky #should be a dict with full overlap entries for all tracers and bins. If scalar will be converted to dict later in this function
 
         if ('shear','shear') in corrs:
             z_PS_max=zs_bins['zmax']
         else:
             z_PS_max=zg_bins['zmax']
         self.use_window=use_window
-        self.pseudo_cl=pseudo_cl
+#         self.pseudo_cl=pseudo_cl
 
         self.HT=None
         if do_xi:
@@ -74,7 +74,7 @@ class cov_3X2():
 
         self.cov_utils=cov_utils
         if cov_utils is None:
-            self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,pseudo_cl=pseudo_cl,
+            self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,
                                             l_cut_jnu=self.l_cut_jnu,window_file=window_file,do_xi=do_xi,
                                             do_sample_variance=do_sample_variance,use_window=use_window,
                                             window_l=self.window_l)
@@ -131,20 +131,29 @@ class cov_3X2():
 
         self.corr_indxs[('shear','galaxy')]=[ k for l in [[(i,j) for i in np.arange(
                                         n_s_bins)] for j in np.arange(n_g_bins)] for k in l]
-
+    
         self.stack_indxs=self.corr_indxs.copy()
-
-
+        
+        if np.isscalar(self.f_sky):
+            f_temp=np.copy(self.f_sky)
+            self.f_sky={}
+            for kk in self.corr_indxs.keys():
+                n_indx=len(self.corr_indxs[kk])
+                self.f_sky[kk]=f_temp*np.ones((n_indx,n_indx))
+            
         self.m1_m2s[('shear','shear')]=[(2,2),(2,-2)]
         self.m1_m2s[('galaxy','shear')]=[(0,2)] #FIXME: check the order in covariance case
         self.m1_m2s[('shear','galaxy')]=[(2,0)] #FIXME: check the order in covariance case
         self.m1_m2s[('galaxy','galaxy')]=[(0,0)]
         self.m1_m2s[('window')]=[(0,0)]
 
-        self.Win=window_utils(window_l=self.window_l,l=self.l,corrs=self.corrs,m1_m2s=self.m1_m2s,\
+        self.Win={}
+        if self.use_window:#self.pseudo_cl:
+            self.Win=window_utils(window_l=self.window_l,l=self.l,corrs=self.corrs,m1_m2s=self.m1_m2s,\
                         use_window=use_window,do_cov=self.do_cov,cov_utils=self.cov_utils,f_sky=f_sky,
                         corr_indxs=self.corr_indxs,z_bins=self.z_bins,window_lmax=self.window_lmax,Win=Win,
                         HT=self.HT,do_xi=self.do_xi,xi_bin_utils=self.xi_bin_utils,store_win=store_win)
+           
 #         self.Win=1
 #         if use_window:
         # self.Win.set_window()
@@ -260,8 +269,16 @@ class cov_3X2():
         cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,
                                                 self.SN,tracers,zs_indx,self.do_xi)
 
-        cov['G']=cov['G1324']*Win['cov'][tracers][zs_indx]['M1324']
-        cov['G']+=cov['G1423']*Win['cov'][tracers][zs_indx]['M1423']
+        if self.use_window: #self.pseudo_cl:
+            cov['G']=cov['G1324']*Win.Win['cov'][tracers][zs_indx]['M1324']
+            cov['G']+=cov['G1423']*Win.Win['cov'][tracers][zs_indx]['M1423']
+        else:
+            fs1324=np.sqrt(self.f_sky[tracers[0],tracers[2]][zs_indx[0],zs_indx[2]]*self.f_sky[tracers[1],tracers[3]][zs_indx[1],zs_indx[3]])
+            fs0=self.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]] * self.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
+            cov['G']=cov['G1324']/self.cov_utils.gaussian_cov_norm_2D*fs1324/fs0
+            fs1423=np.sqrt(self.f_sky[tracers[0],tracers[3]][zs_indx[0],zs_indx[3]]*self.f_sky[tracers[1],tracers[2]][zs_indx[1],zs_indx[2]])
+            cov['G']+=cov['G1423']/self.cov_utils.gaussian_cov_norm_2D*fs1423/fs0
+
         cov['final']=cov['G']
         
         cov['G1324']=None
@@ -322,7 +339,8 @@ class cov_3X2():
 
         for (i,j) in self.corr_indxs[corr]+self.cov_indxs:
             clij=cl_compute_dict[(i,j)]
-            clij=clij@Win[corr][(i,j)]['M'] #pseudo cl
+            if self.use_window:
+                clij=clij@Win.Win[corr][(i,j)]['M'] #pseudo cl
             cl_b[corr][(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
             cl_b[corr2][(j,i)]=cl_b[corr][(i,j)]
         return cl_b
@@ -389,7 +407,7 @@ class cov_3X2():
                                         pk_func=pk_func,corr=corr)
 
                 cl[corr2][(j,i)]=cl[corr][(i,j)]#useful in gaussian covariance calculation.
-            cl_b[corr]=delayed(self.combine_cl_tomo)(cl[corr],corr=corr,Win=self.Win.Win)
+            cl_b[corr]=delayed(self.combine_cl_tomo)(cl[corr],corr=corr,Win=self.Win)
             cl_b[corr2]=cl_b[corr]
         print('cl dict done')
         if self.do_cov:
@@ -404,7 +422,7 @@ class cov_3X2():
                             start_j=i
                         for j in np.arange(start_j,len(corr2_indxs)):
                             indx=corr1_indxs[i]+corr2_indxs[j]
-                            cov[corr1+corr2][indx]=delayed(self.cl_cov)(cls=cl, zs_indx=indx,Win=self.Win.Win,
+                            cov[corr1+corr2][indx]=delayed(self.cl_cov)(cls=cl, zs_indx=indx,Win=self.Win,
                                                                         tracers=corr1+corr2)
 
         out_stack=delayed(self.stack_dat)({'cov':cov,'cl_b':cl_b,'est':'cl_b'},corrs=corrs,corr_indxs=stack_corr_indxs)
@@ -434,8 +452,16 @@ class cov_3X2():
 
         if np.all(np.array(tracers)=='shear'):
             SN1324,SN1423=self.cov_utils.shear_SN(self.SN,tracers,z_indx)
-            SN1324*=Win['cov'][tracers][z_indx]['M1324']
-            SN1423*=Win['cov'][tracers][z_indx]['M1423']
+            if self.use_window: #self.pseudo_cl:
+                SN1324*=Win['cov'][tracers][z_indx]['M1324']
+                SN1423*=Win['cov'][tracers][z_indx]['M1423']
+            else:
+                fs1324=np.sqrt(self.f_sky[tracers[0],tracers[2]][z_indx[0],z_indx[2]]*self.f_sky[tracers[1],tracers[3]][z_indx[1],z_indx[3]])
+                fs0=self.f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * self.f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
+                SN1324*=fs1324/fs0/self.cov_utils.gaussian_cov_norm_2D
+                fs1423=np.sqrt(self.f_sky[tracers[0],tracers[3]][z_indx[0],z_indx[3]]*self.f_sky[tracers[1],tracers[2]][z_indx[1],z_indx[2]])
+                SN1423*=fs1423/fs0/self.cov_utils.gaussian_cov_norm_2D
+            
             if not m1_m2==m1_m2_cross: #cross between xi+ and xi-
                 SN1324*=-1
                 SN1423*=-1
@@ -452,8 +478,10 @@ class cov_3X2():
 
         cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=self.xi_bin_utils[m1_m2])
         #binning is cheap
-        cov_xi['G']/=(Win[corr1][indxs_1]['xi_b'])
-        cov_xi['G']/=(Win[corr2][indxs_2]['xi_b'])
+        if self.use_window: #pseudo_cl:
+            cov_xi['G']/=(Win[corr1][indxs_1]['xi_b'])
+            cov_xi['G']/=(Win[corr2][indxs_2]['xi_b'])
+            #FIXME: else??
 
         cov_xi['final']=cov_xi['G']
         
@@ -509,7 +537,7 @@ class cov_3X2():
                 xi[corr][m1_m2]={}
                 for indx in self.corr_indxs[corr]:
                     xi[corr][m1_m2][indx]=delayed(self.get_xi)(cls=cl,corr=corr,indxs=indx,
-                                                        m1_m2=m1_m2,Win=self.Win.Win)
+                                                        m1_m2=m1_m2,Win=self.Win)
         if self.do_cov:
             for corr1 in corrs:
                 for corr2 in corrs:
@@ -550,7 +578,7 @@ class cov_3X2():
                                     indx=indxs_1[i1]+indxs_2[i2]
                                     cov_xi[corr][m1_m2+m1_m2_cross][indx]=delayed(self.xi_cov)(cov_cl=cov_cl[indx]#.compute()
                                                                     ,m1_m2=m1_m2,m1_m2_cross=m1_m2_cross,clr=clr,
-                                                                    Win=self.Win.Win,
+                                                                    Win=self.Win,
                                                                     indxs_1=indxs_1[i1],indxs_2=indxs_2[i2],corr1=corr1,corr2=corr2
                                                                     )
         out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi,'est':'xi'},corrs=corrs)
