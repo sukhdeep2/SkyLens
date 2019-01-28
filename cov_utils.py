@@ -96,14 +96,7 @@ class Covariance_utils():
 
         return SN2
 
-    def gaussian_cov_auto(self,cls,SN,tracers,z_indx,do_xi):
-        """
-        This is 'auto' covariance for a particular power spectra, but the power spectra
-        itself could a cross-correlation, eg. galaxy-lensing cross correlations.
-        For auto correlation, eg. lensing-lensing, cls1,cls2,cl12 should be same. Same for shot noise
-        SN.
-
-        """
+    def gaussian_cov_window(self,cls,SN,tracers,z_indx,do_xi):
 
         SN2=self.get_SN(SN,tracers,z_indx)
 
@@ -130,6 +123,36 @@ class Covariance_utils():
 # #         if not do_xi:
 #         G/=self.gaussian_cov_norm
         return G1324,G1423
+
+    def gaussian_cov(self,cls,SN,tracers,z_indx,do_xi):
+
+        SN2=self.get_SN(SN,tracers,z_indx)
+
+        G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f
+             + SN2[13]
+                )#/self.gaussian_cov_norm
+             #get returns None if key doesnot exist. or 0 adds 0 is SN is none
+
+        G1324*=( cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]*self.sample_variance_f
+              + SN2[24])
+
+        G1423= ( cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]*self.sample_variance_f
+              + SN2[14]
+              )#/self.gaussian_cov_norm
+
+        G1423*=(cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f
+             + SN2[23]
+                )
+
+#         G1423/=self.cov_utils.gaussian_cov_norm
+        G1423=np.diag(G1423)
+        G1324=np.diag(G1324)
+#         G=np.diag(G1423+G1324)
+# #         if not do_xi:
+#         G/=self.gaussian_cov_norm
+        return G1324,G1423
+
+
 
     def shear_SN(self,SN,tracers,z_indx):
         SN2=self.get_SN(SN,tracers,z_indx)

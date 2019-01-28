@@ -138,8 +138,13 @@ class cov_3X2():
             f_temp=np.copy(self.f_sky)
             self.f_sky={}
             for kk in self.corr_indxs.keys():
-                n_indx=len(self.corr_indxs[kk])
-                self.f_sky[kk]=f_temp*np.ones((n_indx,n_indx))
+#                 n_indx=len(self.corr_indxs[kk])
+                indxs=self.corr_indxs[kk]
+                self.f_sky[kk]={}
+                self.f_sky[kk[::-1]]={}
+                for idx in indxs:
+                    self.f_sky[kk][idx]=f_temp #*np.ones((n_indx,n_indx))
+                    self.f_sky[kk[::-1]][idx[::-1]]=f_temp
             
         self.m1_m2s[('shear','shear')]=[(2,2),(2,-2)]
         self.m1_m2s[('galaxy','shear')]=[(0,2)] #FIXME: check the order in covariance case
@@ -266,13 +271,16 @@ class cov_3X2():
         cov={}
         cov['final']=None
 
-        cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_auto(cls,
-                                                self.SN,tracers,zs_indx,self.do_xi)
+        
 
         if self.use_window: #self.pseudo_cl:
+            cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_window(cls,
+                                                self.SN,tracers,zs_indx,self.do_xi)
             cov['G']=cov['G1324']*Win.Win['cov'][tracers][zs_indx]['M1324']
             cov['G']+=cov['G1423']*Win.Win['cov'][tracers][zs_indx]['M1423']
         else:
+            cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov(cls,
+                                                self.SN,tracers,zs_indx,self.do_xi)
             fs1324=np.sqrt(self.f_sky[tracers[0],tracers[2]][zs_indx[0],zs_indx[2]]*self.f_sky[tracers[1],tracers[3]][zs_indx[1],zs_indx[3]])
             fs0=self.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]] * self.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
             cov['G']=cov['G1324']/self.cov_utils.gaussian_cov_norm_2D*fs1324/fs0
@@ -494,10 +502,13 @@ class cov_3X2():
         return cov_xi
 
     def get_xi(self,cls={},m1_m2=[],corr=None,indxs=None,Win=None):
-        cl=cls[corr][indxs]@Win[corr][indxs]['M']
+        cl=cls[corr][indxs]
+        if self.use_window:
+            cl=cls[corr][indxs]@Win[corr][indxs]['M']
         th,xi=self.HT.projected_correlation(l_cl=self.l,m1_m2=m1_m2,cl=cl)
         xi_b=self.binning.bin_1d(xi=xi,bin_utils=self.xi_bin_utils[m1_m2])
-        xi_b/=(Win[corr][indxs]['xi_b'])
+        if self.use_window:
+            xi_b/=(Win[corr][indxs]['xi_b'])
         return xi_b
 
     def xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
