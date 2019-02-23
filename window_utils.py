@@ -39,11 +39,11 @@ class window_utils():
 
         self.set_wig3j()
         
-        if self.Win is None:
-            if not use_window:
-                self.coupling_M=np.diag(np.ones_like(self.l))
-                self.coupling_G=np.diag(1./self.cov_utils.gaussian_cov_norm)
-
+#         if self.Win is None:
+#             if not use_window:
+#                 self.coupling_M=np.diag(np.ones_like(self.l))
+#                 self.coupling_G=np.diag(1./self.cov_utils.gaussian_cov_norm)
+        if self.use_window:
             self.set_window(corrs=self.corrs,corr_indxs=self.corr_indxs)
         
 #         if self.store_win:

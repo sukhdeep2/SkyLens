@@ -7,8 +7,9 @@ from hankel_transform import *
 from wigner_transform import *
 from binning import *
 from cov_utils import *
-from lensing_utils import *
-from galaxy_utils import *
+# from lensing_utils import *
+# from galaxy_utils import *
+from tracer_utils import *
 from window_utils import *
 from astropy.constants import c,G
 from astropy import units as u
@@ -23,7 +24,7 @@ c=c.to(u.km/u.second)
 
 class cov_3X2():
     def __init__(self,silence_camb=False,l=np.arange(2,2001),HT=None,Ang_PS=None,
-                cov_utils=None,logger=None,lensing_utils=None,galaxy_utils=None,
+                cov_utils=None,logger=None,tracer_utils=None,#lensing_utils=None,galaxy_utils=None,
                 zs_bins=None,zg_bins=None,galaxy_bias_func=None,
                 power_spectra_kwargs={},HT_kwargs=None,
                 z_PS=None,nz_PS=100,log_z_PS=True,
@@ -67,10 +68,10 @@ class cov_3X2():
         if do_xi:
             self.set_HT(HT=HT,HT_kwargs=HT_kwargs)
 
-        self.lensing_utils=lensing_utils
-        if lensing_utils is None:
-            self.lensing_utils=Lensing_utils(sigma_gamma=sigma_gamma,zs_bins=zs_bins,
-                                            logger=self.logger)
+        self.tracer_utils=tracer_utils
+        if tracer_utils is None:
+            self.tracer_utils=Tracer_utils(zs_bins=zs_bins,zg_bins=zg_bins,
+                                            logger=self.logger,l=self.l)
 
         self.cov_utils=cov_utils
         if cov_utils is None:
@@ -89,15 +90,15 @@ class cov_3X2():
                                 z_PS_max=z_PS_max)
                         #FIXME: Need a dict for these args
 
-        self.galaxy_utils=galaxy_utils
-        if galaxy_utils is None:
-            self.galaxy_utils=Galaxy_utils(zg_bins=zg_bins,logger=self.logger,l=self.l,
-                                            z_th=self.Ang_PS.z,bias_func=galaxy_bias_func)
+#         self.galaxy_utils=galaxy_utils
+#         if galaxy_utils is None:
+#             self.galaxy_utils=Galaxy_utils(zg_bins=zg_bins,logger=self.logger,l=self.l,
+#                                             z_th=self.Ang_PS.z,bias_func=galaxy_bias_func)
 
         self.z_bins={}
-        self.z_bins['shear']=self.lensing_utils.zs_bins
+        self.z_bins['shear']=self.tracer_utils.zs_bins
         #self.z_bins['kappa']=self.lensing_utils.zk_bins
-        self.z_bins['galaxy']=self.galaxy_utils.zg_bins
+        self.z_bins['galaxy']=self.tracer_utils.zg_bins
         self.l_bins=l_bins
         self.stack_data=stack_data
         self.theta_bins=theta_bins
@@ -112,10 +113,10 @@ class cov_3X2():
 
         n_s_bins=0
         n_g_bins=0
-        if self.lensing_utils.zs_bins is not None:
+        if self.tracer_utils.zs_bins is not None:
             n_s_bins=self.z_bins['shear']['n_bins']
 
-        if self.galaxy_utils.zg_bins is not None:
+        if self.tracer_utils.zg_bins is not None:
             n_g_bins=self.z_bins['galaxy']['n_bins']
 
         self.corr_indxs[('shear','shear')]=[j for j in itertools.combinations_with_replacement(
@@ -153,8 +154,8 @@ class cov_3X2():
         self.m1_m2s[('window')]=[(0,0)]
 
         self.Win={}
-        if self.use_window:#self.pseudo_cl:
-            self.Win=window_utils(window_l=self.window_l,l=self.l,corrs=self.corrs,m1_m2s=self.m1_m2s,\
+        #if self.use_window:#self.pseudo_cl:
+        self.Win=window_utils(window_l=self.window_l,l=self.l,corrs=self.corrs,m1_m2s=self.m1_m2s,\
                         use_window=use_window,do_cov=self.do_cov,cov_utils=self.cov_utils,f_sky=f_sky,
                         corr_indxs=self.corr_indxs,z_bins=self.z_bins,window_lmax=self.window_lmax,Win=Win,
                         HT=self.HT,do_xi=self.do_xi,xi_bin_utils=self.xi_bin_utils,store_win=store_win)
@@ -163,15 +164,15 @@ class cov_3X2():
 #         if use_window:
         # self.Win.set_window()
 
-    def update_zbins(self,z_bins={},probe='shear'):
-        if probe=='shear':
-            self.lensing_utils.set_zbins(z_bins)
-
-        if probe=='galaxy':
-            self.galaxy_utils.set_zbins(z_bins)
-        self.z_bins['shear']=self.lensing_utils.zs_bins
+    def update_zbins(self,z_bins={},tracer='shear'):
+        self.tracer_utils.set_zbins(z_bins,tracer=tracer)
+#         if probe=='shear':
+#             self.lensing_utils.set_zbins(z_bins)
+#         if probe=='galaxy':
+#             self.galaxy_utils.set_zbins(z_bins)
+        self.z_bins['shear']=self.tracer_utils.zs_bins
         #self.z_bins['kappa']=self.lensing_utils.zk_bins
-        self.z_bins['galaxy']=self.galaxy_utils.zg_bins
+        self.z_bins['galaxy']=self.tracer_utils.zg_bins
         return
 
     def set_HT(self,HT=None,HT_kwargs=None):
@@ -227,14 +228,16 @@ class cov_3X2():
         sc=zs1['kernel_int']*zs2['kernel_int']
 
         dchi=np.copy(clz['dchi'])
-        if corr[0]=='galaxy':  #take care of different factors of c/H in different correlations.
-                                #Default is for shear. For every replacement of shear with galaxy, remove 1 factor.
-            dchi/=clz['cH']
-        if corr[1]=='galaxy':
-            dchi/=clz['cH']
+#         if corr[0]=='galaxy':  #take care of different factors of c/H in different correlations. Done during kernel definition, tracer_utils
+#                                 #Default is for shear. For every replacement of shear with galaxy, remove 1 factor.
+#             dchi/=clz['cH']
+#         if corr[1]=='galaxy':
+#             dchi/=clz['cH']
 
         cl=np.dot(cls.T*sc,dchi)
-
+#         dz=np.copy(clz['dz'])
+#         cl=np.dot(cls.T*sc,dz)
+        
         #cl/=self.Ang_PS.cl_f**2 # cl correction from Kilbinger+ 2017
                 # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
         return cl
@@ -276,8 +279,8 @@ class cov_3X2():
         if self.use_window: #self.pseudo_cl:
             cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_window(cls,
                                                 self.SN,tracers,zs_indx,self.do_xi)
-            cov['G']=cov['G1324']*Win.Win['cov'][tracers][zs_indx]['M1324']
-            cov['G']+=cov['G1423']*Win.Win['cov'][tracers][zs_indx]['M1423']
+            cov['G']=cov['G1324']*Win['cov'][tracers][zs_indx]['M1324']
+            cov['G']+=cov['G1423']*Win['cov'][tracers][zs_indx]['M1423']
         else:
             cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov(cls,
                                                 self.SN,tracers,zs_indx,self.do_xi)
@@ -348,7 +351,7 @@ class cov_3X2():
         for (i,j) in self.corr_indxs[corr]+self.cov_indxs:
             clij=cl_compute_dict[(i,j)]
             if self.use_window:
-                clij=clij@Win.Win[corr][(i,j)]['M'] #pseudo cl
+                clij=clij@Win[corr][(i,j)]['M'] #pseudo cl
             cl_b[corr][(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
             cl_b[corr2][(j,i)]=cl_b[corr][(i,j)]
         return cl_b
@@ -386,15 +389,18 @@ class cov_3X2():
         self.SN={}
         # self.SN[('galaxy','shear')]={}
         if 'shear' in tracers:
-            self.lensing_utils.set_zs_sigc(cosmo_h=cosmo_h,zl=self.Ang_PS.z)
-            self.SN[('shear','shear')]=self.lensing_utils.SN
+#             self.lensing_utils.set_zs_sigc(cosmo_h=cosmo_h,zl=self.Ang_PS.z)
+            self.tracer_utils.set_kernel(cosmo_h=cosmo_h,zl=self.Ang_PS.z,tracer='shear')
+            self.SN[('shear','shear')]=self.tracer_utils.SN['shear']
         if 'galaxy' in tracers:
             if bias_func is None:
                 bias_func='constant_bias'
                 bias_kwargs={'b1':1,'b2':1}
-            self.galaxy_utils.set_zg_bias(cosmo_h=cosmo_h,zl=self.Ang_PS.z,bias_func=bias_func,
-                                          bias_kwargs=bias_kwargs)
-            self.SN[('galaxy','galaxy')]=self.galaxy_utils.SN
+#             self.galaxy_utils.set_zg_bias(cosmo_h=cosmo_h,zl=self.Ang_PS.z,bias_func=bias_func,
+#                                           bias_kwargs=bias_kwargs)
+#             self.SN[('galaxy','galaxy')]=self.galaxy_utils.SN
+            self.tracer_utils.set_kernel(cosmo_h=cosmo_h,zl=self.Ang_PS.z,tracer='galaxy')
+            self.SN[('galaxy','galaxy')]=self.tracer_utils.SN['galaxy']
 
         self.Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
                                 cosmo_params=cosmo_params)
@@ -415,23 +421,32 @@ class cov_3X2():
                                         pk_func=pk_func,corr=corr)
 
                 cl[corr2][(j,i)]=cl[corr][(i,j)]#useful in gaussian covariance calculation.
-            cl_b[corr]=delayed(self.combine_cl_tomo)(cl[corr],corr=corr,Win=self.Win)
+            cl_b[corr]=delayed(self.combine_cl_tomo)(cl[corr],corr=corr,Win=self.Win.Win)
             cl_b[corr2]=cl_b[corr]
         print('cl dict done')
         if self.do_cov:
-            for corr1 in corrs:
+            start_j=0
+            corrs_iter=[(corrs[i],corrs[j]) for i in np.arange(len(corrs)) for j in np.arange(i,len(corrs))]
+            for (corr1,corr2) in corrs_iter:
+                cov[corr1+corr2]={}
+                cov[corr2+corr1]={}
+
                 corr1_indxs=self.corr_indxs[(corr1[0],corr1[1])]
-                for corr2 in corrs:
-                    cov[corr1+corr2]={}
-                    corr2_indxs=self.corr_indxs[(corr2[0],corr2[1])]
-                    for i in np.arange(len(corr1_indxs)):
-                        start_j=0
-                        if corr1==corr2:
-                            start_j=i
-                        for j in np.arange(start_j,len(corr2_indxs)):
-                            indx=corr1_indxs[i]+corr2_indxs[j]
-                            cov[corr1+corr2][indx]=delayed(self.cl_cov)(cls=cl, zs_indx=indx,Win=self.Win,
-                                                                        tracers=corr1+corr2)
+                corr2_indxs=self.corr_indxs[(corr2[0],corr2[1])]
+
+                if corr1==corr2:
+                    cov_indxs_iter=[ k for l in [[(i,j) for j in np.arange(i,
+                                     len(corr1_indxs))] for i in np.arange(len(corr2_indxs))] for k in l]
+                else:
+                    cov_indxs_iter=[ k for l in [[(i,j) for i in np.arange(
+                                    len(corr1_indxs))] for j in np.arange(len(corr2_indxs))] for k in l]
+
+                for (i,j) in cov_indxs_iter:
+                    indx=corr1_indxs[i]+corr2_indxs[j]
+                    cov[corr1+corr2][indx]=delayed(self.cl_cov)(cls=cl, zs_indx=indx,Win=self.Win.Win,
+                                                                    tracers=corr1+corr2)
+                    indx2=corr2_indxs[j]+corr1_indxs[i]
+                    cov[corr2+corr1][indx2]=cov[corr1+corr2][indx]
 
         out_stack=delayed(self.stack_dat)({'cov':cov,'cl_b':cl_b,'est':'cl_b'},corrs=corrs,corr_indxs=stack_corr_indxs)
         return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl}

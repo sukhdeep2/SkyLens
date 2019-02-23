@@ -19,7 +19,7 @@ cosmo_h=cosmo.clone(H0=100)
 #c=c.to(u.km/u.second)
 
 cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817,'Om':cosmo.Om0,
-                'As':2.2e-09,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
+                'Ase9':2.2,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
                 'w':-1,'wa':0})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
 pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':5000,'scenario':'eagle'}
@@ -134,7 +134,7 @@ class Power_Spectra():
 
         cosmo_ccl=pyccl.Cosmology(h=cosmo_params['h'],Omega_c=cosmo_params['Omd'],
                                 Omega_b=cosmo_params['Omb'],
-                                A_s=cosmo_params['As'],n_s=cosmo_params['ns'],
+                                A_s=cosmo_params['Ase9']*1.e-9,n_s=cosmo_params['ns'],
                                 m_nu=cosmo_params['mnu'])
         kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),pk_params['nk'])
         nz=len(z)
@@ -179,7 +179,7 @@ class Power_Spectra():
         #sys.stdout = open(os.devnull, 'w')
         if self.silence_camb:
             sys.stdout = open(os.devnull, 'w')
-        pars.InitPower.set_params(ns=cosmo_params['ns'], r=0,As =cosmo_params['As']) #
+        pars.InitPower.set_params(ns=cosmo_params['ns'], r=0,As =cosmo_params['Ase9']*1.e-9) #
         if return_s8:
             z_t=np.sort(np.unique(np.append([0],z).flatten()))
         else:
@@ -238,7 +238,7 @@ class Power_Spectra():
         h=cosmo_params['h']
         class_params={'h':h,'omega_b':cosmo_params['Omb']*h**2,
                             'omega_cdm':(cosmo_params['Om']-cosmo_params['Omb'])*h**2,
-                            'A_s':cosmo_params['As'],'n_s':cosmo_params['ns'],
+                            'A_s':cosmo_params['Ase9']*1.e-9,'n_s':cosmo_params['ns'],
                             'output': 'mPk','z_max_pk':100, #max(z)*2, #to avoid class error. 
                                                       #Allegedly a compiler error, whatever that means
                             'P_k_max_1/Mpc':pk_params['kmax']*h*1.1,

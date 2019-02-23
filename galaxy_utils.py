@@ -54,7 +54,7 @@ class Galaxy_utils():
                 W_int=interp1d(zb[i]['z'],W,bounds_error=False,fill_value=0)
                 self.zg_bins[i]['W']=W_int(self.z_th)
 
-    def shot_noise_calc(self,zg1=None,zg2=None):
+    def shot_noise_calc(self,zg1=None,zg2=None): #this function is deprecated. SN should be input in bins
         if not np.array_equal(zg1['z'],zg2['z']):
             return 0
         if np.any(np.isinf(zg1['nz'])) or np.any(np.isinf(zg2['nz'])):
@@ -79,12 +79,12 @@ class Galaxy_utils():
             ns: The number density for each bin to compute shot noise.
         """
         n_bins=self.zg_bins['n_bins']
-        self.SN=np.zeros((1,n_bins,n_bins)) #if self.do_cov else None
+        self.SN=np.zeros((len(self.l),n_bins,n_bins)) #if self.do_cov else None
 
         for i in np.arange(self.zg_bins['n_bins']):
-            self.zg_bins[i]['SN']=self.shot_noise_calc(zg1=self.zg_bins[i],
-                                                                    zg2=self.zg_bins[i])
-            self.SN[:,i,i]=self.zg_bins[i]['SN']
+#             self.zg_bins[i]['SN']=self.shot_noise_calc(zg1=self.zg_bins[i],
+#                                                                     zg2=self.zg_bins[i])
+            self.SN[:,i,i]+=self.zg_bins['SN']['galaxy'][:,i,i]
 
 
     def constant_bias(self,z_bin={},**kwargs):

@@ -89,10 +89,10 @@ class Covariance_utils():
 
     def get_SN(self,SN,tracers,z_indx):
         SN2={}
-        SN2[13]=SN[(tracers[0],tracers[2])][:,z_indx[0], z_indx[2] ] if SN.get((tracers[0],tracers[2])) is not None else 0
-        SN2[24]=SN[(tracers[1],tracers[3])][:,z_indx[1], z_indx[3] ] if SN.get((tracers[1],tracers[3])) is not None else 0
-        SN2[14]=SN[(tracers[0],tracers[3])][:,z_indx[0], z_indx[3] ] if SN.get((tracers[0],tracers[3])) is not None else 0
-        SN2[23]=SN[(tracers[1],tracers[2])][:,z_indx[1], z_indx[2] ] if SN.get((tracers[1],tracers[2])) is not None else 0
+        SN2[13]=SN[(tracers[0],tracers[2])][:,z_indx[0], z_indx[2] ] if SN.get((tracers[0],tracers[2])) is not None else np.zeros_like(self.l)
+        SN2[24]=SN[(tracers[1],tracers[3])][:,z_indx[1], z_indx[3] ] if SN.get((tracers[1],tracers[3])) is not None else np.zeros_like(self.l)
+        SN2[14]=SN[(tracers[0],tracers[3])][:,z_indx[0], z_indx[3] ] if SN.get((tracers[0],tracers[3])) is not None else np.zeros_like(self.l)
+        SN2[23]=SN[(tracers[1],tracers[2])][:,z_indx[1], z_indx[2] ] if SN.get((tracers[1],tracers[2])) is not None else np.zeros_like(self.l)
 
         return SN2
 
@@ -156,7 +156,9 @@ class Covariance_utils():
 
     def shear_SN(self,SN,tracers,z_indx):
         SN2=self.get_SN(SN,tracers,z_indx)
-        ones=np.ones_like(self.l)
-        SN1324=np.outer((ones*SN2[13]),(ones*SN2[24]))
-        SN1423=np.outer((ones*SN2[14]),(ones*SN2[23]))
+#         ones=np.ones_like(self.l)
+#         SN1324=np.outer((ones*SN2[13]),(ones*SN2[24]))
+#         SN1423=np.outer((ones*SN2[14]),(ones*SN2[23]))
+        SN1324=np.outer(SN2[13],SN2[24])
+        SN1423=np.outer(SN2[14],SN2[23])
         return SN1324,SN1423
