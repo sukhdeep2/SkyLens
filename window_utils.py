@@ -159,6 +159,11 @@ class window_utils():
         win['cl1423']=hp.alm2cl(alms1=alm[14],alms2=alm[23],lmax_out=self.window_lmax)
         win['M1324']=self.coupling_matrix_large(win['cl1324'], wig_3j13 , wig_3j24) #/np.gradient(self.l)
         win['M1423']=self.coupling_matrix_large(win['cl1423'], wig_3j14 , wig_3j23) #/np.gradient(self.l)
+        if self.do_xi:
+            th,win['xi1324']=self.HT.projected_correlation(l_cl=self.window_l,m1_m2=(0,0),cl=win['cl1324'])
+            th,win['xi1423']=self.HT.projected_correlation(l_cl=self.window_l,m1_m2=(0,0),cl=win['cl1423'])
+            win['xi_b1324']=self.binning.bin_1d(xi=win['xi1324'],bin_utils=self.xi_bin_utils[(0,0)])
+            win['xi_b1423']=self.binning.bin_1d(xi=win['xi1423'],bin_utils=self.xi_bin_utils[(0,0)])
         
         del alm
         

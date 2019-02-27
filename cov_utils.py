@@ -113,8 +113,7 @@ class Covariance_utils():
               )#/self.gaussian_cov_norm
 
         G1423=np.outer(G1423,(cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f
-             + SN2[23]
-                ))
+             + SN2[23]))
 
 #         G1423/=self.cov_utils.gaussian_cov_norm
 #         G1423=np.diag(G1423)

@@ -12,7 +12,7 @@ sys.path.append('./ForQuE/')
 from cmb import *
 from cmb_lensing_rec import *
 
-
+cosmo_h=cosmo.clone(H0=100)
 
 d2r=np.pi/180.
 
@@ -77,7 +77,7 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None):
     p_zs/=np.sum(p_zs*dzs)
     return zs,p_zs
 
-def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None):
+def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False):
     l0=np.arange(0,512,dtype='int')
     corr=('galaxy','galaxy')
     kappa0=cov_3X2(zg_bins=zs_bins,do_cov=False,bin_cl=False,l_bins=None,l=l0, zs_bins=None,use_window=False,
@@ -97,20 +97,27 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
     zs_bins['window0_alm']=hp.map2alm(cl_map0)
 
     for i in np.arange(zs_bins['n_bins']):
-        cl_i=cl0G['cl'][corr][(i,i)].compute()
+        if unit_win:
+            cl_map=hp.ma(np.ones(12*nside*nside))
+            cl_i=1
+        else:
+            cl_i=cl0G['cl'][corr][(i,i)].compute()
         
-        if window_cl_fact is not None:
-            cl_i*=window_cl_fact
-        cl_map=hp.ma(1+hp.synfast(cl_i,nside=nside))
+            if window_cl_fact is not None:
+                cl_i*=window_cl_fact
+            cl_map=hp.ma(1+hp.synfast(cl_i,nside=nside))
+        cl_map[cl_map<0]=0
+        cl_map/=cl_map[mask].max()
         cl_map[~mask]=hp.UNSEEN
         # cl_map.mask=mask
         zs_bins[i]['window']=cl_map
         zs_bins[i]['window_alm']=hp.map2alm(cl_map)
+        zs_bins[i]['window_cl']=cl_i
 
     return zs_bins
 
 
-def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,AI_z=0,mag_fact=0):
+def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,AI_z=0,mag_fact=0,k_max=0.3):
     dzs=np.gradient(zs) if len(zs)>1 else 1
 
     p_zs=p_zs/np.sum(p_zs*dzs)
@@ -131,13 +138,15 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,AI_z
     zs_bins[i]['AI']=AI
     zs_bins[i]['AI_z']=AI_z
     zs_bins[i]['mag_fact']=mag_fact
+    zm=np.sum(zs_bins[i]['z']*zs_bins[i]['pzdz'])/zs_bins[i]['Norm']
+    zs_bins[i]['lm']=k_max*cosmo_h.comoving_transverse_distance(zm).value
     return zs_bins
     
     
 def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
                     zp_sigma=None,zs=None,z_bins=None,f_sky=0.3,nside=256,use_window=False,
                     mask_start_pix=0,window_cl_fact=None,bg1=1,AI=0,AI_z=0,l=None,mag_fact=0,
-                     sigma_gamma=0.26):
+                     sigma_gamma=0.26,k_max=0.3,unit_win=False):
     """
         Setting source redshift bins in the format used in code.
         Need
@@ -191,7 +200,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
                             bias=zp_bias[indx[0]:indx[1]],
                             sigma=zp_sigma[indx[0]:indx[1]],zs=zs)
         
-        zs_bins=zbin_pz_norm(zs_bins=zs_bins,bin_indx=i,zs=zs,p_zs=p_zs,ns=ns_i,bg1=bg1,AI=AI,AI_z=AI_z,mag_fact=mag_fact)
+        zs_bins=zbin_pz_norm(zs_bins=zs_bins,bin_indx=i,zs=zs,p_zs=p_zs,ns=ns_i,bg1=bg1,AI=AI,AI_z=AI_z,mag_fact=mag_fact,k_max=k_max)
         #sc=1./lu.sigma_crit(zl=zl_kernel,zs=zs[x],cosmo_h=cosmo_h)
         #zs_bins[i]['lens_kernel']=np.dot(zs_bins[i]['pzdz'],sc)
 
@@ -209,7 +218,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     zs_bins['zp_sigma']=zp_sigma
     zs_bins['zp_bias']=zp_bias
     if use_window:
-        zs_bins=set_window(zs_bins=zs_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,window_cl_fact=window_cl_fact)
+        zs_bins=set_window(zs_bins=zs_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,window_cl_fact=window_cl_fact,unit_win=unit_win)
     return zs_bins
 
 def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
@@ -266,7 +275,7 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
 
 
 def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bias=None,window_cl_fact=None,mag_fact=0,
-                    zp_sigma=None,zg=None,f_sky=0.3,nside=256,use_window=False,mask_start_pi=0,l=None,sigma_gamma=0):
+                    zp_sigma=None,zg=None,f_sky=0.3,nside=256,use_window=False,mask_start_pi=0,l=None,sigma_gamma=0,k_max=0.3):
     """
         Setting source redshift bins in the format used in code.
         Need
@@ -327,7 +336,8 @@ z_many=np.linspace(0,4,5000)
 
 def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=None,z_bins=None,window_cl_fact=None,
                           ztrue_func=ztrue_given_pz_Gaussian,z_sigma_power=1,f_sky=0.3,nside=256,zp=None,pzs=None,
-                          use_window=False,mask_start_pix=0,l=None,sigma_gamma=0.26,AI=0,AI_z=0,mag_fact=0,**kwargs):
+                          use_window=False,mask_start_pix=0,l=None,sigma_gamma=0.26,AI=0,AI_z=0,mag_fact=0,k_max=0.3,
+                          unit_win=False,**kwargs):
 
     z=zp
     if zp is None:
@@ -367,8 +377,8 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
     return source_tomo_bins(zp=z,p_zp=pzs,ns=ns0,nz_bins=nbins,mag_fact=mag_fact,
                          ztrue_func=ztrue_func,zp_bias=z_bias,window_cl_fact=window_cl_fact,
                         zp_sigma=z_sigma,z_bins=z_bins,f_sky=f_sky,nside=nside,
-                           use_window=use_window,mask_start_pix=mask_start_pix,
-                           l=l,sigma_gamma=sigma_gamma,AI=AI,AI_z=AI_z)
+                           use_window=use_window,mask_start_pix=mask_start_pix,k_max=k_max,
+                           l=l,sigma_gamma=sigma_gamma,AI=AI,AI_z=AI_z,unit_win=unit_win)
 
 
 def DESI_lens_bins(dataset='lrg',nbins=1,window_cl_fact=None,z_bins=None,
@@ -431,6 +441,7 @@ def DES_lens_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None
         z_bins[i]['pzdz']=z_bins[i]['pz']*z_bins[i]['dz']
         z_bins[i]['Norm']=np.sum(z_bins[i]['pzdz'])
         z_bins['SN']['galaxy'][:,i,i]=galaxy_shot_noise_calc(zg1=z_bins[i],zg2=z_bins[i])
+        z_bins[i]['lm']=1.e7
         
     z_bins['n_bins']=nz_bins
     z_bins['nz']=nz
@@ -468,6 +479,7 @@ def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigm
         z_bins[i]['Norm']=np.sum(z_bins[i]['pzdz'])
         #z_bins['SN']['galaxy'][:,i,i]=galaxy_shot_noise_calc(zg1=z_bins[i],zg2=z_bins[i])
         z_bins['SN']['shear'][:,i,i]=shear_shape_noise_calc(zs1=z_bins[i],zs2=z_bins[i],sigma_gamma=sigma_gamma)
+        z_bins[i]['lm']=1.e7
     z_bins['n_bins']=nz_bins
     z_bins['nz']=nz
     z_bins['zmax']=zmax
@@ -498,6 +510,7 @@ def Kids_bins(kids_fname='/home/deep/data/KiDS-450/Nz_DIR/Nz_DIR_Mean/Nz_DIR_z{z
         
         z_bins['SN']['galaxy'][:,i,i]=galaxy_shot_noise_calc(zg1=z_bins[i],zg2=z_bins[i])
         z_bins['SN']['shear'][:,i,i]=shear_shape_noise_calc(zs1=z_bins[i],zs2=z_bins[i],sigma_gamma=sigma_gamma)
+        z_bins[i]['lm']=1.e7
     z_bins['n_bins']=nz_bins
     z_bins['nz']=nz
     z_bins['zmax']=max(t['z'])+0.05
