@@ -385,7 +385,7 @@ def DESI_lens_bins(dataset='lrg',nbins=1,window_cl_fact=None,z_bins=None,
                     f_sky=0.3,nside=256,use_window=False,mask_start_pix=0,bg1=1,
                        l=None,sigma_gamma=0,mag_fact=0,
                     **kwargs):
-    home='/home/deep/repos/cosmic_shear/desi/data/desi/'
+    home='./desi/data/desi/'
     fname=dataset+'_nz.dat'
     fname='nz_{d}.dat'.format(d=dataset)
 #     t=np.genfromtxt(home+fname,names=True,skip_header=3)
