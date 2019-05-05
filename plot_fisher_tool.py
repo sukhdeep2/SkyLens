@@ -19,18 +19,18 @@ par_labels={'As':r'$A_s$','Ase9':r'$A_s\times 10^9$', 'Om':r'$\Omega_m$','w':r'$
 def cal_variance_FlatDist(a,b):
     return (b-a)**2/12.
 
-def tune_xtick(ax):
+def tune_xtick(ax,fontsize=15):
     for tick in ax.get_xticklabels():
         tick.set_rotation(90)
     for tick in ax.xaxis.get_major_ticks():
-            tick.label.set_fontsize(15)
+            tick.label.set_fontsize(fontsize)
     return ax
 
-def tune_ytick(ax):
+def tune_ytick(ax,fontsize=15):
     for tick in ax.get_yticklabels():
         tick.set_rotation(0)
     for tick in ax.yaxis.get_major_ticks():
-            tick.label.set_fontsize(15)
+            tick.label.set_fontsize(fontsize)
     return ax
 
 class fisher_tool():
@@ -92,18 +92,21 @@ class fisher_tool():
         b = np.sqrt(ellip_sigma2[1])
         theta_rad = np.arctan2(2*Cov_par2D[0,1],Cov_par2D[0,0]-Cov_par2D[1,1])/2.
         theta_deg = theta_rad*180/np.pi
-
-        return a, b, theta_deg
+        area=a*b #this is same as sqrt of determinant. Area of ellipse is pi*a*b
+        return a, b, theta_deg,area
     
     def set_alpha_ellip(self,nsigma_2Dposterior):
         sigma_alpha = {1:1.52,2:2.48,3:3.44}  #Table5 of arXiv0906.4123
         self.alpha  = sigma_alpha[nsigma_2Dposterior]
 
-    def plot_ellips2D(self,ax,par_1,par_2,alpha=0.2,ls="-",fid=None,axlim=None):
+    def plot_ellips2D(self,ax,par_1,par_2,alpha=0.2,ls="-",fid=None,axlim=None,text_size=15):
         axlim_1={}
         axlim_2={}
         mu_1    = 0 if self.par_cen.get(par_1) is None else self.par_cen[par_1]
         mu_2    = 0 if self.par_cen.get(par_2) is None else self.par_cen[par_2]
+        text_x=0.75-(text_size-18)*0.02
+
+        text_y=0.86
         for fish_id in self.Fishers.keys():
             id_1=self.pars[fish_id].index(par_1)
             id_2=self.pars[fish_id].index(par_2)
@@ -112,7 +115,7 @@ class fisher_tool():
             sigma_1 = self.par_sigma1D[fish_id][id_1]
             sigma_2 = self.par_sigma1D[fish_id][id_2]
 
-            a, b, theta_deg = self.get_2D_ellips_info(id_1,id_2,fish_id)
+            a, b, theta_deg,area = self.get_2D_ellips_info(id_1,id_2,fish_id)
             ells = Ellipse((mu_1, mu_2), 2*a*self.alpha, 2*b*self.alpha, theta_deg)
 
             ax.add_artist(ells)
@@ -125,6 +128,13 @@ class fisher_tool():
 
             #corr_coe="%.2f"%self.Corr_par[fish_id][id_1][id_2]
             #ax.text(0.75,0.82, corr_coe ,transform=ax.transAxes,color=color,fontsize=15)
+#             area_t=np.format_float_scientific((1./area),precision=1,exp_digits=1)
+            area_t="%d"%(1./area)
+            
+            ax.text(text_x+0.05*(4-len(area_t)),text_y, area_t ,transform=ax.transAxes,color=color,fontsize=text_size,zorder=10,
+                   bbox=dict(facecolor='white', alpha=0.5,lw=0,pad=0))
+#             text_y=0.11
+            text_y-=0.15
 
             if fid is not None:
                 ax.axvline(x=fid[0],color='silver',zorder=-1)
@@ -171,16 +181,23 @@ class fisher_tool():
         ax.set_xticks(np.around([mu/2.+axv.min()/2.,mu,mu/2.+axv.max()*.5],decimals=3))
             
             
-    def plot_fish(self,pars=[],par_labels=None,par_axlim={}):
+    def plot_fish(self,pars=[],par_labels=None,par_axlim={},fontsize=None):
         if par_labels is None:
             par_labels=self.par_labels
             
         Ndim = len(pars)
         fig, ax = plt.subplots(Ndim,Ndim,figsize=(2*Ndim+2,2*Ndim+1))
         fig.subplots_adjust(left=0.08, bottom=0.07, right=0.98, top=0.98 ,hspace=0.05,wspace=0.05)
+        
+        if fontsize is None:
+            label_fontsize=15*np.sqrt(Ndim/2.)
+            text_fontsize=15*np.sqrt(Ndim/2.)
+            tick_label_fontsize=label_fontsize*.85
+            
         plt.rc('text', usetex=True)
-        plt.rc('font',size=17)
+        plt.rc('font',size=text_fontsize)
 
+        ytext=.9
         for i,par_i in enumerate(pars):
             for j,par_j in enumerate(pars):
                 if i < j:
@@ -188,34 +205,46 @@ class fisher_tool():
                     continue
                 elif i==j:
                     self.plot_gauss1D(ax[i,j],par_i,color=iblue,axlim=par_axlim)
+                    for fish_id in self.Fishers.keys():
+                        color=colors[fish_id%len(colors)]
+                        id_1=self.pars[fish_id].index(par_i)
+                        sigma = self.par_sigma1D[fish_id][id_1]
+                        sigma2=0
+                        decimals=2
+                        while sigma2==0:
+                            sigma2=np.around(sigma,decimals=decimals)
+                            decimals+=1
+                        ax[0,-2].text(x=1.1,y=ytext,s=self.par_labels[par_i]+'$='+str(sigma2)+'$',
+                                     color=color,fontsize=text_fontsize)
+                        ytext-=0.3
                     ax[i,j].set_yticks([])
                     ax[i,j].set_yticklabels('')
                     if i < Ndim-1:
                         ax[i,j].set_xticklabels('')
                     if i == Ndim-1:
-                        tune_xtick(ax[i,j])
-                        ax[i,j].set_xlabel(par_labels[par_i],fontsize=20)
+                        tune_xtick(ax[i,j],fontsize=tick_label_fontsize)
+                        ax[i,j].set_xlabel(par_labels[par_i],fontsize=label_fontsize)
 
                 else:
-                    self.plot_ellips2D(ax[i,j],par_j,par_i,alpha=0.1,axlim=par_axlim)
+                    self.plot_ellips2D(ax[i,j],par_j,par_i,alpha=0.1,axlim=par_axlim,text_size=tick_label_fontsize)
 
                     if j!=0:
                         ax[i,j].set_yticklabels('')
                     if i!=Ndim-1:
                         ax[i,j].set_xticklabels('')
                     if j==0:
-                        tune_ytick(ax[i,j])
-                        ax[i,j].set_ylabel(par_labels[par_i],fontsize=20)
+                        tune_ytick(ax[i,j],fontsize=tick_label_fontsize)
+                        ax[i,j].set_ylabel(par_labels[par_i],fontsize=label_fontsize)
 
                     if i==Ndim-1:
-                        tune_xtick(ax[i,j])
-                        ax[i,j].set_xlabel(par_labels[par_j],fontsize=20)
+                        tune_xtick(ax[i,j],fontsize=tick_label_fontsize)
+                        ax[i,j].set_xlabel(par_labels[par_j],fontsize=label_fontsize)
             
                 ax[i,j].tick_params(direction='out', length=8, color='k', zorder=-1)
-        ytext=1
+        ytext=.9
         for fish_id in self.Fishers.keys():
             color=colors[fish_id%len(colors)]
-            ax[0,1].text(x=1,y=ytext,s=self.fisher_titles[fish_id],color=color,fontsize=25)
+            ax[0,1].text(x=.1,y=ytext,s=self.fisher_titles[fish_id],color=color,fontsize=text_fontsize)
             ytext-=0.2
         return fig
 
