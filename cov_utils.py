@@ -19,7 +19,7 @@ class Covariance_utils():
         self.l=l
         self.window_l=window_l
         self.window_file=window_file
-        self.l_cut_jnu=l_cut_jnu #this is needed for hankel_transform case for xi. Need separate sigma_window calc.
+        # self.l_cut_jnu=l_cut_jnu #this is needed for hankel_transform case for xi. Need separate sigma_window calc.
         self.f_sky=f_sky
         self.do_xi=do_xi
 #         self.pseudo_cl=pseudo_cl
@@ -41,7 +41,7 @@ class Covariance_utils():
         self.Om_W=4*np.pi  #multiply f_sky later.
         self.window_func()
 
-        self.Win/=self.Om_W 
+        self.Win/=self.Om_W
         self.Win0/=self.Om_W
 
     def window_func(self):
@@ -56,38 +56,26 @@ class Covariance_utils():
         if self.window_l is None:
             self.window_l=np.arange(100)
 
-#         NP=hp.nside2npix(256)
-#         M=np.zeros(NP)
-#         M[:np.int(NP*self.f_sky)]=1
-#         Win0=hp.sphtfunc.anafast(M)/self.f_sky
-#         l=np.arange(len(Win0))
-
         l=self.window_l
         theta_win=np.sqrt(self.Om_W/np.pi)
         l_th=l*theta_win
         Win0=2*jn(1,l_th)/l_th
         Win0=np.nan_to_num(Win0)
-        
+
         win_i=interp1d(l,Win0,bounds_error=False,fill_value=0)
         self.Win=win_i(self.window_l) #this will be useful for SSV
         self.Win0=win_i(self.l)
         return 0
 
     def sigma_win_calc(self,cls_lin):
-        # if self.l_cut_jnu is None:
         self.sigma_win=np.dot(self.Win**2*np.gradient(self.window_l)*self.window_l,cls_lin.T)
-        # else: #FIXME: This is ugly. Only needed for hankel transform (not wigner). Remove if HT is deprecated.
-        #     self.sigma_win={}
-        #     for m1_m2 in self.l_cut_jnu['m1_m2s']:
-        #         lc=self.l_cut_jnu[m1_m2]
-        #         self.sigma_win[m1_m2]=np.dot(self.Win[lc]**2*np.gradient(self.l[lc])*self.l[lc],cls_lin[:,lc].T)
-        # #FIXME: This is ugly
 
     def corr_matrix(self,cov=[]):
         diag=np.diag(cov)
         return cov/np.sqrt(np.outer(diag,diag))
 
     def get_SN(self,SN,tracers,z_indx):
+            #get shot noise/shape noise for given set of tracer and z_bins
         SN2={}
         SN2[13]=SN[(tracers[0],tracers[2])][:,z_indx[0], z_indx[2] ] if SN.get((tracers[0],tracers[2])) is not None else np.zeros_like(self.l)
         SN2[24]=SN[(tracers[1],tracers[3])][:,z_indx[1], z_indx[3] ] if SN.get((tracers[1],tracers[3])) is not None else np.zeros_like(self.l)
@@ -99,7 +87,6 @@ class Covariance_utils():
     def gaussian_cov_window(self,cls,SN,tracers,z_indx,do_xi):
 
         SN2=self.get_SN(SN,tracers,z_indx)
-
         G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f
              + SN2[13]
                 )#/self.gaussian_cov_norm
@@ -112,15 +99,10 @@ class Covariance_utils():
               + SN2[14]
               )#/self.gaussian_cov_norm
 
-        G1423=np.outer(G1423,(cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f
-             + SN2[23]))
+        G1423=np.outer(G1423,(cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2])
+                                                          ]*self.sample_variance_f
+                    + SN2[23]))
 
-#         G1423/=self.cov_utils.gaussian_cov_norm
-#         G1423=np.diag(G1423)
-#         G1324=np.diag(G1324)
-#         G=np.diag(G1423+G1324)
-# #         if not do_xi:
-#         G/=self.gaussian_cov_norm
         return G1324,G1423
 
     def gaussian_cov(self,cls,SN,tracers,z_indx,do_xi):
@@ -155,9 +137,6 @@ class Covariance_utils():
 
     def shear_SN(self,SN,tracers,z_indx):
         SN2=self.get_SN(SN,tracers,z_indx)
-#         ones=np.ones_like(self.l)
-#         SN1324=np.outer((ones*SN2[13]),(ones*SN2[24]))
-#         SN1423=np.outer((ones*SN2[14]),(ones*SN2[23]))
         SN1324=np.outer(SN2[13],SN2[24])
         SN1423=np.outer(SN2[14],SN2[23])
         return SN1324,SN1423

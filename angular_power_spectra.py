@@ -55,7 +55,7 @@ class Angular_power_spectra():
     def angular_power_z(self,z=None,pk_params=None,cosmo_h=None,
                     cosmo_params=None,pk_func=None):
         """
-             This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts. 
+             This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts.
              The shape of the output is l,nz, where nz is the number of z bins.
         """
 
@@ -106,11 +106,7 @@ class Angular_power_spectra():
         if self.SSV_cov:
             self.cov_utils.sigma_win_calc(cls_lin=cls_lin)
             self.clz.update({'clsR':cls*Rls,'clsRK':cls*RKls})
-            # clsR=np.einsum('ji,jk->ikj',cls*Rls,cls*Rls)
-            # clsRK=np.einsum('ji,jk->ikj',cls*RKls,cls*RKls)/36.
-            # clsR_RK=np.einsum('ji,jk->ikj',cls*Rls,cls*RKls)/6.
-            # self.clz.update({'clsR':clsR,'clsRK':clsRK,'clsR_RK':clsR_RK})
-
+            
     def reset(self):
         self.clz=None
         self.PS.reset()

@@ -18,8 +18,10 @@ from sympy.physics.wigner import wigner_3j
 def wigner_d(m1,m2,theta,l,l_use_bessel=1.e4):
     l0=np.copy(l)
     if l_use_bessel is not None:
-    #FIXME: This is not great. Due to a issues with the scipy hypergeometric function, jacobi can output nan for large ell, l>1.e4
-    # As a temporary fix, for ell>1.e4, we are replacing the wigner function with the bessel function. Fingers and toes crossed!!!
+    #FIXME: This is not great. Due to a issues with the scipy hypergeometric function,
+    #jacobi can output nan for large ell, l>1.e4
+    # As a temporary fix, for ell>1.e4, we are replacing the wigner function with the
+    # bessel function. Fingers and toes crossed!!!
     # mpmath is slower and also has convergence issues at large ell.
     #https://github.com/scipy/scipy/issues/4446
         l=np.atleast_1d(l)
@@ -64,7 +66,7 @@ def log_factorial(n):
 
 def Wigner3j(m_1, m_2, m_3,j_1, j_2, j_3):
     """Calculate the Wigner 3j symbol `Wigner3j(j_1,j_2,j_3,m_1,m_2,m_3)`
-
+    *Has problems due to rounding errors when numbers get large.*
     This function is inspired from implementation in
     sympy.physics.Wigner, as written by Jens Rasch.
     https://docs.sympy.org/latest/modules/physics/wigner.html
@@ -372,7 +374,7 @@ def wigner_3j_000(j_1,j_2,j_3,m_1,m_2,m_3): #m1=m2=m3=0.. Hivon+ 2002
     wj=(-1)**(J/2)*np.exp(logwj)
 #     x=J%2==1 #already applied in calling functions
 #     wj[x]=0
-    return np.real(wj) 
+    return np.real(wj)
 
 def wigner_3j_3(asym_fact,m1,m2,m3,js):
     if np.all(np.array(js)>np.absolute([m1,m2,m3])*asym_fact) and np.sum(js)%2==0:
@@ -384,7 +386,7 @@ import time
 def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None,asym_fact=np.inf):
     if ncpu is None:
         ncpu=cpu_count()-2
-   
+
     t1=time.time()
     j_max=np.amax(j_1.max()+j_2.max()+j_3.max()+1)
     _calc_factlist(j_max)
@@ -396,13 +398,13 @@ def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None,asym_fact=np.inf):
     c=np.array(np.meshgrid(j_1,j_2,j_3,indexing='ij')).T.reshape(-1,3) #only needed to put cuts below. Otherwise Comb is better
 
 #     print('cmax',np.amax(c,axis=0))
-    
+
     x=c[:,0]+c[:,1]-c[:,2]>=0
     x*=c[:,0]-c[:,1]+c[:,2]>=0
     x*=-c[:,0]+c[:,1]+c[:,2]>=0
-    
+
     marr=np.array([m_1,m_2,m_3])
-    
+
 #     x*=(c>=np.abs(marr)).prod(axis=1)
     x*=abs(m_1) <= c[:,0]
     x*=abs(m_2) <= c[:,1]
@@ -412,16 +414,16 @@ def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None,asym_fact=np.inf):
         x*=(c[:,0]+c[:,1]+c[:,2])%2==0
     elif np.all(c>=np.absolute(marr)*asym_fact):
         x*=(c[:,0]+c[:,1]+c[:,2])%2==0
-        
+
     c=c[x]
-    
+
     x2=c>=np.absolute(marr)*asym_fact
     x2=x2.prod(axis=1)==1
-    
+
     t2=time.time()
     t3=t2
     dd=np.zeros((n1,n2,n3),dtype='float32')
-    
+
     if np.all(marr==0) or np.all(x2):
         d_mat=wigner_3j_000(c[:,0],c[:,1],c[:,2],m_1,m_2,m_3)
         indx1=np.searchsorted(j_1,c[:,0])
@@ -435,9 +437,9 @@ def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None,asym_fact=np.inf):
         indx2=np.searchsorted(j_2,c[x2][:,1])
         indx3=np.searchsorted(j_3,c[x2][:,2])
         dd[indx1,indx2,indx3]=d_mat
-        
+
         t3=time.time()
-        
+
         if not np.all(x2):
             c=c[~x2]
             p=Pool(ncpu)

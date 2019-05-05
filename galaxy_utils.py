@@ -1,3 +1,4 @@
+#deprecated.. see tracer_utils
 import os,sys
 
 from power_spectra import *

@@ -1,3 +1,5 @@
+#deprecated.
+
 from scipy.special import jn, jn_zeros,jv
 from scipy.interpolate import interp1d,interp2d,RectBivariateSpline
 from scipy.optimize import fsolve
@@ -157,7 +159,7 @@ class hankel_transform():
         skew*=(2.*self.l_max[m1_m2]**2/self.zeros[m1_m2][-1]**2)/(2*np.pi)
         return self.theta[m1_m2],skew
 
-    
+
 def covariance_brute_force(l=[],theta=[],cl12=[],j_nu=0):
     J=jn(j_nu,np.outer(theta,l))
     dl=np.gradient(l)

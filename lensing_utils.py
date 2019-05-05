@@ -1,3 +1,4 @@
+#deprecated.. see tracer utils
 import os,sys
 
 from power_spectra import *
@@ -91,7 +92,7 @@ class Lensing_utils():
 #                     #FIXME: this shape noise calc is probably wrong
     def NLA_amp_z(self,z=[],AI=1,AI_z=0,cosmo_h=None):
         return np.outer(AI*(1+z)**AI_z*cosmo_h.H(z)/c,np.ones_like(self.l)) #FIXME: This might need to change to account
-    
+
     def set_zs_sigc(self,cosmo_h=None,zl=None):
         """
             Compute rho/Sigma_crit for each source bin at every lens redshift where power spectra is computed.
@@ -103,17 +104,17 @@ class Lensing_utils():
         rho=self.Rho_crit(cosmo_h=cosmo_h)*cosmo_h.Om0
         IA_const=0.0134*cosmo_h.Om0
         dzl=np.gradient(zl)
-        
+
         cH=c/(cosmo_h.efunc(zl)*cosmo_h.H0)
         cH=cH.value
-        
+
         for i in np.arange(self.ns_bins):
             self.zs_bins[i]['Gkernel']=rho/self.sigma_crit(zl=zl,
                                                         zs=self.zs_bins[i]['z'],
                                                         cosmo_h=cosmo_h)
             self.zs_bins[i]['Gkernel_int']=np.dot(self.zs_bins[i]['pzdz'],self.zs_bins[i]['Gkernel'])
             self.zs_bins[i]['Gkernel_int']/=self.zs_bins[i]['Norm']
-            
+
             self.zs_bins[i]['IA_kernel']=IA_const*self.NLA_amp_z(z=zl,AI=self.zs_bins[i]['AI'],
                                                                     AI_z=self.zs_bins[i]['AI_z'],cosmo_h=cosmo_h)
             pz_int=interp1d(self.zs_bins[i]['z'],self.zs_bins[i]['pz'],bounds_error=False,fill_value=0)
@@ -121,7 +122,7 @@ class Lensing_utils():
             self.zs_bins[i]['IA_kernel_int']=self.zs_bins[i]['IA_kernel'].T*pz_zl #dzl multiplied later
 #             self.zs_bins[i]['IA_kernel_int']/=np.sum(pz_zl*dzl)
 #             print('pzl',np.sum(pz_zl*dzl))
-            
+
             self.zs_bins[i]['kernel_int']=self.zs_bins[i]['Gkernel_int']+self.zs_bins[i]['IA_kernel_int']
 
     def reset_zs(self):

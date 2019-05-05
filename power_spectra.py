@@ -1,5 +1,5 @@
-#import camb
-#from camb import model, initialpower
+import camb
+from camb import model, initialpower
 #import pyccl
 import os,sys
 from classy import Class
@@ -8,7 +8,6 @@ sys.path.insert(0,'./')
 import numpy as np
 from scipy.interpolate import interp1d
 from astropy.cosmology import Planck15 as cosmo
-#from astropy.constants import c,G
 from astropy import units as u
 from scipy.integrate import quad as scipy_int1d
 import pandas as pd
@@ -29,12 +28,17 @@ pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':5000,'scenario':'eagle'}
 # "owls_WML1V848","owls_WML4","illustris","mb2","eagle","HzAGN"
 
 
-Bins_z_HzAGN   = np.array([4.9285,4.249,3.7384,3.33445,3.00295,1.96615,1.02715,0.519195,0.22878,0.017865,0.0])
-Bins_z_mb2     = np.array([3.5,3.25,2.8,2.45,2.1,2.0,1.8,1.7,1.6,1.4,1.2,1.1,1.0,0.8,0.7,0.6,0.4,0.35,0.2,0.0625,0.0])
-Bins_z_ill1    = np.array([3.5,3.49,3.28,3.08,2.90,2.73,2.44,2.1,2.0,1.82,1.74,1.6,1.41,1.21,1.04,1.0,0.79,0.7,0.6,0.4,0.35,0.2,0.0])
+Bins_z_HzAGN   = np.array([4.9285,4.249,3.7384,3.33445,
+                           3.00295,1.96615,1.02715,0.519195,0.22878,0.017865,0.0])
+Bins_z_mb2     = np.array([3.5,3.25,2.8,2.45,2.1,2.0,1.8,1.7,1.6,1.4,1.2,1.1,1.0,0.8,0.7,
+                           0.6,0.4,0.35,0.2,0.0625,0.0])
+Bins_z_ill1    = np.array([3.5,3.49,3.28,3.08,2.90,2.73,2.44,2.1,2.0,1.82,1.74,1.6,1.41,
+                           1.21,1.04,1.0,0.79,0.7,0.6,0.4,0.35,0.2,0.0])
 Bins_z_eagle   = np.array([3.53,3.02,2.48,2.24,2.01,1.74,1.49,1.26,1.0,0.74,0.5,0.27,0.0])
-Bins_z_OWLS    = np.array([3.5,3.25,3.0,2.75,2.25,2.00,1.75,1.50,1.25,1.00,0.75,0.50,0.375,0.25,0.125,0.0])
-Bins_z_NOSN    = np.array([3.5,3.25,3.0,2.75,2.25,2.00,1.75,1.50,1.25,1.00,0.75,0.50,0.375,0.25,0.0])
+Bins_z_OWLS    = np.array([3.5,3.25,3.0,2.75,2.25,2.00,1.75,1.50,1.25,
+                           1.00,0.75,0.50,0.375,0.25,0.125,0.0])
+Bins_z_NOSN    = np.array([3.5,3.25,3.0,2.75,2.25,2.00,1.75,1.50,
+                           1.25,1.00,0.75,0.50,0.375,0.25,0.0])
 
 zbin_logPkR = {"owls_AGN":Bins_z_OWLS,
                "owls_DBLIMFV1618":Bins_z_OWLS,
@@ -89,7 +93,7 @@ class Power_Spectra():
 
     def get_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
         pk_func=self.pk_func
-        
+
         if pk_params is not None:
             if pk_params.get('pk_func'):
                 pk_func=getattr(self,pk_params['pk_func'])
@@ -239,7 +243,7 @@ class Power_Spectra():
         class_params={'h':h,'omega_b':cosmo_params['Omb']*h**2,
                             'omega_cdm':(cosmo_params['Om']-cosmo_params['Omb'])*h**2,
                             'A_s':cosmo_params['Ase9']*1.e-9,'n_s':cosmo_params['ns'],
-                            'output': 'mPk','z_max_pk':100, #max(z)*2, #to avoid class error. 
+                            'output': 'mPk','z_max_pk':100, #max(z)*2, #to avoid class error.
                                                       #Allegedly a compiler error, whatever that means
                             'P_k_max_1/Mpc':pk_params['kmax']*h*1.1,
                     }
@@ -290,9 +294,9 @@ class Power_Spectra():
         out=self.class_pk(z,cosmo_params=cosmo_params,pk_params=pk_params,return_s8=return_s8)
         pk=out[0]
         kh=out[1]
-        
+
         non_linear=pk_params['non_linear'] if pk_params.get('non_linear') is not None else 1
-        
+
         if scenario is None or scenario is 'dmo' or non_linear==0:
             if return_s8:
                 s8=out[2]
