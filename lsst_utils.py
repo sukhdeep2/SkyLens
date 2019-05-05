@@ -1,7 +1,7 @@
 from scipy.stats import norm as gaussian
 import copy
 import numpy as np
-from lensing_utils import *
+#from lensing_utils import *
 from astropy.cosmology import Planck15 as cosmo
 from astropy.table import Table
 cosmo_h_PL=cosmo.clone(H0=100)
