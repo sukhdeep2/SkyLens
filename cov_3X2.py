@@ -51,7 +51,7 @@ class cov_3X2():
         self.corrs=corrs
         # self.l_cut_jnu=None
 
-        self.window_lmax=100 if window_lmax is None else window_lmax
+        self.window_lmax=30 if window_lmax is None else window_lmax
         self.window_l=np.arange(self.window_lmax+1)
         self.f_sky=f_sky #should be a dict with full overlap entries for all tracers and bins.
                         #If scalar will be converted to dict later in this function
@@ -204,7 +204,7 @@ class cov_3X2():
                 self.xi_bin_utils[m1_m2]=self.binning.bin_utils(r=self.HT.theta[m1_m2]/d2r,
                                                     r_bins=self.theta_bins,
                                                     r_dim=2,mat_dims=[1,2])
-
+         
     def calc_cl(self,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear')):
         """
             Compute the angular power spectra, Cl between two source bins
@@ -227,33 +227,9 @@ class cov_3X2():
 #             dchi/=clz['cH']
 
         cl=np.dot(cls.T*sc,dchi)
-#         dz=np.copy(clz['dz'])
-#         cl=np.dot(cls.T*sc,dz)
-
-        #cl/=self.Ang_PS.cl_f**2 # cl correction from Kilbinger+ 2017
                 # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
         return cl
 
-#     @jit
-    # def get_cl(self,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear'),
-    #             pk_func=None,pk_params=None,cosmo_h=None,cosmo_params=None):
-    #     """
-    #         Wrapper for calc_lens_lens_cl. Checks to make sure quantities such as power spectra and cosmology
-    #         are available otherwise sets them to some default values.
-    #         zs1_indx, zs2_indx: Indices of the source bins to be correlated.
-    #         Others are arguments to be passed to power spectra function if it needs to be computed
-    #     """
-    #     # if cosmo_h is None:
-    #     #     cosmo_h=self.Ang_PS.PS.cosmo_h
-    #
-    #     zs1=self.z_bins[corr[0]][zs1_indx]#.copy() #we will modify these locally
-    #     zs2=self.z_bins[corr[1]][zs2_indx]#.copy()
-    #
-    #     cl=self.calc_cl(zs1=zs1,zs2=zs2,corr=corr)
-    #
-    #     return cl
-
-#     @jit#(nopython=True)
     def cl_cov(self,cls=None, zs_indx=[],tracers=[],Win=None):
         """
             Computes the covariance between any two tomographic power spectra.
@@ -268,10 +244,32 @@ class cov_3X2():
 
         cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_window(cls,
                                             self.SN,tracers,zs_indx,self.do_xi)
+        cov['G1324_B']=None;cov['G1423_B']=None
+        cov['G']=0
+        
         if self.use_window:
-            cov['G']=cov['G1324']*Win['cov'][tracers][zs_indx]['M1324']
-            cov['G']+=cov['G1423']*Win['cov'][tracers][zs_indx]['M1423']
+            W_pm=Win['cov'][tracers][zs_indx]['W_pm'][1324]
+            if np.any(np.array(W_pm)<0) or np.any(np.array(Win['cov'][tracers][zs_indx]['W_pm'][1423])<0):
+                cov['G1324_B'],cov['G1423_B']=self.cov_utils.gaussian_cov_window_Bmode(cls,
+                                            self.SN,tracers,zs_indx,self.do_xi)
+
+            for wp in W_pm:
+                if wp>=0:
+                    cov['G']+=cov['G1324']*Win['cov'][tracers][zs_indx]['M1324'][wp]
+                else:
+                    cov['G']+=cov['G1324_B']*Win['cov'][tracers][zs_indx]['M1324'][wp]
+                
+            W_pm=Win['cov'][tracers][zs_indx]['W_pm'][1423]
+            
+            for wp in W_pm: 
+                if wp>=0:
+                    cov['G']+=cov['G1423']*Win['cov'][tracers][zs_indx]['M1423'][wp]
+                else:
+                    cov['G']+=cov['G1423_B']*Win['cov'][tracers][zs_indx]['M1423'][wp]
+                    
         else: #apply correct factors of f_sky
+            cov['G1324']*=np.eye(len(self.l)) #diagonalize
+            cov['G1423']*=np.eye(len(self.l))
             fs1324=np.sqrt(self.f_sky[tracers[0],tracers[2]][zs_indx[0],zs_indx[2]]*self.f_sky[tracers[1],tracers[3]][zs_indx[1],zs_indx[3]])
             fs0=self.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]] * self.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
             cov['G']=cov['G1324']/self.cov_utils.gaussian_cov_norm_2D*fs1324/fs0
@@ -334,15 +332,14 @@ class cov_3X2():
         return cl_b,cov_b
 
     def combine_cl_tomo(self,cl_compute_dict={},corr=None,Win=None):
-        corr2=corr[::-1]
-        cl_b={corr:{},corr2:{}}
+        cl_b={}#,corr2:{}}
 
         for (i,j) in self.corr_indxs[corr]+self.cov_indxs:
             clij=cl_compute_dict[(i,j)]
             if self.use_window:
-                clij=clij@Win[corr][(i,j)]['M'] #pseudo cl
-            cl_b[corr][(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
-            cl_b[corr2][(j,i)]=cl_b[corr][(i,j)]
+                    clij=clij@Win[corr][(i,j)]['M'] #pseudo cl
+#                     clij=clij@Win[corr[::-1]][(j,i)]['M'] #pseudo cl
+            cl_b[(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
         return cl_b
 
 
@@ -363,14 +360,16 @@ class cov_3X2():
         #tracers=[j for i in corrs for j in i]
         tracers=np.unique([j for i in corrs for j in i])
 
-        corrs2=corrs
+        corrs2=corrs.copy()
         if self.do_cov:#make sure we compute cl for all cross corrs necessary for covariance
                         #FIXME: If corrs are gg and ll only, this will lead to uncessary gl. This
                         #        is an unlikely use case though
-            corrs2=[]
+#             corrs2=[]
             for i in np.arange(len(tracers)):
                 for j in np.arange(i,len(tracers)):
-                    corrs2+=[(tracers[i],tracers[j])]
+                    if (tracers[i],tracers[j]) not in corrs2 and (tracers[j],tracers[i]) in corrs2:
+                        corrs2+=[(tracers[i],tracers[j])]
+                        print('added extra corr calc for covariance',corrs2)
 
         if cosmo_h is None:
             cosmo_h=self.Ang_PS.PS.cosmo_h
@@ -385,9 +384,6 @@ class cov_3X2():
             if bias_func is None:
                 bias_func='constant_bias'
                 bias_kwargs={'b1':1,'b2':1}
-#             self.galaxy_utils.set_zg_bias(cosmo_h=cosmo_h,zl=self.Ang_PS.z,bias_func=bias_func,
-#                                           bias_kwargs=bias_kwargs)
-#             self.SN[('galaxy','galaxy')]=self.galaxy_utils.SN
             self.tracer_utils.set_kernel(cosmo_h=cosmo_h,zl=self.Ang_PS.z,tracer='galaxy')
             self.SN[('galaxy','galaxy')]=self.tracer_utils.SN['galaxy']
 
@@ -408,7 +404,9 @@ class cov_3X2():
                 cl[corr][(i,j)]=delayed(self.calc_cl)(zs1_indx=i,zs2_indx=j,corr=corr)
 
                 cl[corr2][(j,i)]=cl[corr][(i,j)]#useful in gaussian covariance calculation.
+        for corr in corrs:
             cl_b[corr]=delayed(self.combine_cl_tomo)(cl[corr],corr=corr,Win=self.Win.Win)
+#             cl_b[corr2]=delayed(self.combine_cl_tomo)(cl[corr2],corr=corr2,Win=self.Win.Win)
             # cl_b[corr2]=cl_b[corr]
         print('cl dict done')
         if self.do_cov:
@@ -666,10 +664,9 @@ class cov_3X2():
                 if est=='xi':
                     dat_c=dat[est][corr][m1_m2[im]]
                 else:
-                    dat_c=dat[est][corr][corr] #cl_b gets keys twice. dask won't allow standard dict merge
+                    dat_c=dat[est][corr]#[corr] #cl_b gets keys twice. dask won't allow standard dict merge.. should be fixed
 
                 for indx in corr_indxs[corr]:
-                    # print(len_bins,dat_c[indx].shape)
                     D_final[i*len_bins:(i+1)*len_bins]=dat_c[indx]
                     i+=1
 
