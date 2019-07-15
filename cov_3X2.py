@@ -285,7 +285,7 @@ class cov_3X2():
 #         del cov['G1423'] #save memory
 
         cov['SSC']=None
-        if self.SSV_cov and corr==('shear', 'shear'):
+        if self.SSV_cov and tracers==('shear', 'shear','shear', 'shear'):
             clz=self.Ang_PS.clz
             zs1=self.z_bins[tracers[0]][zs_indx[0]]
             zs2=self.z_bins[tracers[1]][zs_indx[1]]

@@ -272,8 +272,8 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
 
 def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bias=None,
                      window_cl_fact=None,mag_fact=0,
-                    zp_sigma=None,zg=None,f_sky=0.3,nside=256,use_window=False,mask_start_pi=0,
-                    l=None,sigma_gamma=0,k_max=0.3):
+                    zp_sigma=None,zg=None,f_sky=0.3,nside=256,use_window=False,mask_start_pix=0,
+                    l=None,sigma_gamma=0,k_max=0.3,unit_win=True):
     """
         Setting source redshift bins in the format used in code.
         Need
@@ -290,6 +290,8 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
         nz_bins=1
     z_bins=np.linspace(min(zp)-0.0001,max(zp)+0.0001,nz_bins+1)
 
+    zmax=max(z_bins)
+    
     if zg is None:
         zg=np.linspace(0,1.5,100)
     dzg=np.gradient(zg)
@@ -316,6 +318,7 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
             zg,p_zg,nz=ztrue_func(zp=zp[indx[0]:indx[1]],p_zp=p_zp[indx[0]:indx[1]],
                             bias=zp_bias[indx[0]:indx[1]],
                             sigma=zp_sigma[indx[0]:indx[1]],zg=zg,ns=ns_i)
+        
         x= p_zg>1.e-10
         zg_bins[i]['z']=zg[x]
         zg_bins[i]['dz']=np.gradient(zg_bins[i]['z']) if len(zg_bins[i]['z'])>1 else 1
@@ -324,10 +327,13 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
         zg_bins[i]['pz']=p_zg[x]*zg_bins[i]['W']
         zg_bins[i]['pzdz']=zg_bins[i]['pz']*zg_bins[i]['dz']
         zg_bins[i]['Norm']=np.sum(zg_bins[i]['pzdz'])
+        
+        zmax=max([zmax,max(zg_bins[i]['z'])])
+    zg_bins['zmax']=zmax
     zg_bins['n_bins']=nz_bins #easy to remember the counts
     if use_window:
         zg_bins=set_window(zs_bins=zg_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
-                           window_cl_fact=window_cl_fact,
+                           window_cl_fact=window_cl_fact,unit_win=unit_win
                            )
     return zg_bins
 

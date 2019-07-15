@@ -76,15 +76,18 @@ class window_utils():
                 mf=(-1)**(li1+li2+li3)
                 
                 if W_pm==2: #W_+
-                    mf=1+mf
+                    mf=1.+mf
                 if W_pm==-2: #W_-
-                    mf=1-mf
+                    mf=1.-mf
+                mf/=2.
+            
             t3=time.time()        
             wig=wig*mf
             t4=time.time()
             M[lm:lm+step,:]=np.einsum('ijk,i->jk',wig, win*(2*self.window_l+1), optimize=True )/4./np.pi #FIXME: check the order of division by l.
             lm+=step
             t5=time.time()
+            print('coupling M:',wig[0,0,0],W_pm,M[0,0])
 #             print('coupling calc times',t2-t1,t3-t2,t4-t3,t5-t4,nl,lm,step)
         return M
 
@@ -100,6 +103,7 @@ class window_utils():
 #         self.wig_DB=h5py.File(wig_file, 'r')
         fname='temp/dask_wig3j_l5000_w500_{m}_asym50.zarr'
         for m in m_s:
+            print('reading wig3j: ',m)
 #             self.wig_3j[m]=Wigner3j_parallel( m, -m, 0, self.l, self.l, self.window_l)
 #             self.wig_3j[m]=self.wig_DB[str(m)]
             self.wig_3j[m]=zarr.open(fname.format(m=m))
@@ -115,6 +119,8 @@ class window_utils():
     def get_window_power_cl(self,corr={},indxs={}):
 #         print('cl window doing',corr,indxs)
         win={}
+        win['corr']=corr
+        win['indxs']=indxs
         if not self.use_window:
             win={'cl':self.f_sky, 'M':self.coupling_M,'xi':1,'xi_b':1}
             return win
@@ -122,8 +128,8 @@ class window_utils():
         m1m2=np.absolute(self.m1_m2s[(corr[0],corr[1])]).flatten()
         W_pm=0
         if np.sum(m1m2)!=0:
-            W_pm=2 #we only deal with E mode
-#         print(m1m2[0],self.wig_3j)
+            W_pm=2 #we only deal with E mode\
+        
         wig_3j_1=self.wig_3j[m1m2[0]]
         wig_3j_2=self.wig_3j[m1m2[1]]
 
@@ -134,6 +140,11 @@ class window_utils():
 
         win['cl']=hp.alm2cl(alms1=alm1,alms2=alm2,lmax_out=self.window_lmax) #This is f_sky*cl.
         win['M']=self.coupling_matrix_large(win['cl'], wig_3j_1,wig_3j_2,W_pm=W_pm)*(2*self.l[:,None]+1) #FIXME: check ordering
+        
+        print('cl window: ',corr,W_pm,m1m2,win['M'][0,0])
+        
+        if corr==('shear','shear') and indxs[0]==indxs[1]:
+            win['M_B']=self.coupling_matrix_large(win['cl'], wig_3j_1,wig_3j_2,W_pm=-2)*(2*self.l[:,None]+1) #FIXME: check ordering
                 #Note that this matrix leads to pseudo cl, which differs by factor of f_sky from true cl
         if self.do_xi:
             th,win['xi']=self.HT.projected_correlation(l_cl=self.window_l,m1_m2=(0,0),cl=win['cl'])
@@ -143,8 +154,14 @@ class window_utils():
 #         del alm2
         return win
 
-    def get_window_power_cov(self,corr={},indxs={}):
+    def get_window_power_cov(self,corr1=None,corr2=None,indxs1=None,indxs2=None):
         win={}
+        corr=corr1+corr2
+        indxs=indxs1+indxs2
+        win['corr1']=corr1
+        win['corr2']=corr2
+        win['indxs1']=indxs1
+        win['indxs2']=indxs2
         if not self.use_window:
             win={'cl1324':self.f_sky,'M1324':self.coupling_G, 'M1423':self.coupling_G, 'cl1423':self.f_sky}
             return win
@@ -236,20 +253,40 @@ class window_utils():
     
     def return_dict_cl(self,result,corrs,corr_indxs):
         dic={}
-        i=0
+        print('return dict cov:',len(result))
         for corr in corrs:
             dic[corr]={}
             dic[corr[::-1]]={}
-            for (i,j) in corr_indxs[corr]:
-                dic[corr][(i,j)]=result[i]
-                dic[corr[::-1]][(j,i)]=result[i]
-                i+=1
+        for ii in np.arange(len(result)):
+            corr=result[ii]['corr']
+            (i,j)=result[ii]['indxs']
+            dic[corr][(i,j)]=result[ii]
+            dic[corr[::-1]][(j,i)]=result[ii]
+#             for (i,j) in corr_indxs[corr]:
+#                 dic[corr][(i,j)]=result[i]
+#                 dic[corr[::-1]][(j,i)]=result[i]
+#                 i+=1
         return dic
         
-    def return_dict_cov(self,result,win_cov_tuple):
+    def return_dict_cov(self,result,win_cov_tuple): #to compute the covariance graph generated in set window
         dic={}
-        i=0
-        for (corr1,corr2,indx1,indx2) in win_cov_tuple:
+#         i=0
+#         for (corr1,corr2,indx1,indx2) in win_cov_tuple:
+#             corr=corr1+corr2
+#             corr21=corr2+corr1
+#             indxs=indx1+indx2
+#             indxs2=indx2+indx1
+            
+#             if dic.get(corr) is None:
+#                 dic[corr]={}
+#             if dic.get(corr21) is None:
+#                 dic[corr21]={}
+        for ii in np.arange(len(result)):
+            corr1=result[ii]['corr1']
+            corr2=result[ii]['corr2']
+            indx1=result[ii]['indxs1']
+            indx2=result[ii]['indxs2']
+            
             corr=corr1+corr2
             corr21=corr2+corr1
             indxs=indx1+indx2
@@ -260,11 +297,11 @@ class window_utils():
             if dic.get(corr21) is None:
                 dic[corr21]={}
             
-            dic[corr][indxs]=result[i]
+            dic[corr][indxs]=result[ii]
                                 
-            dic[corr][indxs2]=result[i]
-            dic[corr21][indxs2]=result[i]
-            dic[corr21][indxs]=result[i]
+            dic[corr][indxs2]=result[ii]
+            dic[corr21][indxs2]=result[ii]
+            dic[corr21][indxs]=result[ii]
             i+=1
         return dic
     
@@ -281,11 +318,11 @@ class window_utils():
         else:
             self.Win_cl={corr+indx: delayed(self.get_window_power_cl)(corr,indx) for corr in corrs for indx in corr_indxs[corr]}
         
-        self.Win_cl.update({'W1': (self.return_dict_cl, [corr+indx for corr in corrs for indx in corr_indxs[corr]],corrs,corr_indxs)})
+        self.Win_cl.update({'W1': (self.return_dict_cl, [corr+indx for corr in corrs for indx in corr_indxs[corr]],corrs,corr_indxs)})#generate a graph from parallel compute
 
         self.Win=client.get(self.Win_cl,'W1')
         
-        print('Cl windows done, now to covariance')                
+        print('Cl windows done, now to covariance',self.Win[('galaxy','galaxy')][(0,0)]['M'][0,0])                
         if self.do_cov:
             self.Win_cov={} 
             self.win_cov_tuple=None
@@ -312,17 +349,17 @@ class window_utils():
                             
 
                             if self.store_win:
-                                self.Win_cov.update({corr+indxs:(self.get_window_power_cov,corr,indxs)})
+                                self.Win_cov.update({corr+indxs:(self.get_window_power_cov,corr1,corr2,indxs1,indxs2)})
                                 
                             else:
-                                self.Win_cov.update({corr+indxs: delayed(self.get_window_power_cov)(corr,indxs)})
+                                self.Win_cov.update({corr+indxs: delayed(self.get_window_power_cov)(corr1,corr2,indxs1,indxs2)})
                                 
                             if self.win_cov_tuple is None:
                                 self.win_cov_tuple=[(corr1,corr2,indx1,indx2)]
                             else:
                                 self.win_cov_tuple.append((corr1,corr2,indx1,indx2))
                                 
-            self.Win_cov.update({'W1':(self.return_dict_cov,[corr1+corr2+indx1+indx2 for (corr1,corr2,indx1,indx2) in self.win_cov_tuple], self.win_cov_tuple)})
+            self.Win_cov.update({'W1':(self.return_dict_cov,[corr1+corr2+indx1+indx2 for (corr1,corr2,indx1,indx2) in self.win_cov_tuple], self.win_cov_tuple)}) #generate a graph from parallel compute
             self.Win['cov']=get(self.Win_cov,'W1')
         return self.Win
 
