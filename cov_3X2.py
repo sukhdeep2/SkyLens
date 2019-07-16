@@ -23,12 +23,12 @@ c=c.to(u.km/u.second)
 class cov_3X2():
     def __init__(self,silence_camb=False,l=np.arange(2,2001),HT=None,Ang_PS=None,
                 cov_utils=None,logger=None,tracer_utils=None,#lensing_utils=None,galaxy_utils=None,
-                zs_bins=None,zg_bins=None,galaxy_bias_func=None,
+                zs_bins=None,zk_bins=None,zg_bins=None,galaxy_bias_func=None,
                 power_spectra_kwargs={},HT_kwargs=None,
                 z_PS=None,nz_PS=100,log_z_PS=True,
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
-                use_window=True,window_file=None,window_lmax=None,store_win=False,Win=None,
-                sigma_gamma=0.3,f_sky=None,l_bins=None,bin_cl=False,#pseudo_cl=False,
+                use_window=True,window_lmax=None,store_win=False,Win=None,
+                f_sky=None,l_bins=None,bin_cl=False,#pseudo_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 corrs=[('shear','shear')]):
         self.logger=logger
@@ -56,12 +56,16 @@ class cov_3X2():
         self.f_sky=f_sky #should be a dict with full overlap entries for all tracers and bins.
                         #If scalar will be converted to dict later in this function
 
-        if ('shear','shear') in corrs:
+        if zs_bins is not None:
             z_PS_max=zs_bins['zmax']
+        if zk_bins is not None:
+            z_PS_max=zk_bins['zmax']
+        if zk_bins is not None and zs_bins is not None:
+            z_PS_max=max(z_PS_max,zk_bins['zmax'])
         else:
             z_PS_max=zg_bins['zmax']
+            
         self.use_window=use_window
-#         self.pseudo_cl=pseudo_cl
 
         self.HT=None
         if do_xi:
@@ -69,14 +73,14 @@ class cov_3X2():
 
         self.tracer_utils=tracer_utils
         if tracer_utils is None:
-            self.tracer_utils=Tracer_utils(zs_bins=zs_bins,zg_bins=zg_bins,
+            self.tracer_utils=Tracer_utils(zs_bins=zs_bins,zg_bins=zg_bins,zk_bins=zk_bins,
                                             logger=self.logger,l=self.l)
 
         self.cov_utils=cov_utils
         if cov_utils is None:
             self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,
                                             #l_cut_jnu=self.l_cut_jnu,
-                                            window_file=window_file,do_xi=do_xi,
+                                            do_xi=do_xi,
                                             do_sample_variance=do_sample_variance,
                                             use_window=use_window,
                                             window_l=self.window_l)
@@ -91,10 +95,6 @@ class cov_3X2():
                                 z_PS_max=z_PS_max)
                         #FIXME: Need a dict for these args
 
-        self.z_bins={}
-        self.z_bins['shear']=self.tracer_utils.zs_bins
-        #self.z_bins['kappa']=self.lensing_utils.zk_bins
-        self.z_bins['galaxy']=self.tracer_utils.zg_bins
         self.l_bins=l_bins
         self.stack_data=stack_data
         self.theta_bins=theta_bins
@@ -107,28 +107,37 @@ class cov_3X2():
         self.corr_indxs={}
         self.m1_m2s={}
 
-        n_s_bins=0
-        n_g_bins=0
-        if self.tracer_utils.zs_bins is not None:
-            n_s_bins=self.z_bins['shear']['n_bins']
+        self.z_bins={}
+        self.z_bins['shear']=self.tracer_utils.zs_bins
+        self.z_bins['kappa']=self.tracer_utils.zk_bins
+        self.z_bins['galaxy']=self.tracer_utils.zg_bins
+        
+        self.spin={'galaxy':0,'kappa':0,'shear':2}
+        
+        self.tracers=()
+        n_bins={}
+        for tracer in ('shear','galaxy','kappa'):
+            n_bins[tracer]=0
+            if self.z_bins[tracer] is not None:
+                n_bins[tracer]=self.z_bins[tracer]['n_bins']
+                self.tracers+=(tracer,)
 
-        if self.tracer_utils.zg_bins is not None:
-            n_g_bins=self.z_bins['galaxy']['n_bins']
-
-        self.corr_indxs[('shear','shear')]=[j for j in itertools.combinations_with_replacement(
-                                                    np.arange(n_s_bins),2)]
-
-        self.corr_indxs[('galaxy','galaxy')]=[(i,i) for i in np.arange(n_g_bins)]
-
-        if self.do_cov: #gg cross terms are needed for covariance
-            self.corr_indxs[('galaxy','galaxy')]=[j for j in itertools.combinations_with_replacement(np.arange(n_g_bins),2)]
-
-        self.corr_indxs[('galaxy','shear')]=[ k for l in [[(i,j) for i in np.arange(
-                                        n_g_bins)] for j in np.arange(n_s_bins)] for k in l]
-
-        self.corr_indxs[('shear','galaxy')]=[ k for l in [[(i,j) for i in np.arange(
-                                        n_s_bins)] for j in np.arange(n_g_bins)] for k in l]
-
+            self.corr_indxs[(tracer,tracer)]=[j for j in itertools.combinations_with_replacement(
+                                                    np.arange(n_bins[tracer]),2)]
+            
+            if tracer=='galaxy' and not self.do_cov:
+                self.corr_indxs[(tracer,tracer)]=[(i,i) for i in np.arange(n_bins[tracer])] #by default, no cross correlations between galaxy bins
+        
+        for tracer1 in self.tracers:#zbin-indexs for cross correlations
+            for tracer2 in self.tracers:
+                self.corr_indxs[(tracer1,tracer2)]=[ k for l in [[(i,j) for i in np.arange(
+                                        n_bins[tracer1])] for j in np.arange(n_bins[tracer2])] for k in l]
+            
+                self.m1_m2s[(tracer1,tracer2)]=[(self.spin[tracer1],self.spin[tracer2])] 
+                
+        self.m1_m2s[('shear','shear')]=[(2,2),(2,-2)]
+        self.m1_m2s[('window')]=[(0,0)]
+        
         self.stack_indxs=self.corr_indxs.copy()
 
         if np.isscalar(self.f_sky):
@@ -142,12 +151,8 @@ class cov_3X2():
                 for idx in indxs:
                     self.f_sky[kk][idx]=f_temp #*np.ones((n_indx,n_indx))
                     self.f_sky[kk[::-1]][idx[::-1]]=f_temp
-
-        self.m1_m2s[('shear','shear')]=[(2,2),(2,-2)]
-        self.m1_m2s[('galaxy','shear')]=[(0,2)] #FIXME: check the order in covariance case
-        self.m1_m2s[('shear','galaxy')]=[(2,0)] #FIXME: check the order in covariance case
-        self.m1_m2s[('galaxy','galaxy')]=[(0,0)]
-        self.m1_m2s[('window')]=[(0,0)]
+        
+        
 
         self.Win={}
         self.Win=window_utils(window_l=self.window_l,l=self.l,corrs=self.corrs,m1_m2s=self.m1_m2s,\
@@ -160,6 +165,7 @@ class cov_3X2():
         self.tracer_utils.set_zbins(z_bins,tracer=tracer)
         self.z_bins['shear']=self.tracer_utils.zs_bins
         self.z_bins['galaxy']=self.tracer_utils.zg_bins
+        self.z_bins['kappa']=self.tracer_utils.zk_bins
         return
 
     def set_HT(self,HT=None,HT_kwargs=None):
@@ -285,7 +291,7 @@ class cov_3X2():
 #         del cov['G1423'] #save memory
 
         cov['SSC']=None
-        if self.SSV_cov and tracers==('shear', 'shear','shear', 'shear'):
+        if self.SSV_cov and (not 'galaxy' in tracers):
             clz=self.Ang_PS.clz
             zs1=self.z_bins[tracers[0]][zs_indx[0]]
             zs2=self.z_bins[tracers[1]][zs_indx[1]]
@@ -380,6 +386,10 @@ class cov_3X2():
 #             self.lensing_utils.set_zs_sigc(cosmo_h=cosmo_h,zl=self.Ang_PS.z)
             self.tracer_utils.set_kernel(cosmo_h=cosmo_h,zl=self.Ang_PS.z,tracer='shear')
             self.SN[('shear','shear')]=self.tracer_utils.SN['shear']
+        if 'kappa' in tracers:
+#             self.lensing_utils.set_zs_sigc(cosmo_h=cosmo_h,zl=self.Ang_PS.z)
+            self.tracer_utils.set_kernel(cosmo_h=cosmo_h,zl=self.Ang_PS.z,tracer='kappa')
+            self.SN[('kappa','kappa')]=self.tracer_utils.SN['kappa']
         if 'galaxy' in tracers:
             if bias_func is None:
                 bias_func='constant_bias'

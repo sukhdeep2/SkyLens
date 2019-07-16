@@ -87,7 +87,6 @@ class window_utils():
             M[lm:lm+step,:]=np.einsum('ijk,i->jk',wig, win*(2*self.window_l+1), optimize=True )/4./np.pi #FIXME: check the order of division by l.
             lm+=step
             t5=time.time()
-            print('coupling M:',wig[0,0,0],W_pm,M[0,0])
 #             print('coupling calc times',t2-t1,t3-t2,t4-t3,t5-t4,nl,lm,step)
         return M
 
@@ -103,7 +102,6 @@ class window_utils():
 #         self.wig_DB=h5py.File(wig_file, 'r')
         fname='temp/dask_wig3j_l5000_w500_{m}_asym50.zarr'
         for m in m_s:
-            print('reading wig3j: ',m)
 #             self.wig_3j[m]=Wigner3j_parallel( m, -m, 0, self.l, self.l, self.window_l)
 #             self.wig_3j[m]=self.wig_DB[str(m)]
             self.wig_3j[m]=zarr.open(fname.format(m=m))
@@ -141,8 +139,6 @@ class window_utils():
         win['cl']=hp.alm2cl(alms1=alm1,alms2=alm2,lmax_out=self.window_lmax) #This is f_sky*cl.
         win['M']=self.coupling_matrix_large(win['cl'], wig_3j_1,wig_3j_2,W_pm=W_pm)*(2*self.l[:,None]+1) #FIXME: check ordering
         
-        print('cl window: ',corr,W_pm,m1m2,win['M'][0,0])
-        
         if corr==('shear','shear') and indxs[0]==indxs[1]:
             win['M_B']=self.coupling_matrix_large(win['cl'], wig_3j_1,wig_3j_2,W_pm=-2)*(2*self.l[:,None]+1) #FIXME: check ordering
                 #Note that this matrix leads to pseudo cl, which differs by factor of f_sky from true cl
@@ -175,8 +171,8 @@ class window_utils():
        
         def get_window_spins(cov_indxs=[(0,2),(1,3)]):    #W +/- factors based on spin
             W_pm=[0]
-            corr1=(corr[cov_indxs[0][0]],corr[cov_indxs[0][1]])
-            corr2=(corr[cov_indxs[1][0]],corr[cov_indxs[1][1]])
+#             corr1=(corr[cov_indxs[0][0]],corr[cov_indxs[0][1]])
+#             corr2=(corr[cov_indxs[1][0]],corr[cov_indxs[1][1]])
             s=[np.sum(self.m1_m2s[corr1]),np.sum(self.m1_m2s[corr2])]
 
             if s[0]==2 and s[1]==2: #gE,gE
@@ -302,7 +298,7 @@ class window_utils():
             dic[corr][indxs2]=result[ii]
             dic[corr21][indxs2]=result[ii]
             dic[corr21][indxs]=result[ii]
-            i+=1
+
         return dic
     
     def set_window(self,corrs=None,corr_indxs=None,client=None):
@@ -349,10 +345,10 @@ class window_utils():
                             
 
                             if self.store_win:
-                                self.Win_cov.update({corr+indxs:(self.get_window_power_cov,corr1,corr2,indxs1,indxs2)})
+                                self.Win_cov.update({corr+indxs:(self.get_window_power_cov,corr1,corr2,indx1,indx2)})
                                 
                             else:
-                                self.Win_cov.update({corr+indxs: delayed(self.get_window_power_cov)(corr1,corr2,indxs1,indxs2)})
+                                self.Win_cov.update({corr+indxs: delayed(self.get_window_power_cov)(corr1,corr2,indx1,indx2)})
                                 
                             if self.win_cov_tuple is None:
                                 self.win_cov_tuple=[(corr1,corr2,indx1,indx2)]

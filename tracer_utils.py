@@ -15,26 +15,28 @@ d2r=np.pi/180.
 c=c.to(u.km/u.second)
 
 class Tracer_utils():
-    def __init__(self,zs_bins=None,zg_bins=None,logger=None,l=None):
+    def __init__(self,zs_bins=None,zg_bins=None,zk_bins=None,logger=None,l=None):
         self.logger=logger
         self.l=l
         #Gravitaional const to get Rho crit in right units
         self.G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)
         self.G2*=8*np.pi/3.
-        self.zs_bins=zs_bins
-        self.zg_bins=zg_bins
+    
         self.SN={}
-        if zs_bins is not None: #sometimes we call this class just to access some of the functions
-            self.set_zbins(z_bins=zs_bins,tracer='shear')
-        if zg_bins is not None: #sometimes we call this class just to access some of the functions
-            self.set_zbins(z_bins=zg_bins,tracer='galaxy')
+        
+        self.set_zbins(z_bins=zs_bins,tracer='shear')
+        self.set_zbins(z_bins=zg_bins,tracer='galaxy')
+        self.set_zbins(z_bins=zk_bins,tracer='kappa')
 
     def set_zbins(self,z_bins={},tracer=None):
         if tracer=='shear':
             self.zs_bins=z_bins
         if tracer=='galaxy':
             self.zg_bins=z_bins
-        self.set_noise(tracer=tracer)
+        if tracer=='kappa':
+            self.zk_bins=z_bins
+        if z_bins is not None:
+            self.set_noise(tracer=tracer)
         
     def Rho_crit(self,cosmo_h=None):
         #G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)
@@ -58,6 +60,8 @@ class Tracer_utils():
              return self.zs_bins
         if tracer=='galaxy':
             return self.zg_bins
+        if tracer=='kappa':
+            return self.zk_bins
 
     def set_noise(self,tracer=None):
         """
@@ -67,7 +71,7 @@ class Tracer_utils():
         self.SN[tracer]=np.zeros((len(self.l),n_bins,n_bins)) #if self.do_cov else None
 
         for i in np.arange(n_bins):
-            self.SN[tracer][:,i,i]+=z_bins['SN']['shear'][:,i,i]
+            self.SN[tracer][:,i,i]+=z_bins['SN'][tracer][:,i,i]
 
     def NLA_amp_z(self,z=[],z_bin={},cosmo_h=None):
         AI=z_bin['AI']
@@ -155,7 +159,7 @@ class Tracer_utils():
         """
         IA_const=0.0134*cosmo_h.Om0
         b_const=1
-        if tracer=='shear':
+        if tracer=='shear' or tracer=='kappa': # kappa maps can have AI. For CMB, set AI=0 in the z_bin properties.
             bias_func=self.NLA_amp_z
             b_const=IA_const
         if tracer=='galaxy':

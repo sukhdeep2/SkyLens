@@ -93,6 +93,7 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
             cl_map=hp.ma(np.ones(12*nside*nside))
             cl_i=1
         else:
+
             cl_i=cl0G['cl'][corr][(i,i)].compute()
 
             if window_cl_fact is not None:
