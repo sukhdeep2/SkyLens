@@ -121,6 +121,8 @@ class cov_3X2():
             if self.z_bins[tracer] is not None:
                 n_bins[tracer]=self.z_bins[tracer]['n_bins']
                 self.tracers+=(tracer,)
+            else:
+                self.z_bins.pop(tracer, None)
 
             self.corr_indxs[(tracer,tracer)]=[j for j in itertools.combinations_with_replacement(
                                                     np.arange(n_bins[tracer]),2)]
