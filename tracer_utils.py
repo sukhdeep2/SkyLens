@@ -9,31 +9,34 @@ from astropy import units as u
 import numpy as np
 from scipy.interpolate import interp1d
 from scipy.integrate import quad as scipy_int1d
+from scipy.special import loggamma
 
 d2r=np.pi/180.
 c=c.to(u.km/u.second)
 
 class Tracer_utils():
-    def __init__(self,zs_bins=None,zg_bins=None,logger=None,l=None):
+    def __init__(self,zs_bins=None,zg_bins=None,zk_bins=None,logger=None,l=None):
         self.logger=logger
         self.l=l
         #Gravitaional const to get Rho crit in right units
         self.G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)
         self.G2*=8*np.pi/3.
-        self.zs_bins=zs_bins
-        self.zg_bins=zg_bins
+    
         self.SN={}
-        if zs_bins is not None: #sometimes we call this class just to access some of the functions
-            self.set_zbins(z_bins=zs_bins,tracer='shear')
-        if zg_bins is not None: #sometimes we call this class just to access some of the functions
-            self.set_zbins(z_bins=zg_bins,tracer='galaxy')
+        
+        self.set_zbins(z_bins=zs_bins,tracer='shear')
+        self.set_zbins(z_bins=zg_bins,tracer='galaxy')
+        self.set_zbins(z_bins=zk_bins,tracer='kappa')
 
     def set_zbins(self,z_bins={},tracer=None):
         if tracer=='shear':
             self.zs_bins=z_bins
         if tracer=='galaxy':
             self.zg_bins=z_bins
-        self.set_noise(tracer=tracer)
+        if tracer=='kappa':
+            self.zk_bins=z_bins
+        if z_bins is not None:
+            self.set_noise(tracer=tracer)
         
     def Rho_crit(self,cosmo_h=None):
         #G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)
@@ -57,6 +60,8 @@ class Tracer_utils():
              return self.zs_bins
         if tracer=='galaxy':
             return self.zg_bins
+        if tracer=='kappa':
+            return self.zk_bins
 
     def set_noise(self,tracer=None):
         """
@@ -66,7 +71,7 @@ class Tracer_utils():
         self.SN[tracer]=np.zeros((len(self.l),n_bins,n_bins)) #if self.do_cov else None
 
         for i in np.arange(n_bins):
-            self.SN[tracer][:,i,i]+=z_bins['SN']['shear'][:,i,i]
+            self.SN[tracer][:,i,i]+=z_bins['SN'][tracer][:,i,i]
 
     def NLA_amp_z(self,z=[],z_bin={},cosmo_h=None):
         AI=z_bin['AI']
@@ -91,6 +96,28 @@ class Tracer_utils():
         lm[x]=0        
         return np.outer(b1*(1+z_bin['z'])**b2,lm) #FIXME: This might need to change to account
     
+    def spin_factor(self,l=None,tracer=None):
+        if l is None:
+            l=self.l
+        if tracer is None:
+            return np.nan
+        if tracer=='galaxy':
+            s=0
+            return np.ones_like(l,dtype='float32')
+        
+        if tracer=='shear':
+            s=2 #there is (-1)**s factor, so sign is same of +/- 2 spin
+        if tracer=='kappa':
+            s=1  #see Kilbinger+ 2017
+        
+        F=loggamma(l+s+1)
+        F-=loggamma(l-s+1)
+        F=np.exp(1./s*F) # units should be l**2, hence sqrt for s=2... comes from angular derivative of the potential
+        F/=(l+0.5)**2 #when writing potential to delta_m, we get 1/k**2, which then results in (l+0.5)**2 factor
+        x=l-s<0
+        F[x]=0
+        return F
+    
     def set_kernel(self,cosmo_h=None,zl=None,tracer=None):
         self.set_lensing_kernel(cosmo_h=cosmo_h,zl=zl,tracer=tracer)
         self.set_galaxy_kernel(cosmo_h=cosmo_h,zl=zl,tracer=tracer)
@@ -111,14 +138,19 @@ class Tracer_utils():
         n_bins=z_bins['n_bins']
         rho=self.Rho_crit(cosmo_h=cosmo_h)*cosmo_h.Om0
         mag_fact=1
+        spin_tracer=tracer
         for i in np.arange(n_bins):
             if tracer=='galaxy':
                 mag_fact=z_bins[i]['mag_fact']
+                spin_tracer='kappa'
+            spin_fact=self.spin_factor(tracer=spin_tracer)
+            
             z_bins[i]['Gkernel']=mag_fact*rho/self.sigma_crit(zl=zl,
                                                         zs=z_bins[i]['z'],
                                                         cosmo_h=cosmo_h)
             z_bins[i]['Gkernel_int']=np.dot(z_bins[i]['pzdz'],z_bins[i]['Gkernel'])
             z_bins[i]['Gkernel_int']/=z_bins[i]['Norm']
+            z_bins[i]['Gkernel_int']=np.outer(spin_fact,z_bins[i]['Gkernel_int'])
 
     def set_galaxy_kernel(self,cosmo_h=None,zl=None,tracer=None):
         """
@@ -127,11 +159,13 @@ class Tracer_utils():
         """
         IA_const=0.0134*cosmo_h.Om0
         b_const=1
-        if tracer=='shear':
+        if tracer=='shear' or tracer=='kappa': # kappa maps can have AI. For CMB, set AI=0 in the z_bin properties.
             bias_func=self.NLA_amp_z
             b_const=IA_const
         if tracer=='galaxy':
             bias_func=self.constant_bias #FIXME: Make it flexible to get other bias functions
+        
+        spin_fact=self.spin_factor(tracer=tracer)
         
         dzl=np.gradient(zl)
         cH=c/(cosmo_h.efunc(zl)*cosmo_h.H0)
@@ -142,6 +176,7 @@ class Tracer_utils():
         for i in np.arange(n_bins):
             z_bins[i]['gkernel']=b_const*bias_func(z=zl,z_bin=z_bins[i],cosmo_h=cosmo_h)
             z_bins[i]['gkernel']=(z_bins[i]['gkernel'].T/cH).T  #cH factor is for conversion of n(z) to n(\chi).. n(z)dz=n(\chi)d\chi
+            z_bins[i]['gkernel']*=spin_fact
             pz_int=interp1d(z_bins[i]['z'],z_bins[i]['pz'],bounds_error=False,fill_value=0)
             pz_zl=pz_int(zl)
             z_bins[i]['gkernel_int']=z_bins[i]['gkernel'].T*pz_zl #dzl multiplied later

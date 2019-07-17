@@ -104,6 +104,36 @@ class Covariance_utils():
                     + SN2[23]))
 
         return G1324,G1423
+    
+    def gaussian_cov_window_Bmode(self,cls,SN,tracers,z_indx,do_xi): #for shear B-mode
+        SN2=self.get_SN(SN,tracers,z_indx)
+        sv_f={13:1,24:1,14:1,23:1}
+        if tracers[0]=='shear' and tracers[2]=='shear':
+            sv_f[13]=0
+        if tracers[1]=='shear' and tracers[3]=='shear':
+            sv_f[24]=0
+        if tracers[0]=='shear' and tracers[3]=='shear':
+            sv_f[14]=0
+        if tracers[1]=='shear' and tracers[2]=='shear':
+            sv_f[23]=0
+            
+        G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f*sv_f[13]
+             + SN2[13]
+                )#/self.gaussian_cov_norm
+             #get returns None if key doesnot exist. or 0 adds 0 is SN is none
+
+        G1324=np.outer(G1324,( cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]*self.sample_variance_f*sv_f[24]
+              + SN2[24]))
+
+        G1423= ( cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]*self.sample_variance_f*sv_f[14]
+              + SN2[14]
+              )#/self.gaussian_cov_norm
+
+        G1423=np.outer(G1423,(cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2])
+                                                          ]*self.sample_variance_f*sv_f[23]
+                    + SN2[23]))
+
+        return G1324,G1423
 
     def gaussian_cov(self,cls,SN,tracers,z_indx,do_xi):
 
