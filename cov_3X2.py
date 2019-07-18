@@ -9,6 +9,7 @@ from binning import *
 from cov_utils import *
 from tracer_utils import *
 from window_utils import *
+from cov_tri import *
 from astropy.constants import c,G
 from astropy import units as u
 import numpy as np
@@ -27,6 +28,7 @@ class cov_3X2():
                 power_spectra_kwargs={},HT_kwargs=None,
                 z_PS=None,nz_PS=100,log_z_PS=True,
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
+                Tri_cov=False,
                 use_window=True,window_lmax=None,store_win=False,Win=None,
                 f_sky=None,l_bins=None,bin_cl=False,#pseudo_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
@@ -45,6 +47,7 @@ class cov_3X2():
 
         self.do_cov=do_cov
         self.SSV_cov=SSV_cov
+        self.Tri_cov=Tri_cov #small scale trispectrum
         self.tidal_SSV_cov=tidal_SSV_cov
         self.l=l
         self.do_xi=do_xi
@@ -62,7 +65,8 @@ class cov_3X2():
             z_PS_max=zk_bins['zmax']
         if zk_bins is not None and zs_bins is not None:
             z_PS_max=max(z_PS_max,zk_bins['zmax'])
-        else:
+        if zk_bins is None and zs_bins is None: #z_PS_max is to defined maximum z for which P(k) is computed. 
+                                                #We assume this will be larger for shear than galaxies (i.e. there are always sources behind galaxies).
             z_PS_max=zg_bins['zmax']
             
         self.use_window=use_window
@@ -162,6 +166,8 @@ class cov_3X2():
                         f_sky=f_sky,corr_indxs=self.corr_indxs,z_bins=self.z_bins,
                         window_lmax=self.window_lmax,Win=Win,HT=self.HT,do_xi=self.do_xi,
                         xi_bin_utils=self.xi_bin_utils,store_win=store_win)
+        if self.Tri_cov:
+            self.CTR=cov_matter_tri(k=self.l)
 
     def update_zbins(self,z_bins={},tracer='shear'):
         self.tracer_utils.set_zbins(z_bins,tracer=tracer)
@@ -292,34 +298,45 @@ class cov_3X2():
 #         del cov['G1324']
 #         del cov['G1423'] #save memory
 
-        cov['SSC']=None
-        if self.SSV_cov and (not 'galaxy' in tracers):
-            clz=self.Ang_PS.clz
+        cov['SSC']=0
+        cov['Tri']=0
+        
+#         if not 'galaxy' in tracers: 
+        if self.Tri_cov or self.SSV_cov:
             zs1=self.z_bins[tracers[0]][zs_indx[0]]
             zs2=self.z_bins[tracers[1]][zs_indx[1]]
             zs3=self.z_bins[tracers[2]][zs_indx[2]]
             zs4=self.z_bins[tracers[3]][zs_indx[3]]
-            sigma_win=self.cov_utils.sigma_win
-
-            sig_cL=zs1['kernel_int']*zs2['kernel_int']*zs3['kernel_int']*zs4['kernel_int']
-            # sig_cL*=zs3['kernel_int']*zs4['kernel_int']
-
+#                 sig_cL=zs1['kernel_int']*zs2['kernel_int']*zs3['kernel_int']*zs4['kernel_int']
+            sig_cL=zs1['Gkernel_int']*zs2['Gkernel_int']*zs3['Gkernel_int']*zs4['Gkernel_int']#Only use lensing kernel... not implemented for galaxies
             sig_cL*=self.Ang_PS.clz['dchi']
 
-            sig_cL*=sigma_win
+        if self.SSV_cov :
+            clz=self.Ang_PS.clz
+
+            sigma_win=self.cov_utils.sigma_win
 
             clr=self.Ang_PS.clz['clsR']
             if self.tidal_SSV_cov:
                 clr=self.Ang_PS.clz['clsR']+ self.Ang_PS.clz['clsRK']/6.
 
-            # cov['SSC_dd']=np.dot((clr1).T*sig_cL,clr1)
-            cov['SSC']=np.dot((clr).T*sig_cL,clr)
-            cov['final']=cov['G']+cov['SSC']
+            sig_F=np.sqrt(sig_cL*sigma_win) #kernel is function of l as well due to spin factors
+            clr=clr*sig_F.T
+            cov['SSC']=np.dot(clr.T,clr)
 
-        for k in ['final','G','SSC']:#no need to bin G1324 and G1423
+        if self.Tri_cov:
+            cov['Tri']=self.CTR.cov_tri_zkernel(P=self.Ang_PS.clz['cls'],z_kernel=sig_cL/self.Ang_PS.clz['chi']**2) #FIXME: check dimensions, get correct factors of length.. chi**2 is guessed from eq. A3 of https://arxiv.org/pdf/1601.05779.pdf ... note that cls here is in units of P(k)/chi**2
+            fs0=self.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]] 
+            fs0*=self.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
+            fs0=np.sqrt(fs0)
+            cov['Tri']/=self.cov_utils.gaussian_cov_norm_2D*fs0 #we didnot normalize gaussian covariance in trispectrum computation.
+              
+        cov['final']=cov['G']+cov['SSC']+cov['Tri']
+
+        for k in ['final','G','SSC','Tri']:#no need to bin G1324 and G1423
             cl_none,cov[k+'_b']=self.bin_cl_func(cov=cov[k])
-            if not self.do_xi:
-                cov[k]=None
+#             if not self.do_xi:
+#                 cov[k]=None
         return cov
 
     def bin_cl_func(self,cl=None,cov=None):
@@ -516,13 +533,21 @@ class cov_3X2():
 #             cov_xi['G']/=
 
         cov_xi['final']=cov_xi['G']
+        cov_xi['SSC']=0
+        cov_xi['Tri']=0
 
         if self.SSV_cov:
             th0,cov_xi['SSC']=self.HT.projected_covariance2(l_cl=self.l,m1_m2=m1_m2,
                                                             m1_m2_cross=m1_m2_cross,
                                                             cl_cov=cov_cl['SSC'])
             cov_xi['SSC']=self.binning.bin_2d(cov=cov_xi['SSC'],bin_utils=self.xi_bin_utils[m1_m2])
-            cov_xi['final']=cov_xi['G']+cov_xi['SSC']
+        if self.Tri_cov:
+            th0,cov_xi['Tri']=self.HT.projected_covariance2(l_cl=self.l,m1_m2=m1_m2,
+                                                            m1_m2_cross=m1_m2_cross,
+                                                            cl_cov=cov_cl['Tri'])
+            cov_xi['Tri']=self.binning.bin_2d(cov=cov_xi['Tri'],bin_utils=self.xi_bin_utils[m1_m2])
+            
+        cov_xi['final']=cov_xi['G']+cov_xi['SSC']+cov_xi['Tri']
 
         return cov_xi
 

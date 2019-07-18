@@ -177,8 +177,17 @@ class Tracer_utils():
             z_bins[i]['gkernel']=b_const*bias_func(z=zl,z_bin=z_bins[i],cosmo_h=cosmo_h)
             z_bins[i]['gkernel']=(z_bins[i]['gkernel'].T/cH).T  #cH factor is for conversion of n(z) to n(\chi).. n(z)dz=n(\chi)d\chi
             z_bins[i]['gkernel']*=spin_fact
-            pz_int=interp1d(z_bins[i]['z'],z_bins[i]['pz'],bounds_error=False,fill_value=0)
-            pz_zl=pz_int(zl)
+            
+            #pz_int=interp1d(z_bins[i]['z'],z_bins[i]['pz'],bounds_error=False,fill_value=0)
+            #pz_zl=pz_int(zl)
+            if len(z_bins[i]['pz'])==1: #interpolation doesnot work well when only 1 point
+                bb=np.digitize(z_bins[i]['z'],zl)
+                pz_zl=np.zeros_like(zl)
+                pz_zl[bb]=z_bins[i]['pz']  #assign to nearest zl
+                pz_zl/=np.sum(pz_zl*dzl)
+            else:
+                pz_zl=np.interp(zl,z_bins[i]['z'],z_bins[i]['pz'],left=0,right=0) #this is linear interpolation
+            
             z_bins[i]['gkernel_int']=z_bins[i]['gkernel'].T*pz_zl #dzl multiplied later
             z_bins[i]['gkernel_int']/=np.sum(pz_zl*dzl)
                 
