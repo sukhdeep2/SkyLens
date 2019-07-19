@@ -136,6 +136,8 @@ class cov_3X2():
         
         for tracer1 in self.tracers:#zbin-indexs for cross correlations
             for tracer2 in self.tracers:
+                if tracer1==tracer2:
+                    continue
                 self.corr_indxs[(tracer1,tracer2)]=[ k for l in [[(i,j) for i in np.arange(
                                         n_bins[tracer1])] for j in np.arange(n_bins[tracer2])] for k in l]
             
