@@ -95,7 +95,7 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
         else:
 
             cl_i=cl0G['cl'][corr][(i,i)].compute()
-            cl_i+=zs_bins['SN']['galaxy'][i,i]
+            cl_i+=zs_bins['SN']['galaxy'][:,i,i]
             if window_cl_fact is not None:
                 cl_i*=window_cl_fact
             cl_map=hp.ma(1+hp.synfast(cl_i,nside=nside))

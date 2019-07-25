@@ -379,7 +379,7 @@ def wigner_3j_000(j_1,j_2,j_3,m_1,m_2,m_3): #m1=m2=m3=0.. Hivon+ 2002
 def wigner_3j_3(asym_fact,m1,m2,m3,js):
     if np.all(np.array(js)>np.absolute([m1,m2,m3])*asym_fact) and np.sum(js)%2==0:
         return np.float32(wigner_3j_000(js[0],js[1],js[2],m1,m2,m3))
-    return np.float32(wigner_3j(js[0],js[1],js[2],m1,m2,m3)) #.evalf()
+    return np.float32(wigner_3j(js[0],js[1],js[2],m1,m2,m3)) #.evalf() #this is calling sympy function not Wigner3j
 
 from itertools import product as Comb
 import time

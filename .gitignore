@@ -13,3 +13,4 @@
 *.pkl
 temp/*
 desi/*
+tests/*

@@ -136,12 +136,11 @@ class cov_3X2():
         
         for tracer1 in self.tracers:#zbin-indexs for cross correlations
             for tracer2 in self.tracers:
+                self.m1_m2s[(tracer1,tracer2)]=[(self.spin[tracer1],self.spin[tracer2])] 
                 if tracer1==tracer2:
                     continue
                 self.corr_indxs[(tracer1,tracer2)]=[ k for l in [[(i,j) for i in np.arange(
                                         n_bins[tracer1])] for j in np.arange(n_bins[tracer2])] for k in l]
-            
-                self.m1_m2s[(tracer1,tracer2)]=[(self.spin[tracer1],self.spin[tracer2])] 
                 
         self.m1_m2s[('shear','shear')]=[(2,2),(2,-2)]
         self.m1_m2s[('window')]=[(0,0)]
@@ -332,8 +331,13 @@ class cov_3X2():
             fs0*=self.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
             fs0=np.sqrt(fs0)
             cov['Tri']/=self.cov_utils.gaussian_cov_norm_2D*fs0 #we didnot normalize gaussian covariance in trispectrum computation.
-              
-        cov['final']=cov['G']+cov['SSC']+cov['Tri']
+        
+        if self.use_window: #Check: This is from writing p-cl as M@cl... cov(p-cl)=M@cov(cl)@M.T ... separate  M when different p-cl
+            M1=Win['cl'][(tracers[0],tracers[1])][(zs_indx[0],zs_indx[1])]['M'] #12
+            M2=Win['cl'][(tracers[2],tracers[3])][(zs_indx[2],zs_indx[3])]['M'] #34
+            cov['final']=cov['G']+ M1@(cov['SSC']+cov['Tri'])@M2.T
+        else:
+            cov['final']=cov['G']+cov['SSC']+cov['Tri']
 
         for k in ['final','G','SSC','Tri']:#no need to bin G1324 and G1423
             cl_none,cov[k+'_b']=self.bin_cl_func(cov=cov[k])
@@ -364,7 +368,7 @@ class cov_3X2():
         for (i,j) in self.corr_indxs[corr]+self.cov_indxs:
             clij=cl_compute_dict[(i,j)]
             if self.use_window:
-                    clij=clij@Win[corr][(i,j)]['M'] #pseudo cl
+                    clij=clij@Win['cl'][corr][(i,j)]['M'] #pseudo cl
 #                     clij=clij@Win[corr[::-1]][(j,i)]['M'] #pseudo cl
             cl_b[(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
         return cl_b
@@ -529,7 +533,7 @@ class cov_3X2():
         cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=self.xi_bin_utils[m1_m2])
         #binning is cheap
         if self.use_window: #pseudo_cl:
-            cov_xi['G']/=(Win[corr1][indxs_1]['xi_b']*Win[corr2][indxs_2]['xi_b'])
+            cov_xi['G']/=(Win['cl'][corr1][indxs_1]['xi_b']*Win['cl'][corr2][indxs_2]['xi_b'])
             #FIXME: else??
 #         else:
 #             cov_xi['G']/=
@@ -559,12 +563,12 @@ class cov_3X2():
 #             cl=cls[corr][indxs]@Win[corr][indxs]['M']
         th,xi=self.HT.projected_correlation(l_cl=self.l,m1_m2=m1_m2,cl=cl)
         if self.use_window:
-            xi=xi*Win[corr][indxs]['xi']
+            xi=xi*Win['cl'][corr][indxs]['xi']
 
         xi_b=self.binning.bin_1d(xi=xi,bin_utils=self.xi_bin_utils[m1_m2])
 
         if self.use_window:
-            xi_b/=(Win[corr][indxs]['xi_b'])
+            xi_b/=(Win['cl'][corr][indxs]['xi_b'])
         return xi_b
 
     def xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
