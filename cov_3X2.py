@@ -341,8 +341,9 @@ class cov_3X2():
 
         for k in ['final','G','SSC','Tri']:#no need to bin G1324 and G1423
             cl_none,cov[k+'_b']=self.bin_cl_func(cov=cov[k])
-#             if not self.do_xi:
+            if not self.do_xi:
 #                 cov[k]=None
+                del cov[k]
         return cov
 
     def bin_cl_func(self,cl=None,cov=None):

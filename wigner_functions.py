@@ -183,7 +183,7 @@ def Wigner3j(m_1, m_2, m_3,j_1, j_2, j_3):
 
 
 
-def wigner_3j_2(j_1, j_2, j_3, m_1, m_2, m_3): #this and some helper functions below is a cpoy-paste of sympy function
+def wigner_3j_2(j_1, j_2, j_3, m_1, m_2, m_3): #this and some helper functions below is a copy-paste of sympy function
     r"""
     Calculate the Wigner 3j symbol `\operatorname{Wigner3j}(j_1,j_2,j_3,m_1,m_2,m_3)`.
 
@@ -295,7 +295,7 @@ def wigner_3j_2(j_1, j_2, j_3, m_1, m_2, m_3): #this and some helper functions b
 
     maxfact = max(j_1 + j_2 + j_3 + 1, j_1 + abs(m_1), j_2 + abs(m_2),
                   j_3 + abs(m_3))
-    _calc_factlist(int(maxfact))
+#     _calc_factlist(int(maxfact))
 
     argsqrt = Integer(_Factlist[int(j_1 + j_2 - j_3)] *
                      _Factlist[int(j_1 - j_2 + j_3)] *
@@ -308,6 +308,7 @@ def wigner_3j_2(j_1, j_2, j_3, m_1, m_2, m_3): #this and some helper functions b
                      _Factlist[int(j_3 + m_3)]) / \
         _Factlist[int(j_1 + j_2 + j_3 + 1)]
     ressqrt = sy_sqrt(argsqrt)
+#     print('sqrt',ressqrt.evalf())
     if ressqrt.is_complex:
         ressqrt = ressqrt.as_real_imag()[0]
 
@@ -322,6 +323,8 @@ def wigner_3j_2(j_1, j_2, j_3, m_1, m_2, m_3): #this and some helper functions b
             _Factlist[int(ii + j_3 - j_2 + m_1)] * \
             _Factlist[int(j_1 + j_2 - j_3 - ii)]
         sumres = sumres + Integer((-1) ** ii) / den
+#         print(ii,sumres.evalf(),sy_log(den).evalf(24))
+#     print(sumres.evalf())
     res = ressqrt * sumres * prefid
     return res
 
@@ -354,6 +357,10 @@ def _calc_factlist(nn):
             _Factlist.append(_Factlist[ii - 1] * ii)
     return _Factlist[:int(nn) + 1]
 
+_calc_factlist(1000)
+
+def calc_factlist(nn):
+    return _calc_factlist(nn)
 
 def wigner_3j_asym(j_1,j_2,j_3,m_1,m_2,m_3): #assume j1,j2>>j3... not very accurate.. only seems to work when j1==j2
     sj=(j_1+j_2+1)
@@ -458,3 +465,76 @@ def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None,asym_fact=np.inf):
 #     d_mat=p.map(partial(wigner_3j_3, m_1, m_2, m_3),c,chunksize=100)
 #     d_mat=np.array(d_mat).reshape(n1,n2,n3) #when not putting any cuts on c
 #     return d_mat
+
+
+
+def A_J(j,j2,j3,m2,m3):
+    out=j**2-(j2-j3)**2
+    out*=(j2+j3+1)**2-j**2
+    out*=j**2-(m2+m3)**2
+    x=out<0
+    out[x]=0
+    return out**0.5
+
+def B_J(j,j2,j3,m2,m3):
+    out=(m2+m3)*(j2*(j2+1)-j3*(j3+1))
+    out-=(m2-m3)*j*(j+1)
+    out*=2*j+1
+    return out
+
+def X_Np1(j,j2,j3,m2,m3): #X_n+1
+    return j*A_J(j+1,j2,j3,m2,m3)
+
+def X_N(j,j2,j3,m2,m3): #X_n+1
+    return B_J(j,j2,j3,m2,m3)
+
+def X_Nm1(j,j2,j3,m2,m3): #X_n+1
+    return (j+1)*A_J(j,j2,j3,m2,m3)
+
+
+def wig3j_recur(j1,j2,m1,m2,m3,j3_outmax=None):
+#     assert m3==-m1-m2
+    
+    j3_min=np.absolute(j1-j2)
+    j3_max=j1+j2+1 #j3_max is j1+j2, +1 for 0 indexing
+    j3=np.arange(j3_max)
+#     if j3_outmax is None:
+#         j3_outmax=j3_max
+    
+    wig_out=np.zeros(max(j3_max,j3_outmax))
+#     wig_out2=np.zeros(j3_max)
+    
+    wig_out[j3_min]=np.float32(wigner_3j(j1,j2,j3_min,m1,m2,m3))
+    if j3_min+1==j3_max:
+        return wig_out[:j3_outmax].reshape(1,1,j3_outmax)
+    
+    wig_out[j3_min+1]=np.float32(wigner_3j(j1,j2,j3_min+1,m1,m2,m3))
+    
+#     wig_out2[j3_min]=wig_out[j3_min]
+#     wig_out2[j3_min+1]=wig_out[j3_min+1]
+    
+    x_Np1=X_Np1(j3,j2,j1,m1,m2)*-1 #j==j3
+    x_N=X_N(j3,j2,j1,m1,m2) #j==j3
+    x_Nm1=X_Nm1(j3,j2,j1,m1,m2) #j==j3
+    
+    for i in np.arange(j3_min+1,j3_max-1):        
+        if x_Np1[i]==0:
+            continue
+        wig_out[j3[i+1]]=x_Nm1[i]*wig_out[j3[i-1]]+x_N[i]*wig_out[j3[i]]
+        wig_out[j3[i+1]]/=x_Np1[i]    
+        
+        
+#     xxi=np.random.randint(j3_min+1,j3_max-1)
+#     print(xxi,j3_min+1,j3_max-1)    
+#     wig_out2=wigner_3j(j1,j2,j3[xxi],m1,m2,m3).evalf()
+#     print(xxi,wig_out[xxi],wig_out2)
+
+    norm=np.sum(wig_out**2*(2*np.arange(max(j3_max,j3_outmax))+1))
+    if norm>0:
+        wig_out/=norm
+
+
+#     if not np.all(wig_out==0):
+#         wig_out/=np.sum(wig_out**2*(2*np.arange(max(j3_max,j3_outmax))+1))
+#     print(np.all(np.isclose(wig_out,wig_out2)))
+    return wig_out[:j3_outmax].reshape(1,1,j3_outmax)
