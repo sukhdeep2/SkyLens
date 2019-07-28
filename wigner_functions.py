@@ -497,13 +497,22 @@ def wig3j_recur(j1,j2,m1,m2,m3,j3_outmax=None):
     
     j3_min=np.absolute(j1-j2)
     j3_max=j1+j2+1 #j3_max is j1+j2, +1 for 0 indexing
+    
     j3=np.arange(j3_max)
+    j3=j3[j3<=j3_outmax]#this can dangerious if we need to normalize. See below.
+    
+    
 #     if j3_outmax is None:
 #         j3_outmax=j3_max
     
     wig_out=np.zeros(max(j3_max,j3_outmax))
+
 #     wig_out2=np.zeros(j3_max)
     
+    if j3_min>j3_outmax:
+#        print('j3_min out of range: ',j3_min,j3_outmax,j1,j2)
+        return wig_out[:j3_outmax].reshape(1,1,j3_outmax)
+        
     wig_out[j3_min]=np.float32(wigner_3j(j1,j2,j3_min,m1,m2,m3))
     if j3_min+1==j3_max:
         return wig_out[:j3_outmax].reshape(1,1,j3_outmax)
@@ -517,24 +526,29 @@ def wig3j_recur(j1,j2,m1,m2,m3,j3_outmax=None):
     x_N=X_N(j3,j2,j1,m1,m2) #j==j3
     x_Nm1=X_Nm1(j3,j2,j1,m1,m2) #j==j3
     
-    for i in np.arange(j3_min+1,j3_max-1):        
+    for i in np.arange(j3_min+1,j3_max-1):
+        if i>=len(j3)-1: #needed if cutting j3. see the comment about cutting above.
+            break
         if x_Np1[i]==0:
             continue
         wig_out[j3[i+1]]=x_Nm1[i]*wig_out[j3[i-1]]+x_N[i]*wig_out[j3[i]]
         wig_out[j3[i+1]]/=x_Np1[i]    
         
+#     norm=np.sum(wig_out**2*(2*np.arange(max(j3_max,j3_outmax))+1)) #since we start with correct wig values from j_min and j_min+1, norm should be ok.
+#     if norm>0:
+#         wig_out/=norm
+
         
-#     xxi=np.random.randint(j3_min+1,j3_max-1)
-#     print(xxi,j3_min+1,j3_max-1)    
-#     wig_out2=wigner_3j(j1,j2,j3[xxi],m1,m2,m3).evalf()
-#     print(xxi,wig_out[xxi],wig_out2)
-
-    norm=np.sum(wig_out**2*(2*np.arange(max(j3_max,j3_outmax))+1))
-    if norm>0:
-        wig_out/=norm
-
+#     xxi=np.random.randint(j3_min+1,j3_max-1) #randomly compare a value with sympy calculation
+#     wig_out2=wigner_3j(j1,j2,j3[xxi],m1,m2,m3)
+#     try:
+#         wig_out2=wig_out2.evalf()
+#         print('random test ',xxi,wig_out[xxi],wig_out2)
+#     except Exception as err:
+#         print('warning, random test failed', err)
+#         pass
 
 #     if not np.all(wig_out==0):
 #         wig_out/=np.sum(wig_out**2*(2*np.arange(max(j3_max,j3_outmax))+1))
 #     print(np.all(np.isclose(wig_out,wig_out2)))
-    return wig_out[:j3_outmax].reshape(1,1,j3_outmax)
+    return wig_out[:j3_outmax]#.reshape(j3_outmax,1,1)

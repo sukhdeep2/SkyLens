@@ -96,15 +96,15 @@ class window_utils():
         wig_temp={}
         
         wig_temp[m1]=self.wig_3j[m1].oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l)]
+
         if m1==m2:
             wig_temp[m2]=wig_temp[m1]
         else:
-            wig_temp[m2]=self.wig_3j[m2].oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l)]
+                wig_temp[m2]=self.wig_3j[m2].oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l)]
             
         out={'w2':sparse.COO(wig_temp[m1]*wig_temp[m2])} #sparse leads to small hit in in time when doing dot products but helps with the memory overall.
+        del wig_temp
         return out
-#         out={'w2':np.zeros((len(self.window_l),min(self.step,len(self.l)),len(self.l)),dtype='float32')}
-#         print(out['w2'].shape)
      
     def set_window_pm_step(self,lm=None,step=10):
         li1=np.int32(self.window_l).reshape(len(self.window_l),1,1)
@@ -132,11 +132,12 @@ class window_utils():
         self.m_s=np.sort(np.unique(m_s))
         
 #         self.wig_DB=h5py.File(wig_file, 'r')
-        fname='temp/dask_wig3j_l5000_w500_{m}_asym50.zarr'
+        fname={0: 'temp/dask_wig3j_l5000_w500_{m}_asym50.zarr'}
+        fname[2]='temp/dask_wig3j_l3000_w500_{m}_reorder.zarr'
         for m in self.m_s:
 #             self.wig_3j[m]=Wigner3j_parallel( m, -m, 0, self.l, self.l, self.window_l)
 #             self.wig_3j[m]=self.wig_DB[str(m)]
-            self.wig_3j[m]=zarr.open(fname.format(m=m))
+            self.wig_3j[m]=zarr.open(fname[m].format(m=m))
         
         nl=len(self.l)
         
