@@ -100,7 +100,7 @@ class window_utils():
         if m1==m2:
             wig_temp[m2]=wig_temp[m1]
         else:
-                wig_temp[m2]=self.wig_3j[m2].oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l)]
+            wig_temp[m2]=self.wig_3j[m2].oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l)]
             
         out={'w2':sparse.COO(wig_temp[m1]*wig_temp[m2])} #sparse leads to small hit in in time when doing dot products but helps with the memory overall.
         del wig_temp
@@ -251,7 +251,9 @@ class window_utils():
                     result0['M_B'][lm:lm+self.step,:]+=result[lm][ii]['M_B'][lm]
                 
                 del result[lm][ii]
-
+            result0['M']*=(2*self.l[:,None]+1)
+            if corr==('shear','shear') and indxs[0]==indxs[1]:
+                result0['M_B']*=(2*self.l[:,None]+1)
             dic[corr][indxs]=result0
             dic[corr[::-1]][indxs[::-1]]=result0
 
