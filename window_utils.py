@@ -368,8 +368,8 @@ class window_utils():
             indx1=result[0][ii]['indxs1']
             indx2=result[0][ii]['indxs2']
             
-            result0['M1324']={wp: np.zeros((nl,nl)) for wp in W_pm[1324]}
-            result0['M1423']={wp: np.zeros((nl,nl)) for wp in W_pm[1423]}
+            result0['M1324']={wp: np.zeros((nl,nl),dtype='float32') for wp in W_pm[1324]}
+            result0['M1423']={wp: np.zeros((nl,nl),dtype='float32') for wp in W_pm[1423]}
                 
             for lm in self.lms:
                 for wp in W_pm[1324]:
@@ -378,6 +378,12 @@ class window_utils():
                     result0['M1423'][wp][lm:lm+self.step,:]+=result[lm][ii]['M1423'][wp][lm]
                     
                 del result[lm][ii]
+            
+#             for wp in W_pm[1324]:
+#                 result0['M1324'][wp]=sparse.COO(result0['M1324'][wp]) #covariance coupling matrices are stored as sparse. 
+#                                                         #because there are more of them and are only needed occasionaly.
+#             for wp in W_pm[1423]:
+#                 result0['M1423'][wp]=sparse.COO(result0['M1423'][wp])
             
             corr=corr1+corr2
             corr21=corr2+corr1
@@ -486,35 +492,17 @@ class window_utils():
                 self.Win['cov']=client.compute(self.Win_cov).result()
             else:
                 self.Win['cov']=self.Win_cov
-            if self.store_win:
-                self.wig_3j_2={}
+                
         if self.store_win:
             self.cleanup()
         return self.Win
 
-    def cleanup(self,):
+    def cleanup(self,): #need to free all references to wigner_3j, mf and wigner_3j_2... this doesnot help with peak memory usage
+        del self.Win_cl
+        del self.Win_cl_lm
+        del self.Win_cov
+        del self.Win_cov_lm
+        del self.wig_3j
         del self.wig_3j_2
         del self.mf_pm
         
-#     def store_win_func(self,Win,corrs=None,corr_indxs=None):
-#         Win2={}
-#         for corr in corrs:
-#             corr2=corr[::-1]
-#             Win2[corr]={}
-#             Win2[corr2]={}
-#             for indx in corr_indxs[corr]:
-#                 Win2[corr][indx]=Win[corr][indx].result()
-# #                         self.Win[corr][indx]=self.Win[corr][indx].result()
-#                 (i,j)=indx
-#                 Win2[corr2][(j,i)]=Win2[corr][(i,j)]
-
-#         if self.do_cov:
-#             Win2['cov']={}
-#             for corr in Win['cov'].keys():
-#                 Win2['cov'][corr]={}
-#                 if 'cl' in corr or 'xi' in corr or 'cov' in corr:
-#                     continue
-#                 for indx in Win['cov'][corr].keys():
-#                     Win2['cov'][corr][indx]=Win['cov'][corr][indx].result()
-# #                         self.Win['cov'][corr][indx]=self.Win['cov'][corr][indx].result()
-#         return Win2

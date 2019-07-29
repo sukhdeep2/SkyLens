@@ -270,17 +270,17 @@ class cov_3X2():
 
             for wp in W_pm:
                 if wp>=0:
-                    cov['G']+=cov['G1324']*Win['cov'][tracers][zs_indx]['M1324'][wp]
+                    cov['G']+=cov['G1324']*Win['cov'][tracers][zs_indx]['M1324'][wp]#.todense()
                 else:
-                    cov['G']+=cov['G1324_B']*Win['cov'][tracers][zs_indx]['M1324'][wp]
+                    cov['G']+=cov['G1324_B']*Win['cov'][tracers][zs_indx]['M1324'][wp]#.todense()
                 
             W_pm=Win['cov'][tracers][zs_indx]['W_pm'][1423]
             
             for wp in W_pm: 
                 if wp>=0:
-                    cov['G']+=cov['G1423']*Win['cov'][tracers][zs_indx]['M1423'][wp]
+                    cov['G']+=cov['G1423']*Win['cov'][tracers][zs_indx]['M1423'][wp]#.todense()
                 else:
-                    cov['G']+=cov['G1423_B']*Win['cov'][tracers][zs_indx]['M1423'][wp]
+                    cov['G']+=cov['G1423_B']*Win['cov'][tracers][zs_indx]['M1423'][wp]#.todense()
                     
         else: #apply correct factors of f_sky
             cov['G1324']*=np.eye(len(self.l)) #diagonalize
