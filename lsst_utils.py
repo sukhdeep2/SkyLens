@@ -175,6 +175,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     zs_bins['SN']={}
     zs_bins['SN']['galaxy']=np.zeros((len(l),nz_bins,nz_bins))
     zs_bins['SN']['shear']=np.zeros((len(l),nz_bins,nz_bins))
+    zs_bins['SN']['kappa']=np.zeros((len(l),nz_bins,nz_bins))
 
     for i in np.arange(nz_bins):
         zs_bins[i]={}
@@ -204,6 +205,8 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
         zs_bins['SN']['galaxy'][:,i,i]=galaxy_shot_noise_calc(zg1=zs_bins[i],zg2=zs_bins[i])
         zs_bins['SN']['shear'][:,i,i]=shear_shape_noise_calc(zs1=zs_bins[i],zs2=zs_bins[i],
                                                              sigma_gamma=sigma_gamma)
+        zs_bins['SN']['kappa'][:,i,i]=shear_shape_noise_calc(zs1=zs_bins[i],zs2=zs_bins[i],
+                                                             sigma_gamma=sigma_gamma) #FIXME: This is almost certainly not correct
 
     zs_bins['n_bins']=nz_bins #easy to remember the counts
     zs_bins['z_lens_kernel']=zl_kernel
