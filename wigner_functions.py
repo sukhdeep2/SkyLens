@@ -370,6 +370,15 @@ def wigner_3j_asym(j_1,j_2,j_3,m_1,m_2,m_3): #assume j1,j2>>j3... not very accur
 
 def wigner_3j_000(j_1,j_2,j_3,m_1,m_2,m_3): #m1=m2=m3=0.. Hivon+ 2002
     J=j_1+j_2+j_3
+    a1 = j_1 + j_2 - j_3
+    a2 = j_1 - j_2 + j_3
+    a3 = -j_1 + j_2 + j_3
+    x=a1<0
+    x=np.logical_or(x,a2<0)
+    x=np.logical_or(x,a3<0)
+    x=np.logical_or(x,J%2==1)
+#     print(x)
+    
     logwj=log_factorial(J/2)
     logwj-=log_factorial(J/2-j_1)
     logwj-=log_factorial(J/2-j_2)
@@ -378,9 +387,11 @@ def wigner_3j_000(j_1,j_2,j_3,m_1,m_2,m_3): #m1=m2=m3=0.. Hivon+ 2002
     logwj+=0.5*log_factorial(J-2*j_1)
     logwj+=0.5*log_factorial(J-2*j_2)
     logwj+=0.5*log_factorial(J-2*j_3)
-    wj=(-1)**(J/2)*np.exp(logwj)
+    logwj[x]=-308
+    wj=(-1)**(np.int32(J/2))*np.exp(logwj)  #0, when J/2 is not int
+    wj[x]=0
 #     x=J%2==1 #already applied in calling functions
-#     wj[x]=0
+#     wj[x]*=0
     return np.real(wj)
 
 def wigner_3j_3(asym_fact,m1,m2,m3,js):
@@ -469,15 +480,16 @@ def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None,asym_fact=np.inf):
 
 
 def A_J(j,j2,j3,m2,m3):
-    out=j**2-(j2-j3)**2
-    out*=(j2+j3+1)**2-j**2
-    out*=j**2-(m2+m3)**2
-    x=out<0
+    out=np.float64(j**2-(j2-j3)**2)
+    x=j**2<(j2-j3)**2
     out[x]=0
-    return out**0.5
+    out=out**.5
+    out*=((j2+j3+1)**2-j**2)**.5
+    out*=(j**2-(m2+m3)**2)**.5
+    return out
 
 def B_J(j,j2,j3,m2,m3):
-    out=(m2+m3)*(j2*(j2+1)-j3*(j3+1))
+    out=np.float64((m2+m3)*(j2*(j2+1)-j3*(j3+1)))
     out-=(m2-m3)*j*(j+1)
     out*=2*j+1
     return out
@@ -495,49 +507,51 @@ def X_Nm1(j,j2,j3,m2,m3): #X_n+1
 def wig3j_recur(j1,j2,m1,m2,m3,j3_outmax=None):
 #     assert m3==-m1-m2
     
+    if (abs(m1) > j1) or (abs(m2) > j2) or m1+m2+m3!=0:
+        return 0
+
     j3_min=np.absolute(j1-j2)
     j3_max=j1+j2+1 #j3_max is j1+j2, +1 for 0 indexing
     
     j3=np.arange(j3_max)
-    j3=j3[j3<=j3_outmax]#this can dangerious if we need to normalize. See below.
     
-    
-#     if j3_outmax is None:
-#         j3_outmax=j3_max
+    if j3_outmax is None:
+        j3_outmax=j3_max
     
     wig_out=np.zeros(max(j3_max,j3_outmax))
-
-#     wig_out2=np.zeros(j3_max)
     
     if j3_min>j3_outmax:
-#        print('j3_min out of range: ',j3_min,j3_outmax,j1,j2)
-        return wig_out[:j3_outmax].reshape(1,1,j3_outmax)
-        
-    wig_out[j3_min]=np.float32(wigner_3j(j1,j2,j3_min,m1,m2,m3))
-    if j3_min+1==j3_max:
-        return wig_out[:j3_outmax].reshape(1,1,j3_outmax)
-    
-    wig_out[j3_min+1]=np.float32(wigner_3j(j1,j2,j3_min+1,m1,m2,m3))
-    
-#     wig_out2[j3_min]=wig_out[j3_min]
-#     wig_out2[j3_min+1]=wig_out[j3_min+1]
-    
+        return wig_out[:j3_outmax]#.reshape(1,1,j3_outmax)
+
+    wig_out[j3_min]=1#wigner_3j(j1,j2,j3_min,m1,m2,m3)
+    if j3_min==0: #in this case the recursion as implemented doesnot work (all zeros).
+        wig_out[j3_min]=wigner_3j(j1,j2,j3_min,m1,m2,m3)
+        wig_out[j3_min+1]=wigner_3j(j1,j2,j3_min+1,m1,m2,m3) #not strictly needed when j3_min>0
+                
     x_Np1=X_Np1(j3,j2,j1,m1,m2)*-1 #j==j3
     x_N=X_N(j3,j2,j1,m1,m2) #j==j3
     x_Nm1=X_Nm1(j3,j2,j1,m1,m2) #j==j3
     
-    for i in np.arange(j3_min+1,j3_max-1):
-        if i>=len(j3)-1: #needed if cutting j3. see the comment about cutting above.
-            break
+    for i in np.arange(j3_min,j3_max):
         if x_Np1[i]==0:
             continue
         wig_out[j3[i+1]]=x_Nm1[i]*wig_out[j3[i-1]]+x_N[i]*wig_out[j3[i]]
         wig_out[j3[i+1]]/=x_Np1[i]    
         
-#     norm=np.sum(wig_out**2*(2*np.arange(max(j3_max,j3_outmax))+1)) #since we start with correct wig values from j_min and j_min+1, norm should be ok.
-#     if norm>0:
-#         wig_out/=norm
-
+    Norm=np.sum((2*j3+1)*(wig_out[:j3_max]**2))
+    wig_out/=Norm**.5
+    
+    if np.sign(wig_out[j1+j2])!=np.sign((-1)**(j3_min)):
+        wig_out*=-1
+    
+#     if j3_min==0 and not np.isclose(Norm,1): #in this case we started recursion with exact values at j3_min and hence norm should be 1.
+#         print("Norm problem: ",j1,j2,j3_min,Norm,wig_out[:j3_max],)
+#     else:
+#         tt=wigner_3j(j1,j2,j3_min+1,m1,m2,m3) # This is only for testing
+#         tt=np.float(tt)
+#         if not np.isclose(wig_out[j3_min+1],tt):
+#             print('j3min+1 comparison problem: ',j1,j2,j3_min+1,tt,wig_out[j3_min+1])
+        
         
 #     xxi=np.random.randint(j3_min+1,j3_max-1) #randomly compare a value with sympy calculation
 #     wig_out2=wigner_3j(j1,j2,j3[xxi],m1,m2,m3)
@@ -548,7 +562,5 @@ def wig3j_recur(j1,j2,m1,m2,m3,j3_outmax=None):
 #         print('warning, random test failed', err)
 #         pass
 
-#     if not np.all(wig_out==0):
-#         wig_out/=np.sum(wig_out**2*(2*np.arange(max(j3_max,j3_outmax))+1))
-#     print(np.all(np.isclose(wig_out,wig_out2)))
+
     return wig_out[:j3_outmax]#.reshape(j3_outmax,1,1)

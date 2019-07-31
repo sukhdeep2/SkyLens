@@ -2,9 +2,9 @@ from wigner_functions import *
 import zarr
 import time
 lmax=3000 #1e4
-wlmax=5e2 #no reason to choose a small number here as most j3 will be computed.
-m1=-2
-m2=2
+wlmax=500 
+m1=2
+m2=-2
 m3=0
 
 lmax=np.int(lmax)
@@ -12,12 +12,12 @@ wlmax=np.int(wlmax)
 
 fname='temp/dask_wig3j_l{lmax}_w{wlmax}_{i}_reorder.zarr'
 
-fname=fname.format(i=m2,lmax=lmax,wlmax=wlmax)
+fname=fname.format(i=abs(m2),lmax=lmax,wlmax=wlmax)
 print('will save to ',fname)
 
 lmax+=1
 wlmax+=1
-ncpu=8
+ncpu=12
 l_step=100 #not used with dask
 w_l=np.arange(wlmax)
 l=np.arange(lmax)
@@ -50,7 +50,7 @@ def wig3j_recur_2d(j1b,j2b,m1,m2,m3,j3_outmax,step,z1_out):
     out_ij=pool.map(funct,j1s,chunksize=1)
     pool.close()
     t2=time.time()
-    print('pool done ',j1b,j2b,t2-t1)
+    #print('pool done ',j1b,j2b,t2-t1)
 
     for j1 in np.arange(len(j1s)):
         for j2 in np.arange(len(j2s)):
@@ -71,14 +71,15 @@ def wig3j_recur_2d(j1b,j2b,m1,m2,m3,j3_outmax,step,z1_out):
 t0=time.time()
 for lb1 in lb:
     ww_out={}
+    t1=time.time()
     for lb2 in lb:
         if lb2<lb1: #we exploit j1-j2 symmetry and hence only compute for j2>=j1
             continue
         if np.absolute(lb2-lb1-l_step-1)>wlmax: #given j1-j2, there is a min j3 for non-zero values. If it falls outside the required j3 range, nothing to compute.
             continue
-        print('doing ',lb1,lb2, 'step= ',l_step)
-        t1=time.time()
+        #print('doing ',lb1,lb2, 'step= ',l_step)
         ww_out[lb2]=wig3j_recur_2d(lb1,lb2,m1,m2,m3,wlmax,l_step,z1)
     t2=time.time()
     print('done',lb1,t2-t1)
+t2=time.time()
 print('done all',t2-t0)

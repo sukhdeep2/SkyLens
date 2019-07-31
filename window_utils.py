@@ -132,12 +132,12 @@ class window_utils():
         self.m_s=np.sort(np.unique(m_s))
         
 #         self.wig_DB=h5py.File(wig_file, 'r')
-        fname={0: 'temp/dask_wig3j_l5000_w500_{m}_asym50.zarr'}
+        fname={0: 'temp/dask_wig3j_l3000_w500_{m}_reorder.zarr'}
         fname[2]='temp/dask_wig3j_l3000_w500_{m}_reorder.zarr'
         for m in self.m_s:
 #             self.wig_3j[m]=Wigner3j_parallel( m, -m, 0, self.l, self.l, self.window_l)
 #             self.wig_3j[m]=self.wig_DB[str(m)]
-            self.wig_3j[m]=zarr.open(fname[m].format(m=m))
+            self.wig_3j[m]=zarr.open(fname[m].format(m=m),mode='r')
         
         nl=len(self.l)
         
