@@ -33,17 +33,13 @@ class cov_3X2():
                 f_sky=None,l_bins=None,bin_cl=False,#pseudo_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 corrs=[('shear','shear')]):
+        
         self.logger=logger
-        self.cov_SSC_nobin={}
         if logger is None:
-            self.logger=logging.getLogger()
+            self.logger=logging.getLogger() #not really being used right now
             self.logger.setLevel(level=logging.DEBUG)
             logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s',
                                 level=logging.DEBUG, datefmt='%I:%M:%S')
-            # format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-            # ch = logging.StreamHandler(sys.stdout)
-            # ch.setFormatter(format)
-            # self.logger.addHandler(ch)
 
         self.do_cov=do_cov
         self.SSV_cov=SSV_cov
@@ -52,7 +48,6 @@ class cov_3X2():
         self.l=l
         self.do_xi=do_xi
         self.corrs=corrs
-        # self.l_cut_jnu=None
 
         self.window_lmax=30 if window_lmax is None else window_lmax
         self.window_l=np.arange(self.window_lmax+1)
@@ -83,7 +78,6 @@ class cov_3X2():
         self.cov_utils=cov_utils
         if cov_utils is None:
             self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,
-                                            #l_cut_jnu=self.l_cut_jnu,
                                             do_xi=do_xi,
                                             do_sample_variance=do_sample_variance,
                                             use_window=use_window,

@@ -16,18 +16,17 @@ from dask.threaded import get
 import time
 from multiprocessing import Pool,cpu_count
 
-
-
 class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,corrs=None,m1_m2s=None,use_window=None,f_sky=None,
                 do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,HT=None,xi_bin_utils=None,do_xi=False,
-                store_win=False,Win=None):
+                store_win=False,Win=None,wigner_files=None):
         self.Win=Win
+        self.wigner_files=wigner_files
         self.wig_3j=None
         self.window_lmax=window_lmax
         self.window_l=window_l
         self.l=l
-        self.HT=HT
+        self.HT=HT #for correlation windows
         self.corrs=corrs
         self.m1_m2s=m1_m2s
         self.use_window=use_window
@@ -40,7 +39,6 @@ class window_utils():
         self.z_bins=z_bins   
         self.f_sky=f_sky
         self.store_win=store_win
-
         self.set_wig3j()
         
 #         if self.Win is None:
@@ -52,45 +50,6 @@ class window_utils():
         
 #         if self.store_win:
 #             self.Win=self.store_win_func(Win=self.Win,corrs=self.corrs,corr_indxs=self.corr_indxs)
-
-    def coupling_matrix(self,win,wig_3j_1,wig_3j_2,W_pm=0):
-        #need to add E/B things
-        return np.dot(wig_3j_1*wig_3j_2,win*(2*self.window_l+1)   )/4./np.pi #FIXME: check the order of division by l.
-
-    def coupling_matrix_large(self,win,m1m2,wig_3j_2,mf_pm,lm=None,W_pm=0): 
-        nl=len(self.l)
-#         M=np.zeros((nl,nl))
-#         return M
-
-        nwl=len(self.window_l)
-        step=self.step
-        
-        m1m2=np.sort(m1m2)
-
-        t1=time.time()
-
-        wig=wig_3j_2['w2']#[str(m1m2[0])+str(m1m2[1])] #[lm]#.compute()
-
-        t2=time.time()
-        mf=1
-#         mf=sparse.COO(np.atleast_1d([1]))
-        if W_pm!=0:
-            if W_pm==2: #W_+
-                mf=mf_pm['mf_p']
-            if W_pm==-2: #W_-
-#                 mf=mf_pm['mf_n']
-                mf=~mf_pm['mf_p'] # *not* when written as bool. This is only needed few times, 
-
-        t3=time.time()        
-
-        t4=time.time()
-        #M[lm:lm+step,:]
-        M=np.einsum('ijk,i->jk',wig.todense()*mf, win*(2*self.window_l+1), optimize=True )/4./np.pi #FIXME: check the order of division by l.
-#         M=np.zeros((min(nl,step),nl))
-#             Mi=np.einsum('ijk,i->jk',wig, win*(2*self.window_l+1), optimize=True )/4./np.pi #FIXME: check the order of division by l.
-#         lm+=step
-        t5=time.time()
-        return M
 
     def set_wig3j_step_multiplied(self,m1=0,m2=0,lm=None,step=10):
         wig_temp={}
@@ -114,8 +73,8 @@ class window_utils():
 
         out={}
         out['mf_p']=np.int8((1.+mf)/2.).astype('bool') #memory hog... 
-                              #bool doesn't help, as it is also byte size in numpy. This should be ok for now. 
-                                #however, then we donot need to compute mf_n, as it is simply a 0-1 flip or a not when written as bool
+                              #bool doesn't help in itself, as it is also byte size in numpy.
+                                #however, then we donot need to store mf_n, as it is simply a 0-1 flip or "not" when written as bool
 #             print(np.array_equal(out['mf_p'], out['mf_p'].astype(bool)) ) #check if array is 0,1
 
 #         out['mf_n']=np.int8((1.-mf)/2.) #memory hog
@@ -123,7 +82,7 @@ class window_utils():
 
 
     
-    def set_wig3j(self,wig_file='temp/wigner_test.h5',step=None):
+    def set_wig3j(self,step=None):
         self.wig_3j={}
         if not self.use_window:
             return
@@ -132,12 +91,16 @@ class window_utils():
         self.m_s=np.sort(np.unique(m_s))
         
 #         self.wig_DB=h5py.File(wig_file, 'r')
-        fname={0: 'temp/dask_wig3j_l3000_w500_{m}_reorder.zarr'}
-        fname[2]='temp/dask_wig3j_l3000_w500_{m}_reorder.zarr'
+        if self.wigner_files is None:
+            self.wigner_files={}
+#             self.wigner_files[0]= 'temp/dask_wig3j_l5000_w500_0_asym50.zarr' #
+            self.wigner_files[0]= 'temp/dask_wig3j_l3000_w500_0_reorder.zarr'
+            self.wigner_files[2]= 'temp/dask_wig3j_l3000_w500_2_reorder.zarr'
+        
+        print('wigner_files:',self.wigner_files)
+
         for m in self.m_s:
-#             self.wig_3j[m]=Wigner3j_parallel( m, -m, 0, self.l, self.l, self.window_l)
-#             self.wig_3j[m]=self.wig_DB[str(m)]
-            self.wig_3j[m]=zarr.open(fname[m].format(m=m),mode='r')
+            self.wig_3j[m]=zarr.open(self.wigner_files[m],mode='r')
         
         nl=len(self.l)
         
@@ -173,6 +136,36 @@ class window_utils():
         print('wigner done',self.wig_3j.keys())
 
 
+    def coupling_matrix(self,win,wig_3j_1,wig_3j_2,W_pm=0):
+        return np.dot(wig_3j_1*wig_3j_2,win*(2*self.window_l+1)   )/4./np.pi #FIXME: check the order of division by l.
+
+    def coupling_matrix_large(self,win,m1m2,wig_3j_2,mf_pm,lm=None,W_pm=0): 
+        nl=len(self.l)
+
+        nwl=len(self.window_l)
+        step=self.step
+        
+        m1m2=np.sort(m1m2)
+
+        t1=time.time()
+
+        wig=wig_3j_2['w2']#[str(m1m2[0])+str(m1m2[1])] #[lm]#.compute()
+
+        t2=time.time()
+        mf=1
+        if W_pm!=0:
+            if W_pm==2: #W_+
+                mf=mf_pm['mf_p']
+            if W_pm==-2: #W_-
+#                 mf=mf_pm['mf_n']
+                mf=~mf_pm['mf_p'] # *not* when written as bool. This is only needed few times, 
+
+        #M[lm:lm+step,:]
+        M=np.einsum('ijk,i->jk',wig.todense()*mf, win*(2*self.window_l+1), optimize=True )/4./np.pi #FIXME: check the order of division by l.
+        return M
+
+ 
+       
     def multiply_window(self,win1,win2):
         W=win1*win2
         x=np.logical_or(win1==hp.UNSEEN, win2==hp.UNSEEN)
@@ -214,16 +207,13 @@ class window_utils():
         if lm==0:
             win2=win
         win2['M'][lm]=self.coupling_matrix_large(win['cl'], win['m1m2'],wig_3j_2=wig_3j_2,mf_pm=mf_pm,lm=lm,W_pm=win['W_pm'])
-#         win2['M'][lm]=np.zeros((min(self.step,len(self.l)), len(self.l)))
         
         if win['corr']==('shear','shear') and win['indxs'][0]==win['indxs'][1]:
-#             win2['M_B']={lm:np.zeros((min(self.step,len(self.l)), len(self.l)))}
             win2['M_B']={lm:self.coupling_matrix_large(win['cl'], win['m1m2'], wig_3j_2,mf_pm=mf_pm,lm=lm,W_pm=-2)}
-                #Note that this matrix leads to pseudo cl, which differs by factor of f_sky from true cl
             
         return win2
 
-    def return_dict_cl(self,result,corrs):
+    def return_dict_cl(self,result,corrs): #combine partial matrices
         dic={}
         nl=len(self.l)
         
@@ -259,12 +249,13 @@ class window_utils():
 
         return dic
 
-    def cov_m1m2s(self,corr): #when spins are not same, we set them to 0. Should be ok for l>~50 ish
+    def cov_m1m2s(self,corr): #when spins are not same, we set them to 0. Expressions are not well defined in this case. Should be ok for l>~50 ish
             m1m2=np.absolute(self.m1_m2s[corr]).flatten()
             if m1m2[0]==m1m2[1]:
                 return m1m2[0]
             else:
                 return 0
+            
     def get_window_power_cov(self,corr1=None,corr2=None,indxs1=None,indxs2=None):
         win={}
         corr=corr1+corr2

@@ -1,8 +1,8 @@
 from wigner_functions import *
 import zarr
 import time
-lmax=3000 #1e4
-wlmax=500 
+lmax=6500 #1e4
+wlmax=1100 
 m1=0
 m2=0
 m3=0

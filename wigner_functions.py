@@ -64,7 +64,7 @@ def wigner_d_parallel(m1,m2,theta,l,ncpu=None,l_use_bessel=1.e4):
 def log_factorial(n):
     return loggamma(n+1)
 
-def Wigner3j(m_1, m_2, m_3,j_1, j_2, j_3):
+def Wigner3j(m_1, m_2, m_3,j_1, j_2, j_3): #Failed attempt to convert sympy function into numpy. Doesnot work at large ell because of numerical errors
     """Calculate the Wigner 3j symbol `Wigner3j(j_1,j_2,j_3,m_1,m_2,m_3)`
     *Has problems due to rounding errors when numbers get large.*
     This function is inspired from implementation in
