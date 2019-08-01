@@ -34,11 +34,11 @@ j3=np.arange(wlmax)
     
 from multiprocessing import Pool
 
-def wig3j_recur_2d(j1b,m1,m2,m3,j3_outmax,step,z1_out,j2b):
+def wig3j_recur_2d(j1b,m1,m2,m3,j3_outmax,step,j2b):
     if j2b<j1b: #we exploit j1-j2 symmetry and hence only compute for j2>=j1
-        return 0
+        return [j1b,j2b,0]
     if np.absolute(j2b-j1b-step-1)>j3_outmax: #given j1-j2, there is a min j3 for non-zero values. If it falls outside the required j3 range, nothing to compute
-        return 0
+        return [j1b,j2b,0]
     #out= np.zeros((j3_outmax,min(step,lmax-j1b),min(step,lmax-j2b)))
 
     j1=np.arange(j1b,min(lmax,j1b+step))
@@ -49,27 +49,42 @@ def wig3j_recur_2d(j1b,m1,m2,m3,j3_outmax,step,z1_out,j2b):
     j3s=j3.reshape(len(j3),1,1)
 
     out=wigner_3j_000(j1s,j2s,j3s,0,0,0)
-                    
-    z1[:,j1b:j1b+step,j2b:j2b+step]+=out
     
-    for j1i in np.arange(len(j1)):
-        for j2i in np.arange(len(j2)):
-            if j2[j2i]==j1[j1i]:
-                out[:,j1i,j2i]*=0 #don't want to add diagonal twice below.
-    z1[:,j2b:j2b+step,j1b:j1b+step]+=out.transpose(0,2,1) #exploit j1-j2 symmetry
     t3=time.time()
     print('done ',j1b,j2b,t3-t1)
-    return 0
+    return [j1b,j2b,j1,j2,out]
 
 t0=time.time()
+step=l_step
 for lb1 in lb:
     ww_out={}
     t1=time.time()
-    funct=partial(wig3j_recur_2d,lb1,m1,m2,m3,wlmax,l_step,z1)
+    funct=partial(wig3j_recur_2d,lb1,m1,m2,m3,wlmax,l_step)
     pool=Pool(ncpu)
     out_ij=pool.map(funct,lb,chunksize=1)
     pool.close()
-    
+    i=0
+    for lb2 in lb:
+        if lb2<lb1:
+            i+=1
+            continue
+        if np.absolute(lb2-lb1-step-1)>wlmax:
+            i+=1
+            continue
+        out=out_ij[i]
+        j1b=out[0]
+        j2b=out[1]
+        #print(lb2,lb1,j1b,j2b)        
+        j1=out[2]
+        j2=out[3]
+        out=out[4]
+        z1[:,lb1:lb1+step,lb2:lb2+step]=out #cannot write in parallel, race conditions
+        #for j1i in np.arange(len(j1)):
+         #   for j2i in np.arange(len(j2)):
+          #      if j2[j2i]==j1[j1i]:
+           #         out[:,j1i,j2i]*=0 #don't want to add diagonal twice below.
+        z1[:,lb2:lb2+step,lb1:lb1+step]=out.transpose(0,2,1) #exploit j1-j2 symmetry
+        i+=1
     t2=time.time()
     print('done',lb1,t2-t1)
 t2=time.time()
