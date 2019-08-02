@@ -238,7 +238,7 @@ class cov_3X2():
         cl=np.dot(cls.T*sc,dchi)
                 # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
         return cl
-
+    
     def cl_cov(self,cls=None, zs_indx=[],tracers=[],Win=None):
         """
             Computes the covariance between any two tomographic power spectra.
@@ -308,8 +308,12 @@ class cov_3X2():
 
         if self.SSV_cov :
             clz=self.Ang_PS.clz
-
-            sigma_win=self.cov_utils.sigma_win
+            Win_cl=None
+            Om_w=None
+            if self.use_window:
+                Win_cl=Win['cov'][tracers][zs_indx]['mask_comb_cl']
+                Om_w=Win['cov'][tracers][zs_indx]['Om_w']
+            sigma_win=self.cov_utils.sigma_win_calc(cls_lin=clz['cls_lin'],Win_cl=Win_cl,Om_w=Om_w)
 
             clr=self.Ang_PS.clz['clsR']
             if self.tidal_SSV_cov:
@@ -362,12 +366,13 @@ class cov_3X2():
 
         for (i,j) in self.corr_indxs[corr]+self.cov_indxs:
             clij=cl_compute_dict[(i,j)]
-            if self.use_window:
-                    clij=clij@Win['cl'][corr][(i,j)]['M'] #pseudo cl
-#                     clij=clij@Win[corr[::-1]][(j,i)]['M'] #pseudo cl
+#             if self.use_window:
+#                     clij=clij@Win['cl'][corr][(i,j)]['M'] #pseudo cl.. now passed as input
             cl_b[(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
         return cl_b
-
+    
+    def calc_pseudo_cl(self,cl,Win,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear')):
+        return cl@Win['cl'][corr][(zs1_indx,zs2_indx)]['M'] #pseudo cl
 
     def cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
                 corrs=None,bias_kwargs={},bias_func=None,stack_corr_indxs=None):
@@ -422,22 +427,28 @@ class cov_3X2():
 
         out={}
         cl={}
+        pcl={} #pseudo_cl
         cov={}
         cl_b={}
         for corr in corrs2:
             corr2=corr[::-1]
             cl[corr]={}
             cl[corr2]={}
+            pcl[corr]={}
+            pcl[corr2]={}
             corr_indxs=self.corr_indxs[(corr[0],corr[1])]#+self.cov_indxs
             for (i,j) in corr_indxs:
                 # out[(i,j)]
                 cl[corr][(i,j)]=delayed(self.calc_cl)(zs1_indx=i,zs2_indx=j,corr=corr)
-
+                if self.use_window:
+                    pcl[corr][(i,j)]=delayed(self.calc_pseudo_cl)(cl[corr][(i,j)],Win=self.Win.Win,zs1_indx=i,zs2_indx=j,corr=corr)
+                else:
+                    pcl[corr][(i,j)]=cl[corr][(i,j)]
                 cl[corr2][(j,i)]=cl[corr][(i,j)]#useful in gaussian covariance calculation.
+                pcl[corr2][(j,i)]=pcl[corr][(i,j)]#useful in gaussian covariance calculation.
         for corr in corrs:
-            cl_b[corr]=delayed(self.combine_cl_tomo)(cl[corr],corr=corr,Win=self.Win.Win)
-#             cl_b[corr2]=delayed(self.combine_cl_tomo)(cl[corr2],corr=corr2,Win=self.Win.Win)
-            # cl_b[corr2]=cl_b[corr]
+            cl_b[corr]=delayed(self.combine_cl_tomo)(pcl[corr],corr=corr,Win=self.Win.Win) #bin only pseudo-cl
+            
         print('cl dict done')
         if self.do_cov:
             start_j=0
@@ -465,7 +476,7 @@ class cov_3X2():
 
         out_stack=delayed(self.stack_dat)({'cov':cov,'cl_b':cl_b,'est':'cl_b'},corrs=corrs,
                                           corr_indxs=stack_corr_indxs)
-        return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl}
+        return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl,'pseudo_cl':pcl}
 
     def xi_cov(self,cov_cl={},m1_m2=None,m1_m2_cross=None,clr=None,clrk=None,indxs_1=[],
                indxs_2=[],corr1=[],corr2=[], Win=None):
@@ -506,10 +517,10 @@ class cov_3X2():
                 SN1324*=-1
                 SN1423*=-1
 
-        Norm=self.cov_utils.Om_W #FIXME: Make sure this is correct
+        Norm=np.pi*4
 
 #         cov_cl_G=cov_cl['G']+SN1423+SN1324
-        if self.use_window:
+        if self.use_window: #FIXME: This looks bit wrong. Check
             cov_cl_G=(cov_cl['G1324']+SN1324)+(cov_cl['G1423']+SN1423)
         else:
             cov_cl_G=(cov_cl['G1324']+SN1324)*fs1324/fs0+(cov_cl['G1423']+SN1423)*fs1423/fs0
@@ -520,7 +531,8 @@ class cov_3X2():
         th0,cov_xi['G']=self.HT.projected_covariance2(l_cl=self.l,m1_m2=m1_m2,
                                                       m1_m2_cross=m1_m2_cross,
                                                       cl_cov=cov_cl_G)
-        if self.use_window:
+        
+        if self.use_window: #This is an appproximation to account for window. Correct thing is pseudo cl covariance but it is expensive to very high l needed for proper wigner transforms.
             cov_xi['G']*=Win['cov'][corr1+corr2][indxs_1+indxs_2]['xi1324']
                 #Fixme: Need both windows, 1324 and 1423
 
@@ -553,17 +565,15 @@ class cov_3X2():
         return cov_xi
 
     def get_xi(self,cls={},m1_m2=[],corr=None,indxs=None,Win=None):
-        cl=cls[corr][indxs]
-#         if self.use_window:
-#             cl=cls[corr][indxs]@Win[corr][indxs]['M']
+        cl=cls[corr][indxs] #this should be pseudo-cl when using window
         th,xi=self.HT.projected_correlation(l_cl=self.l,m1_m2=m1_m2,cl=cl)
-        if self.use_window:
+        if self.use_window: #This is an appproximation to account for window. Correct thing is pseudo cl but it is expensive to very high l needed for proper wigner transforms.
             xi=xi*Win['cl'][corr][indxs]['xi']
 
         xi_b=self.binning.bin_1d(xi=xi,bin_utils=self.xi_bin_utils[m1_m2])
 
         if self.use_window:
-            xi_b/=(Win['cl'][corr][indxs]['xi_b'])
+            xi_b/=(Win['cl'][corr][indxs]['xi_b']) 
         return xi_b
 
     def xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
@@ -589,7 +599,7 @@ class cov_3X2():
                             pk_params=pk_params,pk_func=pk_func,
                             corrs=corrs)
 
-        cl=cls_tomo_nu['cl']
+        cl=cls_tomo_nu['cl'] #FIXME: Strictly correct thing to use is pseudo-cl, but it can be expensive to compute.
         cov_xi={}
         xi={}
         out={}

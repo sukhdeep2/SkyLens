@@ -73,7 +73,7 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
     l0=np.arange(0,512,dtype='int')
     corr=('galaxy','galaxy')
     kappa0=cov_3X2(zg_bins=zs_bins,do_cov=False,bin_cl=False,l_bins=None,l=l0, zs_bins=None,use_window=False,
-                   corrs=[corr])
+                   corrs=[corr],f_sky=f_sky)
     npix0=hp.nside2npix(nside)
 
     npix=np.int(npix0*f_sky)

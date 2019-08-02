@@ -171,6 +171,19 @@ class window_utils():
         x=np.logical_or(win1==hp.UNSEEN, win2==hp.UNSEEN)
         W[x]=hp.UNSEEN
         return W
+    
+    def mask_comb(self,win1,win2,win3,win4): #for covariance, specially SSC
+        W=win1*win2*win3*win4
+        W/=W
+        x1=np.logical_or(win1==hp.UNSEEN, win2==hp.UNSEEN)
+        x2=np.logical_or(win3==hp.UNSEEN, win4==hp.UNSEEN)
+        x=x=np.logical_or(x1,x2)
+        W[x]=hp.UNSEEN
+        fsky=(~x).mean()
+        print('mask-comb fsky:',fsky)
+        return fsky,W.astype('int16')
+
+
 
     def get_window_power_cl(self,corr={},indxs={}):
 #         print('cl window doing',corr,indxs)
@@ -322,6 +335,14 @@ class window_utils():
                                  lmax=self.window_lmax
                             )
         
+        win['Om_w'],mask1324=self.mask_comb(z_bin1['window'],z_bin2['window'],
+                                z_bin3['window'],z_bin4['window']
+                                     )
+        win['Om_w']*=4*np.pi
+        win['mask_comb_cl']=hp.anafast(map1=mask1324,
+                                 map2=mask1324,
+                                 lmax=self.window_lmax
+                            )
         win['M1324']={wp:{} for wp in W_pm[1324]}
         win['M1423']={wp:{} for wp in W_pm[1423]}
             
