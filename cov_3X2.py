@@ -32,7 +32,7 @@ class cov_3X2():
                 use_window=True,window_lmax=None,store_win=False,Win=None,
                 f_sky=None,l_bins=None,bin_cl=False,#pseudo_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
-                corrs=[('shear','shear')]):
+                corrs=[('shear','shear')],wigner_files=None):
         
         self.logger=logger
         if logger is None:
@@ -160,7 +160,7 @@ class cov_3X2():
                         use_window=use_window,do_cov=self.do_cov,cov_utils=self.cov_utils,
                         f_sky=f_sky,corr_indxs=self.corr_indxs,z_bins=self.z_bins,
                         window_lmax=self.window_lmax,Win=Win,HT=self.HT,do_xi=self.do_xi,
-                        xi_bin_utils=self.xi_bin_utils,store_win=store_win)
+                        xi_bin_utils=self.xi_bin_utils,store_win=store_win,wigner_files=wigner_files)
         if self.Tri_cov:
             self.CTR=cov_matter_tri(k=self.l)
 
