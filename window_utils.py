@@ -94,8 +94,8 @@ class window_utils():
         if self.wigner_files is None:
             self.wigner_files={}
 #             self.wigner_files[0]= 'temp/dask_wig3j_l5000_w500_0_asym50.zarr' #
-            self.wigner_files[0]= 'temp/dask_wig3j_l3000_w500_0_reorder.zarr'
-            self.wigner_files[2]= 'temp/dask_wig3j_l3000_w500_2_reorder.zarr'
+            self.wigner_files[0]= 'temp/dask_wig3j_l6500_w1100_0_reorder.zarr'
+            self.wigner_files[2]= 'temp/dask_wig3j_l6500_w1100_2_reorder.zarr'
         
         print('wigner_files:',self.wigner_files)
 
@@ -172,12 +172,10 @@ class window_utils():
         W[x]=hp.UNSEEN
         return W
     
-    def mask_comb(self,win1,win2,win3,win4): #for covariance, specially SSC
-        W=win1*win2*win3*win4
+    def mask_comb(self,win1,win2): #for covariance, specially SSC
+        W=win1*win2
         W/=W
-        x1=np.logical_or(win1==hp.UNSEEN, win2==hp.UNSEEN)
-        x2=np.logical_or(win3==hp.UNSEEN, win4==hp.UNSEEN)
-        x=x=np.logical_or(x1,x2)
+        x=np.logical_or(win1==hp.UNSEEN, win2==hp.UNSEEN)
         W[x]=hp.UNSEEN
         fsky=(~x).mean()
         print('mask-comb fsky:',fsky)
@@ -335,14 +333,18 @@ class window_utils():
                                  lmax=self.window_lmax
                             )
         
-        win['Om_w'],mask1324=self.mask_comb(z_bin1['window'],z_bin2['window'],
+        win['f_sky12'],mask12=self.mask_comb(z_bin1['window'],z_bin2['window'],
+                                     )#For SSC
+        win['f_sky34'],mask34=self.mask_comb(
                                 z_bin3['window'],z_bin4['window']
                                      )
-        win['Om_w']*=4*np.pi
-        win['mask_comb_cl']=hp.anafast(map1=mask1324,
-                                 map2=mask1324,
+        win['mask_comb_cl']=hp.anafast(map1=mask12,
+                                 map2=mask34,
                                  lmax=self.window_lmax
-                            )
+                            ) #based on 4.34 of https://arxiv.org/pdf/1711.07467.pdf
+        win['Om_w12']=win['f_sky12']*4*np.pi
+        win['Om_w34']=win['f_sky34']*4*np.pi
+        
         win['M1324']={wp:{} for wp in W_pm[1324]}
         win['M1423']={wp:{} for wp in W_pm[1423]}
             

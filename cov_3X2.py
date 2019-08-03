@@ -309,11 +309,14 @@ class cov_3X2():
         if self.SSV_cov :
             clz=self.Ang_PS.clz
             Win_cl=None
-            Om_w=None
+            Om_w12=None
+            Om_w34=None
+            fs0=self.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]] * self.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
             if self.use_window:
                 Win_cl=Win['cov'][tracers][zs_indx]['mask_comb_cl']
-                Om_w=Win['cov'][tracers][zs_indx]['Om_w']
-            sigma_win=self.cov_utils.sigma_win_calc(cls_lin=clz['cls_lin'],Win_cl=Win_cl,Om_w=Om_w)
+                Om_w12=Win['cov'][tracers][zs_indx]['Om_w12']
+                Om_w34=Win['cov'][tracers][zs_indx]['Om_w34']
+            sigma_win=self.cov_utils.sigma_win_calc(cls_lin=clz['cls_lin'],Win_cl=Win_cl,Om_w12=Om_w12,Om_w34=Om_w34)
 
             clr=self.Ang_PS.clz['clsR']
             if self.tidal_SSV_cov:

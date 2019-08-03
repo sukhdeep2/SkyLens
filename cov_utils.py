@@ -59,20 +59,22 @@ class Covariance_utils():
         l_th=l*theta_win
         Win0=2*jn(1,l_th)/l_th
         Win0=np.nan_to_num(Win0)
-        Win0*=self.f_sky #self.Om_W  #FIXME???? Missing 4pi? Using Om_w doesnot match healpix calculation.
+        Win0=Win0**2 #p-Cl equivalent
+#         Win0*=self.f_sky  #FIXME???? Missing 4pi? Using Om_w doesnot match healpix calculation.
         
         win_i=interp1d(l,Win0,bounds_error=False,fill_value=0)
         self.Win=win_i(self.window_l) #this will be useful for SSV
         self.Win0=win_i(self.l)
         return 0
 
-    def sigma_win_calc(self,cls_lin,Win_cl=None,Om_w=None):
+    def sigma_win_calc(self,cls_lin,Win_cl=None,Om_w12=None,Om_w34=None):
         if Win_cl is None:
             Win_cl=self.Win
-            Om_w=self.Om_W
+            Om_w12=self.Om_W
+            Om_w34=self.Om_W
             
-        sigma_win=np.dot(Win_cl**2*np.gradient(self.window_l)*self.window_l,cls_lin.T)
-        sigma_win/=Om_w**2
+        sigma_win=np.dot(Win_cl*np.gradient(self.window_l)*(2*self.window_l+1),cls_lin.T)
+        sigma_win/=Om_w12*Om_w34
         return sigma_win
 
     def corr_matrix(self,cov=[]):
