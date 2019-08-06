@@ -13,13 +13,13 @@ from dask.distributed import Client,get_client
 import h5py
 import zarr
 from dask.threaded import get
-import time
+import time,gc
 from multiprocessing import Pool,cpu_count
 
 class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,corrs=None,m1_m2s=None,use_window=None,f_sky=None,
                 do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,HT=None,xi_bin_utils=None,do_xi=False,
-                store_win=False,Win=None,wigner_files=None):
+                store_win=False,Win=None,wigner_files=None,step=None):
         self.Win=Win
         self.wigner_files=wigner_files
         self.wig_3j=None
@@ -39,6 +39,16 @@ class window_utils():
         self.z_bins=z_bins   
         self.f_sky=f_sky
         self.store_win=store_win
+        
+        nl=len(self.l)
+        nwl=len(self.window_l)*1.0
+        
+        self.step=step
+        if step is None:
+            self.step=np.int32(100.*((3000./nl)**2)*(1000./nwl)) #small step is useful for lower memory load
+            self.step=min(self.step,nl+1)
+        self.lms=np.arange(nl,step=self.step)
+        print('Win gen: step size',self.step)
         self.set_wig3j()
         
 #         if self.Win is None:
@@ -51,26 +61,26 @@ class window_utils():
 #         if self.store_win:
 #             self.Win=self.store_win_func(Win=self.Win,corrs=self.corrs,corr_indxs=self.corr_indxs)
 
-    def set_wig3j_step_multiplied(self,m1=0,m2=0,lm=None,step=10):
-        wig_temp={}
-        
-        wig_temp[m1]=self.wig_3j[m1].oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l)]
-
-        if m1==m2:
-            wig_temp[m2]=wig_temp[m1]
-        else:
-            wig_temp[m2]=self.wig_3j[m2].oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l)]
-            
-        out={'w2':sparse.COO(wig_temp[m1]*wig_temp[m2])} #sparse leads to small hit in in time when doing dot products but helps with the memory overall.
-        del wig_temp
+    def wig3j_step_read(self,m=0,lm=None):
+        t1=time.time()      
+        step=self.step
+        out=self.wig_3j[m].oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l)]
+        out=out.transpose(1,2,0)
+        t2=time.time()      
         return out
-     
-    def set_window_pm_step(self,lm=None,step=10):
+
+    def set_wig3j_step_multiplied(self,wig1,wig2):
+#         out={'w2':sparse.COO(wig_temp[m1]*wig_temp[m2])} #sparse leads to small hit in in time when doing dot products but helps with the memory overall.
+        out={'w2':wig1*wig2.astype('float64')} #numpy dot appears to run faster with 64bit ... ????
+        return out
+
+
+    def set_window_pm_step(self,lm=None):
         li1=np.int32(self.window_l).reshape(len(self.window_l),1,1)
         li3=np.int32(self.l).reshape(1,1,len(self.l))
-        li2=np.int32(self.l[lm:lm+step]).reshape(1,len(self.l[lm:lm+step]),1)
+        li2=np.int32(self.l[lm:lm+self.step]).reshape(1,len(self.l[lm:lm+self.step]),1)
         mf=(-1)**(li1+li2+li3)
-
+        mf=mf.transpose(1,2,0)
         out={}
         out['mf_p']=np.int8((1.+mf)/2.).astype('bool') #memory hog... 
                               #bool doesn't help in itself, as it is also byte size in numpy.
@@ -78,11 +88,12 @@ class window_utils():
 #             print(np.array_equal(out['mf_p'], out['mf_p'].astype(bool)) ) #check if array is 0,1
 
 #         out['mf_n']=np.int8((1.-mf)/2.) #memory hog
+        del mf
         return out
 
 
     
-    def set_wig3j(self,step=None):
+    def set_wig3j(self):
         self.wig_3j={}
         if not self.use_window:
             return
@@ -101,33 +112,28 @@ class window_utils():
 
         for m in self.m_s:
             self.wig_3j[m]=zarr.open(self.wigner_files[m],mode='r')
-        
-        nl=len(self.l)
-        
-        nwl=len(self.window_l)*1.0
-        if step is None:
-            step=np.int32(500.*(1000./nl)*(100./nwl)) #small step is useful for lower memory load
-        self.step=step
-        self.lms=np.arange(nl,step=step)
-        
+                
         self.wig_3j_2={}
+        self.wig_3j_1={}
         self.mf_pm={}
         client=get_client()
         for lm in self.lms:
             self.wig_3j_2[lm]={}
+            self.wig_3j_1[lm]={m1: delayed(self.wig3j_step_read)(m=m1,lm=lm) for m1 in self.m_s}
             mi=0
             for m1 in self.m_s:
                 for m2 in self.m_s[mi:]:
-#                     self.wig_3j_2[str(m1)+str(m2)]={}              
-                    self.wig_3j_2[lm][str(m1)+str(m2)]=delayed(self.set_wig3j_step_multiplied)(m1=m1,m2=m2,lm=lm,step=self.step)
-            self.mf_pm[lm]=delayed(self.set_window_pm_step)(lm=lm,step=self.step)
-            self.wig_3j_2[lm]=client.compute(self.wig_3j_2[lm]) #computing here helps with memory. Otherwise sometimes there are multiple calls in parallel, not sure why.
-            self.mf_pm[lm]=client.compute(self.mf_pm[lm]) #computing here helps with memory. Otherwise sometimes there are multiple calls in parallel, not sure why.
-            mi+=1
+                    self.wig_3j_2[lm][str(m1)+str(m2)]=delayed(self.set_wig3j_step_multiplied)(self.wig_3j_1[lm][m1],self.wig_3j_1[lm][m2])
+                mi+=1
+            self.mf_pm[lm]=delayed(self.set_window_pm_step)(lm=lm)
+#             self.wig_3j_2[lm]=client.compute(self.wig_3j_2[lm]) #computing here helps with memory. Otherwise sometimes there are multiple calls in parallel, not sure why.
+#             self.mf_pm[lm]=client.compute(self.mf_pm[lm]) #computing here helps with memory. Otherwise sometimes there are multiple calls in parallel, not sure why.
+#             mi+=1
             
-        for lm in self.lms:
-            self.wig_3j_2[lm]=self.wig_3j_2[lm].result()
-            self.mf_pm[lm]=self.mf_pm[lm].result()
+# #         for lm in self.lms:
+#             self.wig_3j_2[lm]=self.wig_3j_2[lm].result()
+#             self.mf_pm[lm]=self.mf_pm[lm].result()
+#             gc.collect()
         
         self.wig_m1m2s={}
         for corr in self.corrs:
@@ -140,28 +146,26 @@ class window_utils():
         return np.dot(wig_3j_1*wig_3j_2,win*(2*self.window_l+1)   )/4./np.pi #FIXME: check the order of division by l.
 
     def coupling_matrix_large(self,win,m1m2,wig_3j_2,mf_pm,lm=None,W_pm=0): 
-        nl=len(self.l)
-
-        nwl=len(self.window_l)
-        step=self.step
         
-        m1m2=np.sort(m1m2)
-
+        wig=wig_3j_2['w2']
+#         mf=1
         t1=time.time()
-
-        wig=wig_3j_2['w2']#[str(m1m2[0])+str(m1m2[1])] #[lm]#.compute()
-
-        t2=time.time()
-        mf=1
         if W_pm!=0:
             if W_pm==2: #W_+
-                mf=mf_pm['mf_p']
+                mf=mf_pm['mf_p']#.astype('float64') #https://stackoverflow.com/questions/45479363/numpy-multiplying-large-arrays-with-dtype-int8-is-slow
             if W_pm==-2: #W_-
 #                 mf=mf_pm['mf_n']
-                mf=~mf_pm['mf_p'] # *not* when written as bool. This is only needed few times, 
+                mf=~mf_pm['mf_p']#.astype('float64') # *not* when written as bool. This is only needed few times, 
+            wig=wig*mf
+        
+                                                #M[lm:lm+step,:]  
+#         M=np.einsum('ijk,i->jk',wig.todense()*mf, win*(2*self.window_l+1), optimize=True )/4./np.pi 
+#         M=np.einsum('ijk,i->jk',wig*mf, win*(2*self.window_l+1), optimize=True )/4./np.pi
+        M=wig@(win*(2*self.window_l+1))
+        M/=4.*np.pi
+        t5=time.time()
+        print('coupling_matrix_large ',t5-t1,m1m2)
 
-        #M[lm:lm+step,:]
-        M=np.einsum('ijk,i->jk',wig.todense()*mf, win*(2*self.window_l+1), optimize=True )/4./np.pi #FIXME: check the order of division by l.
         return M
 
  
@@ -178,7 +182,6 @@ class window_utils():
         x=np.logical_or(win1==hp.UNSEEN, win2==hp.UNSEEN)
         W[x]=hp.UNSEEN
         fsky=(~x).mean()
-        print('mask-comb fsky:',fsky)
         return fsky,W.astype('int16')
 
 
@@ -428,28 +431,6 @@ class window_utils():
         self.Win_cl={corr+indx: delayed(self.get_window_power_cl)(corr,indx) for corr in corrs for indx in corr_indxs[corr]}
 #         self.Win_cl={corr+indx: self.get_window_power_cl(corr,indx) for corr in corrs for indx in corr_indxs[corr]}
         
-        self.Win_cl_lm={}
-        
-        for lm in self.lms:
-            self.Win_cl_lm[lm]={}
-            for k in self.Win_cl.keys():
-                corr=(k[0],k[1])
-                #                 if self.store_win:
-                #                   self.Win_cl_lm[lm][k]=self.get_cl_coupling_lm(self.Win_cl[k],lm,self.wig_3j_2[lm][self.wig_m1m2s[corr]])
-                self.Win_cl_lm[lm][k]=delayed(self.get_cl_coupling_lm)(self.Win_cl[k],lm,self.wig_3j_2[lm][self.wig_m1m2s[corr]],self.mf_pm[lm])
-#             if self.store_win:
-#                 self.Win_cl_lm[lm]=client.compute(self.Win_cl_lm[lm]).result()
-                
-                
-        self.Win_cl=delayed(self.return_dict_cl)(self.Win_cl_lm,corrs)
-        if self.store_win:
-            self.Win['cl']=client.compute(self.Win_cl).result()
-            
-        else:
-            self.Win['cl']=self.Win_cl
-                
-        print('Cl windows done, now to covariance')#,self.Win[('galaxy','galaxy')][(0,0)]['M'][0,0])       
-
         if self.do_cov:
             self.Win_cov={} 
             self.win_cov_tuple=None
@@ -480,9 +461,29 @@ class window_utils():
                                 self.win_cov_tuple=[(corr1,corr2,indx1,indx2)]
                             else:
                                 self.win_cov_tuple.append((corr1,corr2,indx1,indx2))
-                  
-            self.Win_cov_lm={}
-            for lm in self.lms:
+        
+        if self.store_win:
+            self.Win_cl=client.compute(self.Win_cl)
+            if self.do_cov:
+                self.Win_cov=client.compute(self.Win_cov)
+                self.Win_cov=self.Win_cov.result()
+            self.Win_cl=self.Win_cl.result()
+            print('got window cls, now to coupling matrices.')
+            
+        self.Win_cl_lm={}
+        self.Win_cov_lm={}
+        
+        for lm in self.lms:
+            t1=time.time()
+            self.Win_cl_lm[lm]={}
+            for k in self.Win_cl.keys():
+                corr=(k[0],k[1])
+                self.Win_cl_lm[lm][k]=delayed(self.get_cl_coupling_lm)(self.Win_cl[k],lm,self.wig_3j_2[lm][self.wig_m1m2s[corr]],self.mf_pm[lm])
+            if self.store_win:
+                self.Win_cl_lm[lm]=client.compute(self.Win_cl_lm[lm])#.result()
+                                
+            if self.do_cov:  
+#             for lm in self.lms:
                 self.Win_cov_lm[lm]={}
                 for k in self.Win_cov.keys():
                     corr=(k[0],k[1],k[2],k[3])
@@ -498,16 +499,40 @@ class window_utils():
 
                     self.Win_cov_lm[lm][k]=delayed(self.get_cov_coupling_lm)(self.Win_cov[k],lm,self.wig_3j_2[lm][m1m2s[1324]],self.wig_3j_2[lm][m1m2s[1423]],self.mf_pm[lm] )
                     
-#                 if self.store_win: #might help with memory
-#                     self.Win_cov_lm[lm]=client.compute(self.Win_cov_lm[lm]).result()
+                if self.store_win:
+                    self.Win_cov_lm[lm]=client.compute(self.Win_cov_lm[lm])#.result()
+            t3=time.time()
+            if self.store_win: 
+                self.Win_cl_lm[lm]=self.Win_cl_lm[lm].result()
+                self.Win_cov_lm[lm]=self.Win_cov_lm[lm].result()
+                t2=time.time()
+                print('done coupling submatrix ',lm, t2-t1,t3-t1)
+                del self.wig_3j_2[lm]
+                del self.mf_pm[lm]
+                gc.collect()
+                t3=time.time()
+
+                
+                
+                
+                
+        self.Win_cl=delayed(self.return_dict_cl)(self.Win_cl_lm,corrs)
+        if self.store_win:
+            self.Win['cl']=client.compute(self.Win_cl)#.result()
+        else:
+            self.Win['cl']=self.Win_cl
+                
+        if self.do_cov:
             self.Win_cov=delayed(self.return_dict_cov)(self.Win_cov_lm,self.win_cov_tuple)
             if self.store_win:
 #                 self.Win['cov']=self.Win_cov.compute() #apparently client.compute has better memeory manangement than simple compute https://distributed.dask.org/en/latest/memory.html
-                self.Win['cov']=client.compute(self.Win_cov).result()
+                self.Win['cov']=client.compute(self.Win_cov)#.result()
             else:
                 self.Win['cov']=self.Win_cov
                 
         if self.store_win:
+            self.Win['cov']=self.Win['cov'].result()
+            self.Win['cl']=self.Win['cl'].result()
             self.cleanup()
         return self.Win
 
