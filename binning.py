@@ -7,12 +7,15 @@ class binning():
                  j_nu=[0],prune_r=0,prune_log_space=True):
         pass
 
-    def bin_utils(self,r=[],r_bins=[],r_dim=2,wt=1,mat_dims=None):
+    def bin_utils(self,r=[],r_bins=[],r_dim=2,wt=1,mat_dims=None,wt_b=None,wt0=None):
         bu={}
         bu['bin_center']=0.5*(r_bins[1:]+r_bins[:-1])
         bu['n_bins']=len(r_bins)-1
         bu['bin_indx']=np.digitize(r,r_bins)-1
 
+        bu['wt_b']=wt_b #these two are used for constructing asymmetric binned coupling matrix. see bin_2d_coupling
+        bu['wt0']=wt0
+        
         binning_mat=np.zeros((len(r),bu['n_bins']))
         for i in np.arange(len(r)):
             if bu['bin_indx'][i]<0 or bu['bin_indx'][i]>=bu['n_bins']:
@@ -61,6 +64,19 @@ class binning():
         binning_mat=bin_utils['binning_mat']
         cov_b=np.dot(binning_mat.T, np.dot(cov*bin_utils['r_dr_m'][2],binning_mat) )
         cov_b/=bin_utils['norm_m'][2]
+        return cov_b
+    
+    def bin_2d_coupling(self,cov=[],bin_utils=None,wt_b=None,wt0=None): #asymmetric binning
+        binning_mat=bin_utils['binning_mat']
+        if wt_b is None:
+            wt_b=bin_utils['wt_b']
+        if wt0 is None:
+            wt0=bin_utils['wt0']
+        binning_mat2=wt0[:,None]*binning_mat*wt_b
+        rdr=bin_utils['r_dr']
+        binning_mat=binning_mat*rdr[:,None]/bin_utils['norm'][None,:]
+        cov_b=binning_mat.T@cov@binning_mat2
+#         cov_b/=bin_utils['norm_m'][1][:,None]
         return cov_b
 
     def bin_mat(self,r=[],mat=[],r_bins=[],r_dim=2,bin_utils=None):#works for cov and skewness

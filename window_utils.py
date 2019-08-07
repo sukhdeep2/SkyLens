@@ -58,8 +58,6 @@ class window_utils():
         if self.use_window:
             self.set_window(corrs=self.corrs,corr_indxs=self.corr_indxs)
         
-#         if self.store_win:
-#             self.Win=self.store_win_func(Win=self.Win,corrs=self.corrs,corr_indxs=self.corr_indxs)
 
     def wig3j_step_read(self,m=0,lm=None):
         t1=time.time()      
@@ -85,7 +83,8 @@ class window_utils():
         out['mf_p']=np.int8((1.+mf)/2.).astype('bool') #memory hog... 
                               #bool doesn't help in itself, as it is also byte size in numpy.
                                 #however, then we donot need to store mf_n, as it is simply a 0-1 flip or "not" when written as bool
-#             print(np.array_equal(out['mf_p'], out['mf_p'].astype(bool)) ) #check if array is 0,1
+                                #using bool or int does cost somewhat in computation as numpy only computes with float 64 (or 32 in 32 bit systems). If memory is not an
+                            #issue, use float64 here and then use mf_n=np.abolute(1-mf_p) later instead of not.
 
 #         out['mf_n']=np.int8((1.-mf)/2.) #memory hog
         del mf
@@ -101,10 +100,8 @@ class window_utils():
         m_s=np.concatenate([np.abs(i).flatten() for i in self.m1_m2s.values()])
         self.m_s=np.sort(np.unique(m_s))
         
-#         self.wig_DB=h5py.File(wig_file, 'r')
         if self.wigner_files is None:
             self.wigner_files={}
-#             self.wigner_files[0]= 'temp/dask_wig3j_l5000_w500_0_asym50.zarr' #
             self.wigner_files[0]= 'temp/dask_wig3j_l6500_w1100_0_reorder.zarr'
             self.wigner_files[2]= 'temp/dask_wig3j_l6500_w1100_2_reorder.zarr'
         
@@ -126,14 +123,6 @@ class window_utils():
                     self.wig_3j_2[lm][str(m1)+str(m2)]=delayed(self.set_wig3j_step_multiplied)(self.wig_3j_1[lm][m1],self.wig_3j_1[lm][m2])
                 mi+=1
             self.mf_pm[lm]=delayed(self.set_window_pm_step)(lm=lm)
-#             self.wig_3j_2[lm]=client.compute(self.wig_3j_2[lm]) #computing here helps with memory. Otherwise sometimes there are multiple calls in parallel, not sure why.
-#             self.mf_pm[lm]=client.compute(self.mf_pm[lm]) #computing here helps with memory. Otherwise sometimes there are multiple calls in parallel, not sure why.
-#             mi+=1
-            
-# #         for lm in self.lms:
-#             self.wig_3j_2[lm]=self.wig_3j_2[lm].result()
-#             self.mf_pm[lm]=self.mf_pm[lm].result()
-#             gc.collect()
         
         self.wig_m1m2s={}
         for corr in self.corrs:
@@ -143,33 +132,29 @@ class window_utils():
 
 
     def coupling_matrix(self,win,wig_3j_1,wig_3j_2,W_pm=0):
-        return np.dot(wig_3j_1*wig_3j_2,win*(2*self.window_l+1)   )/4./np.pi #FIXME: check the order of division by l.
+        return np.dot(wig_3j_1*wig_3j_2,win*(2*self.window_l+1)   )/4./np.pi 
 
     def coupling_matrix_large(self,win,m1m2,wig_3j_2,mf_pm,lm=None,W_pm=0): 
-        
         wig=wig_3j_2['w2']
-#         mf=1
-        t1=time.time()
+#         t1=time.time()
         if W_pm!=0:
             if W_pm==2: #W_+
                 mf=mf_pm['mf_p']#.astype('float64') #https://stackoverflow.com/questions/45479363/numpy-multiplying-large-arrays-with-dtype-int8-is-slow
             if W_pm==-2: #W_-
 #                 mf=mf_pm['mf_n']
                 mf=~mf_pm['mf_p']#.astype('float64') # *not* when written as bool. This is only needed few times, 
+                                #using bool or int does cost somewhat in computation as numpy only computes with float 64 (or 32 in 32 bit systems). If memory is not an
+                            #issue, use float64 for mf_p and then use mf_n=np.abolute(1-mf_p) instead of not.
             wig=wig*mf
         
                                                 #M[lm:lm+step,:]  
 #         M=np.einsum('ijk,i->jk',wig.todense()*mf, win*(2*self.window_l+1), optimize=True )/4./np.pi 
-#         M=np.einsum('ijk,i->jk',wig*mf, win*(2*self.window_l+1), optimize=True )/4./np.pi
         M=wig@(win*(2*self.window_l+1))
         M/=4.*np.pi
-        t5=time.time()
-        print('coupling_matrix_large ',t5-t1,m1m2)
-
+#         t5=time.time()
+#         print('coupling_matrix_large ',t5-t1,m1m2)
         return M
 
- 
-       
     def multiply_window(self,win1,win2):
         W=win1*win2
         x=np.logical_or(win1==hp.UNSEEN, win2==hp.UNSEEN)
@@ -183,8 +168,6 @@ class window_utils():
         W[x]=hp.UNSEEN
         fsky=(~x).mean()
         return fsky,W.astype('int16')
-
-
 
     def get_window_power_cl(self,corr={},indxs={}):
 #         print('cl window doing',corr,indxs)
