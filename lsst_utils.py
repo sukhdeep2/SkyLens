@@ -140,7 +140,7 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
 def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
                     zp_sigma=None,zs=None,z_bins=None,f_sky=0.3,nside=256,use_window=False,
                     mask_start_pix=0,window_cl_fact=None,bg1=1,AI=0,AI_z=0,l=None,mag_fact=0,
-                     sigma_gamma=0.26,k_max=0.3,unit_win=False):
+                     sigma_gamma=0.26,k_max=0.3,unit_win=False,use_shot_noise=True):
     """
         Setting source redshift bins in the format used in code.
         Need
@@ -201,12 +201,12 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
         #zs_bins[i]['lens_kernel']=np.dot(zs_bins[i]['pzdz'],sc)
 
         zmax=max([zmax,max(zs_bins[i]['z'])])
-
-        zs_bins['SN']['galaxy'][:,i,i]=galaxy_shot_noise_calc(zg1=zs_bins[i],zg2=zs_bins[i])
-        zs_bins['SN']['shear'][:,i,i]=shear_shape_noise_calc(zs1=zs_bins[i],zs2=zs_bins[i],
-                                                             sigma_gamma=sigma_gamma)
-        zs_bins['SN']['kappa'][:,i,i]=shear_shape_noise_calc(zs1=zs_bins[i],zs2=zs_bins[i],
-                                                             sigma_gamma=sigma_gamma) #FIXME: This is almost certainly not correct
+        if use_shot_noise:
+            zs_bins['SN']['galaxy'][:,i,i]=galaxy_shot_noise_calc(zg1=zs_bins[i],zg2=zs_bins[i])
+            zs_bins['SN']['shear'][:,i,i]=shear_shape_noise_calc(zs1=zs_bins[i],zs2=zs_bins[i],
+                                                                 sigma_gamma=sigma_gamma)
+            zs_bins['SN']['kappa'][:,i,i]=shear_shape_noise_calc(zs1=zs_bins[i],zs2=zs_bins[i],
+                                                                 sigma_gamma=sigma_gamma) #FIXME: This is almost certainly not correct
 
     zs_bins['n_bins']=nz_bins #easy to remember the counts
     zs_bins['z_lens_kernel']=zl_kernel
@@ -277,7 +277,7 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
 def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bias=None,
                      window_cl_fact=None,mag_fact=0,
                     zp_sigma=None,zg=None,f_sky=0.3,nside=256,use_window=False,mask_start_pix=0,
-                    l=None,sigma_gamma=0,k_max=0.3,unit_win=True):
+                    l=None,sigma_gamma=0,k_max=0.3,unit_win=True,use_shot_noise=True):
     """
         Setting source redshift bins in the format used in code.
         Need
@@ -347,7 +347,7 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
                           window_cl_fact=None,ztrue_func=ztrue_given_pz_Gaussian,z_sigma_power=1,
                           f_sky=0.3,nside=256,zp=None,pzs=None,use_window=False,mask_start_pix=0,
                           l=None,sigma_gamma=0.26,AI=0,AI_z=0,mag_fact=0,k_max=0.3,
-                          unit_win=False,**kwargs):
+                          unit_win=False,use_shot_noise=True,**kwargs):
 
     z=zp
     if zp is None:
@@ -388,7 +388,8 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
                          ztrue_func=ztrue_func,zp_bias=z_bias,window_cl_fact=window_cl_fact,
                         zp_sigma=z_sigma,z_bins=z_bins,f_sky=f_sky,nside=nside,
                            use_window=use_window,mask_start_pix=mask_start_pix,k_max=k_max,
-                           l=l,sigma_gamma=sigma_gamma,AI=AI,AI_z=AI_z,unit_win=unit_win)
+                           l=l,sigma_gamma=sigma_gamma,AI=AI,AI_z=AI_z,unit_win=unit_win
+                           ,use_shot_noise=use_shot_noise)
 
 
 def DESI_lens_bins(dataset='lrg',nbins=1,window_cl_fact=None,z_bins=None,

@@ -333,7 +333,7 @@ class cov_3X2():
             fs0=np.sqrt(fs0)
             cov['Tri']/=self.cov_utils.gaussian_cov_norm_2D*fs0 #(2l+1)f_sky.. we didnot normalize gaussian covariance in trispectrum computation.
         
-        if self.use_window: #Check: This is from writing p-cl as M@cl... cov(p-cl)=M@cov(cl)@M.T ... separate  M when different p-cl
+        if self.use_window and (self.SSV_cov or self.Tri_cov): #Check: This is from writing p-cl as M@cl... cov(p-cl)=M@cov(cl)@M.T ... separate  M when different p-cl
             M1=Win['cl'][(tracers[0],tracers[1])][(zs_indx[0],zs_indx[1])]['M'] #12
             M2=Win['cl'][(tracers[2],tracers[3])][(zs_indx[2],zs_indx[3])]['M'] #34
             cov['final']=cov['G']+ M1@(cov['SSC']+cov['Tri'])@M2.T
