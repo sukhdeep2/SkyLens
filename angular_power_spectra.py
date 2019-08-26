@@ -104,8 +104,8 @@ class Angular_power_spectra():
             #cl*=2./np.pi #comparison with CAMB requires this.
         self.clz={'cls':cls,'l':l,'cH':cH,'dchi':cH*self.dz,'chi':chi,'dz':self.dz}
         if self.SSV_cov:
-            self.cov_utils.sigma_win_calc(cls_lin=cls_lin)
-            self.clz.update({'clsR':cls*Rls,'clsRK':cls*RKls})
+#             self.cov_utils.sigma_win_calc(cls_lin=cls_lin)
+            self.clz.update({'clsR':cls*Rls,'clsRK':cls*RKls,'cls_lin':cls_lin})
             
     def reset(self):
         self.clz=None

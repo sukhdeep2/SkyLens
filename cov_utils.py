@@ -38,11 +38,8 @@ class Covariance_utils():
         self.gaussian_cov_norm_2D=np.outer(np.sqrt(self.gaussian_cov_norm),np.sqrt(self.gaussian_cov_norm))
 
     def set_window_params(self):
-        self.Om_W=4*np.pi  #multiply f_sky later.
+        self.Om_W=4*np.pi*self.f_sky
         self.window_func()
-
-        self.Win/=self.Om_W
-        self.Win0/=self.Om_W
 
     def window_func(self):
         if self.window_file is not None:
@@ -53,6 +50,7 @@ class Covariance_utils():
             self.Win0=win_i(self.window_l) #this will be useful for SSV
             return
 
+        #same as eq. 5.4 of https://arxiv.org/pdf/1711.07467.pdf
         if self.window_l is None:
             self.window_l=np.arange(100)
 
@@ -61,14 +59,23 @@ class Covariance_utils():
         l_th=l*theta_win
         Win0=2*jn(1,l_th)/l_th
         Win0=np.nan_to_num(Win0)
-
+        Win0=Win0**2 #p-Cl equivalent
+#         Win0*=self.f_sky  #FIXME???? Missing 4pi? Using Om_w doesnot match healpix calculation.
+        
         win_i=interp1d(l,Win0,bounds_error=False,fill_value=0)
         self.Win=win_i(self.window_l) #this will be useful for SSV
         self.Win0=win_i(self.l)
         return 0
 
-    def sigma_win_calc(self,cls_lin):
-        self.sigma_win=np.dot(self.Win**2*np.gradient(self.window_l)*self.window_l,cls_lin.T)
+    def sigma_win_calc(self,cls_lin,Win_cl=None,Om_w12=None,Om_w34=None):
+        if Win_cl is None:
+            Win_cl=self.Win
+            Om_w12=self.Om_W
+            Om_w34=self.Om_W
+            
+        sigma_win=np.dot(Win_cl*np.gradient(self.window_l)*(2*self.window_l+1),cls_lin.T)
+        sigma_win/=Om_w12*Om_w34
+        return sigma_win
 
     def corr_matrix(self,cov=[]):
         diag=np.diag(cov)

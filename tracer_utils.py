@@ -83,8 +83,8 @@ class Tracer_utils():
         b=z_bin['b1']
         lb_m=z_bin['lm']
         lm=np.ones_like(self.l)
-        x=self.l>lb_m
-        lm[x]=0        
+#         x=self.l>lb_m  #if masking out modes based on kmax. lm is attribute of the z_bins, that is based on kmax.
+#         lm[x]=0        
         return b*np.outer(np.ones_like(z),lm)
 
     def linear_bias_powerlaw(self,z_bin={},cosmo_h=None):
@@ -92,8 +92,8 @@ class Tracer_utils():
         b2=z_bin['b2']
         lb_m=z_bin['lm']
         lm=np.ones_like(self.l)+self.l/self.l[-1]
-        x=self.l>lb_m
-        lm[x]=0        
+#         x=self.l>lb_m
+#         lm[x]=0        
         return np.outer(b1*(1+z_bin['z'])**b2,lm) #FIXME: This might need to change to account
     
     def spin_factor(self,l=None,tracer=None):
