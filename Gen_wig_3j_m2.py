@@ -1,8 +1,8 @@
 from wigner_functions import *
 import zarr
 import time
-lmax=6500 #1e4
-wlmax=1100 
+lmax=3500 #1e4
+wlmax=2100 
 m1=2
 m2=-2
 m3=0
@@ -24,7 +24,7 @@ l=np.arange(lmax)
 
 lb=np.arange(lmax,step=l_step)
 z1 = zarr.open(fname, mode='w', shape=(wlmax,lmax,lmax), #0-lmax
-               chunks=(wlmax/10, lmax/10,lmax/10),
+               chunks=(wlmax, l_step,l_step),
                dtype='float32',overwrite=True)
 
 j_max=np.amax(lmax+lmax+wlmax+10)
@@ -47,7 +47,7 @@ def wig3j_recur_2d(j1b,j2b,m1,m2,m3,j3_outmax,step,z1_out):
     t1=time.time()
     funct=partial(wig3j_recur_1d, j2s,m1,m2,m3,j3_outmax)
     pool=Pool(10)
-    out_ij=pool.map(funct,j1s,chunksize=1)
+    out_ij=pool.map(funct,j1s,chunksize=np.int(step/40))
     pool.close()
     t2=time.time()
     #print('pool done ',j1b,j2b,t2-t1)

@@ -32,7 +32,8 @@ class cov_3X2():
                 use_window=True,window_lmax=None,store_win=False,Win=None,
                 f_sky=None,l_bins=None,bin_cl=False,#pseudo_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
-                corrs=[('shear','shear')],wigner_files=None):
+                corrs=[('shear','shear')],corr_indxs={},
+                 wigner_files=None):
         
         self.logger=logger
         if logger is None:
@@ -114,6 +115,7 @@ class cov_3X2():
         
         self.tracers=()
         n_bins={}
+        self.corr_indxs=corr_indxs
         for tracer in ('shear','galaxy','kappa'):
             n_bins[tracer]=0
             if self.z_bins[tracer] is not None:
@@ -121,7 +123,9 @@ class cov_3X2():
                 self.tracers+=(tracer,)
             else:
                 self.z_bins.pop(tracer, None)
-
+                
+            if self.corr_indxs.get((tracer,tracer)) is not None:
+                continue
             self.corr_indxs[(tracer,tracer)]=[j for j in itertools.combinations_with_replacement(
                                                     np.arange(n_bins[tracer]),2)]
             
@@ -133,11 +137,14 @@ class cov_3X2():
                 self.m1_m2s[(tracer1,tracer2)]=[(self.spin[tracer1],self.spin[tracer2])] 
                 if tracer1==tracer2:
                     continue
+                if self.corr_indxs.get((tracer1,tracer2)) is not None:
+                    continue
                 self.corr_indxs[(tracer1,tracer2)]=[ k for l in [[(i,j) for i in np.arange(
                                         n_bins[tracer1])] for j in np.arange(n_bins[tracer2])] for k in l]
                 
         self.m1_m2s[('shear','shear')]=[(2,2),(2,-2)]
         self.m1_m2s[('window')]=[(0,0)]
+        print('corr_indxs',self.corr_indxs)
         
         self.stack_indxs=self.corr_indxs.copy()
 
@@ -153,8 +160,6 @@ class cov_3X2():
                     self.f_sky[kk][idx]=f_temp #*np.ones((n_indx,n_indx))
                     self.f_sky[kk[::-1]][idx[::-1]]=f_temp
         
-        
-
         self.Win={}
         self.Win=window_utils(window_l=self.window_l,l=self.l,corrs=self.corrs,m1_m2s=self.m1_m2s,\
                         use_window=use_window,do_cov=self.do_cov,cov_utils=self.cov_utils,
@@ -251,34 +256,16 @@ class cov_3X2():
         cov={}
         cov['final']=None
 
-        cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_window(cls,
-                                            self.SN,tracers,zs_indx,self.do_xi)
+        cov['G']=None
         cov['G1324_B']=None;cov['G1423_B']=None
-        cov['G']=0
         
         if self.use_window:
-            W_pm=Win['cov'][tracers][zs_indx]['W_pm'][1324]
-            if np.any(np.array(W_pm)<0) or np.any(np.array(Win['cov'][tracers][zs_indx]['W_pm'][1423])<0):
-                cov['G1324_B'],cov['G1423_B']=self.cov_utils.gaussian_cov_window_Bmode(cls,
-                                            self.SN,tracers,zs_indx,self.do_xi)
-
-            for wp in W_pm:
-                if wp>=0:
-                    cov['G']+=cov['G1324']*Win['cov'][tracers][zs_indx]['M1324'][wp]#.todense()
-                else:
-                    cov['G']+=cov['G1324_B']*Win['cov'][tracers][zs_indx]['M1324'][wp]#.todense()
-                
-            W_pm=Win['cov'][tracers][zs_indx]['W_pm'][1423]
-            
-            for wp in W_pm: 
-                if wp>=0:
-                    cov['G']+=cov['G1423']*Win['cov'][tracers][zs_indx]['M1423'][wp]#.todense()
-                else:
-                    cov['G']+=cov['G1423_B']*Win['cov'][tracers][zs_indx]['M1423'][wp]#.todense()
-                    
+            cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_window(cls,
+                                            self.SN,tracers,zs_indx,self.do_xi,Win['cov'][tracers][zs_indx])
+            cov['G']=cov['G1324']+cov['G1423']                                
         else: #apply correct factors of f_sky
-            cov['G1324']*=np.eye(len(self.l)) #diagonalize
-            cov['G1423']*=np.eye(len(self.l))
+            cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov(cls,
+                                            self.SN,tracers,zs_indx,self.do_xi)
             fs1324=np.sqrt(self.f_sky[tracers[0],tracers[2]][zs_indx[0],zs_indx[2]]*self.f_sky[tracers[1],tracers[3]][zs_indx[1],zs_indx[3]])
             fs0=self.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]] * self.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
             cov['G']=cov['G1324']/self.cov_utils.gaussian_cov_norm_2D*fs1324/fs0
