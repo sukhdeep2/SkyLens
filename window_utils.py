@@ -49,13 +49,10 @@ class window_utils():
             self.step=min(self.step,nl+1)
         self.lms=np.arange(nl,step=self.step)
         print('Win gen: step size',self.step)
-        self.set_wig3j()
         
-#         if self.Win is None:
-#             if not use_window:
-#                 self.coupling_M=np.diag(np.ones_like(self.l))
-#                 self.coupling_G=np.diag(1./self.cov_utils.gaussian_cov_norm)
-        if self.use_window:
+        self.Win=Win
+        if self.Win is None and self.use_window:
+            self.set_wig3j()        
             self.set_window(corrs=self.corrs,corr_indxs=self.corr_indxs)
         
 

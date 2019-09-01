@@ -274,11 +274,9 @@ class cov_3X2():
 
         cov['final']=cov['G']
 
-        if not self.do_xi:
-            cov['G1324']=None #save memory
-            cov['G1423']=None
-#         del cov['G1324']
-#         del cov['G1423'] #save memory
+#         if not self.do_xi:
+#             cov['G1324']=None #save memory
+#             cov['G1423']=None
 
         cov['SSC']=0
         cov['Tri']=0

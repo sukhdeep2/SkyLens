@@ -113,7 +113,8 @@ class Covariance_utils():
         for corr_i in [1324,1423]:
             W_pm=Win['W_pm'][corr_i]
             c1=cv_indxs[corr_i][0]
-            c2=cv_indxs[corr_i][0]
+            c2=cv_indxs[corr_i][1]
+
             for k in Win['M'][corr_i].keys():
                 for wp in W_pm:
                     CV2=CV
@@ -171,22 +172,16 @@ class Covariance_utils():
     def gaussian_cov(self,cls,SN,tracers,z_indx,do_xi): #no-window covariance
 
         SN2=self.get_SN(SN,tracers,z_indx)
+        CV=self.get_CV_cl(cls,tracers,z_indx)
 
-        G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f
-             + SN2[13]
-                )#/self.gaussian_cov_norm
+        G1324= ( CV[13]+ SN2[13])#/self.gaussian_cov_norm
              #get returns None if key doesnot exist. or 0 adds 0 is SN is none
 
-        G1324*=( cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]*self.sample_variance_f
-              + SN2[24])
+        G1324*=( CV[24]+ SN2[24])
 
-        G1423= ( cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]*self.sample_variance_f
-              + SN2[14]
-              )#/self.gaussian_cov_norm
+        G1423= ( CV[14]+ SN2[14])#/self.gaussian_cov_norm
 
-        G1423*=(cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f
-             + SN2[23]
-                )
+        G1423*=(CV[23]+ SN2[23])
 
 #         G1423/=self.cov_utils.gaussian_cov_norm
         G1423=np.diag(G1423)
