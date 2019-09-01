@@ -2,7 +2,7 @@ from wigner_functions import *
 import zarr
 import time
 lmax=6500 #~nside*3
-wlmax=1100 #~500  
+wlmax=2100 #~500  
 m1=0
 m2=0
 m3=0
