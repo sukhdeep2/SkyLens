@@ -21,7 +21,7 @@ from multiprocessing import Pool,cpu_count
 class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,corrs=None,m1_m2s=None,use_window=None,f_sky=None,
                 do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,HT=None,xi_bin_utils=None,do_xi=False,
-                store_win=False,Win=None):
+                store_win=False,Win=None, wigner_files=None):
         self.Win=Win
         self.wig_3j=None
         self.window_lmax=window_lmax
@@ -498,13 +498,10 @@ class window_utils():
         return self.Win
 
     def cleanup(self,): #need to free all references to wigner_3j, mf and wigner_3j_2... this doesnot help with peak memory usage
-        try:
-            del self.Win_cl
-            del self.Win_cl_lm
-            del self.Win_cov
-            del self.Win_cov_lm
-            del self.wig_3j
-            del self.wig_3j_2
-            del self.mf_pm
-        except AttributeError:
-            return
+        del self.Win_cl
+        del self.Win_cl_lm
+        del self.Win_cov
+        del self.Win_cov_lm
+        del self.wig_3j
+        del self.wig_3j_2
+        del self.mf_pm
