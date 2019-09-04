@@ -116,7 +116,7 @@ class Tracer_utils():
         F/=(l+0.5)**2 #when writing potential to delta_m, we get 1/k**2, which then results in (l+0.5)**2 factor
         x=l-s<0
         F[x]=0
-        return F
+        return F.astype('float32')
     
     def set_kernel(self,cosmo_h=None,zl=None,tracer=None):
         self.set_lensing_kernel(cosmo_h=cosmo_h,zl=zl,tracer=tracer)

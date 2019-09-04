@@ -91,29 +91,49 @@ class Covariance_utils():
 
         return SN2
 
-    def gaussian_cov_window(self,cls,SN,tracers,z_indx,do_xi):
+    def get_CV_cl(self,cls,tracers,z_indx):
+            #get shot noise/shape noise for given set of tracer and z_bins
+        CV2={}
+        CV2[13]=cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f
+        CV2[24]=cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]*self.sample_variance_f
+        CV2[14]=cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]*self.sample_variance_f
+        CV2[23]=cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f
+        return CV2
 
-        SN2=self.get_SN(SN,tracers,z_indx)
-        G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f
-             + SN2[13]
-                )#/self.gaussian_cov_norm
-             #get returns None if key doesnot exist. or 0 adds 0 is SN is none
 
-        G1324=np.outer(G1324,( cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]*self.sample_variance_f
-              + SN2[24]))
-
-        G1423= ( cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]*self.sample_variance_f
-              + SN2[14]
-              )#/self.gaussian_cov_norm
-
-        G1423=np.outer(G1423,(cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2])
-                                                          ]*self.sample_variance_f
-                    + SN2[23]))
-
-        return G1324,G1423
     
-    def gaussian_cov_window_Bmode(self,cls,SN,tracers,z_indx,do_xi): #for shear B-mode
+    def gaussian_cov_window(self,cls,SN,tracers,z_indx,do_xi,Win):
         SN2=self.get_SN(SN,tracers,z_indx)
+        CV=self.get_CV_cl(cls,tracers,z_indx)
+        CV_B=self.get_CV_B_cl(cls,tracers,z_indx)
+        
+        G={1324:0,1423:0}
+        cv_indxs={1324:(13,24),1423:(14,23)}
+        
+        for corr_i in [1324,1423]:
+            W_pm=Win['W_pm'][corr_i]
+            c1=cv_indxs[corr_i][0]
+            c2=cv_indxs[corr_i][1]
+
+            for k in Win['M'][corr_i].keys():
+                for wp in W_pm:
+                    CV2=CV
+                    if wp<0:
+                        CV2=CV_B
+                    if k=='clcl': 
+                        G_t=np.outer(CV2[c1],CV2[c2])
+                    if k=='Ncl': 
+                        G_t=np.outer(SN2[c1],CV2[c2])
+                    if k=='clN': 
+                        G_t=np.outer(CV2[c1],SN2[c2])
+                    if k=='NN': 
+                        G_t=np.outer(SN2[c1],SN2[c2])
+
+                    G[corr_i]+=G_t*Win['M'][corr_i][k][wp]
+
+        return G[1324],G[1423]
+    
+    def get_CV_B_cl(self,cls,tracers,z_indx): #for shear B-mode
         sv_f={13:1,24:1,14:1,23:1}
         if tracers[0]=='shear' and tracers[2]=='shear':
             sv_f[13]=0
@@ -124,43 +144,44 @@ class Covariance_utils():
         if tracers[1]=='shear' and tracers[2]=='shear':
             sv_f[23]=0
             
-        G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f*sv_f[13]
-             + SN2[13]
-                )#/self.gaussian_cov_norm
-             #get returns None if key doesnot exist. or 0 adds 0 is SN is none
+        CV2={}
+        CV2[13]=cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f*sv_f[13]
+        CV2[24]=cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]*self.sample_variance_f*sv_f[24]
+        CV2[14]=cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]*self.sample_variance_f*sv_f[14]
+        CV2[23]=cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f*sv_f[23]
+        return CV2
+            
+#         G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f*sv_f[13]
+#              + SN2[13]
+#                 )#/self.gaussian_cov_norm
+#              #get returns None if key doesnot exist. or 0 adds 0 is SN is none
 
-        G1324=np.outer(G1324,( cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]*self.sample_variance_f*sv_f[24]
-              + SN2[24]))
+#         G1324=np.outer(G1324,( cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]*self.sample_variance_f*sv_f[24]
+#               + SN2[24]))
 
-        G1423= ( cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]*self.sample_variance_f*sv_f[14]
-              + SN2[14]
-              )#/self.gaussian_cov_norm
+#         G1423= ( cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]*self.sample_variance_f*sv_f[14]
+#               + SN2[14]
+#               )#/self.gaussian_cov_norm
 
-        G1423=np.outer(G1423,(cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2])
-                                                          ]*self.sample_variance_f*sv_f[23]
-                    + SN2[23]))
+#         G1423=np.outer(G1423,(cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2])
+#                                                           ]*self.sample_variance_f*sv_f[23]
+#                     + SN2[23]))
 
-        return G1324,G1423
+#         return G1324,G1423
 
-    def gaussian_cov(self,cls,SN,tracers,z_indx,do_xi):
+    def gaussian_cov(self,cls,SN,tracers,z_indx,do_xi): #no-window covariance
 
         SN2=self.get_SN(SN,tracers,z_indx)
+        CV=self.get_CV_cl(cls,tracers,z_indx)
 
-        G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f
-             + SN2[13]
-                )#/self.gaussian_cov_norm
+        G1324= ( CV[13]+ SN2[13])#/self.gaussian_cov_norm
              #get returns None if key doesnot exist. or 0 adds 0 is SN is none
 
-        G1324*=( cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]*self.sample_variance_f
-              + SN2[24])
+        G1324*=( CV[24]+ SN2[24])
 
-        G1423= ( cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]*self.sample_variance_f
-              + SN2[14]
-              )#/self.gaussian_cov_norm
+        G1423= ( CV[14]+ SN2[14])#/self.gaussian_cov_norm
 
-        G1423*=(cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f
-             + SN2[23]
-                )
+        G1423*=(CV[23]+ SN2[23])
 
 #         G1423/=self.cov_utils.gaussian_cov_norm
         G1423=np.diag(G1423)

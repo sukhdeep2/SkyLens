@@ -70,7 +70,8 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None):
     return zs,p_zs
 
 def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False):
-    l0=np.arange(0,512,dtype='int')
+    w_lmax=3*nside-1
+    l0=np.arange(3*nside-1,dtype='int')
     corr=('galaxy','galaxy')
     kappa0=cov_3X2(zg_bins=zs_bins,do_cov=False,bin_cl=False,l_bins=None,l=l0, zs_bins=None,use_window=False,
                    corrs=[corr],f_sky=f_sky)
@@ -96,16 +97,22 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
 
             cl_i=cl0G['cl'][corr][(i,i)].compute()
             cl_i+=zs_bins['SN']['galaxy'][:,i,i]
+#             alms_i=hp.sphtfunc.synalm(cl_i,lmax=w_lmax,)
             if window_cl_fact is not None:
+#                 alms_i=hp.sphtfunc.almxfl(alms_i,window_cl_fact)
                 cl_i*=window_cl_fact
             cl_map=hp.ma(1+hp.synfast(cl_i,nside=nside))
+#             cl_map=hp.alm2map(alms_i,nside=nside)
         cl_map[cl_map<0]=0
-        cl_map/=cl_map[mask].max()
+        cl_map/=cl_map[mask].mean()
+        cl_map_noise=np.sqrt(cl_map)
         cl_map[~mask]=hp.UNSEEN
+        cl_map_noise[~mask]=hp.UNSEEN
         # cl_map.mask=mask
         zs_bins[i]['window']=cl_map
         zs_bins[i]['window_alm']=hp.map2alm(cl_map)
-        zs_bins[i]['window_cl']=cl_i
+        zs_bins[i]['window_alm_noise']=hp.map2alm(cl_map_noise)
+#         zs_bins[i]['window_cl']=cl_i
 
     return zs_bins
 
