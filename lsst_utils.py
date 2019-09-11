@@ -428,7 +428,7 @@ def DESI_lens_bins(dataset='lrg',nbins=1,window_cl_fact=None,z_bins=None,
                            l=l,sigma_gamma=sigma_gamma)
 
 
-def DES_lens_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigma_gamma=0):
+def DES_lens_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigma_gamma=0,nside=256,mask_start_pix=0,window_cl_fact=0,unit_win=True,use_window=True,f_sky=1):
     z_bins={}
     try:
         t=Table.read(fname,format='fits',hdu=6)
@@ -464,9 +464,12 @@ def DES_lens_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None
     z_bins['n_bins']=nz_bins
     z_bins['nz']=nz
     z_bins['zmax']=zmax
+    if use_window:
+        z_bins=set_window(zs_bins=z_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
+                           window_cl_fact=window_cl_fact,unit_win=unit_win)
     return z_bins
 
-def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigma_gamma=0):
+def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigma_gamma=0,nside=256,mask_start_pix=0,window_cl_fact=0,unit_win=True,use_window=True,f_sky=1):
     z_bins={}
     try:
         t=Table.read(fname,format='fits',hdu=6)
@@ -499,9 +502,16 @@ def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigm
         z_bins['SN']['shear'][:,i,i]=shear_shape_noise_calc(zs1=z_bins[i],zs2=z_bins[i],
                                                             sigma_gamma=sigma_gamma)
         z_bins[i]['lm']=1.e7
+        z_bins[i]['b1']=1
+        z_bins[i]['AI']=0
+        z_bins[i]['AI_z']=0
+        z_bins[i]['mag_fact']=0
     z_bins['n_bins']=nz_bins
     z_bins['nz']=nz
     z_bins['zmax']=zmax
+    if use_window:
+        z_bins=set_window(zs_bins=z_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
+                           window_cl_fact=window_cl_fact,unit_win=unit_win)
     return z_bins
 
 
