@@ -21,7 +21,7 @@ from multiprocessing import Pool,cpu_count
 class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,corrs=None,m1_m2s=None,use_window=None,f_sky=None,
                 do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,HT=None,xi_bin_utils=None,do_xi=False,
-                store_win=False,Win=None, wigner_files=None):
+                store_win=False,Win=None, wigner_files=None, step=None):
         self.Win=Win
         self.wig_3j=None
         self.window_lmax=window_lmax
@@ -45,14 +45,16 @@ class window_utils():
         nwl=len(self.window_l)*1.0
 
         self.step=step
-        if step is None:
-            self.step=np.int32(100.*((3000./nl)**2)*(1000./nwl)) #small step is useful for lower memory load
-            self.step=min(self.step,nl+1)
-        self.lms=np.arange(nl,step=self.step)
-        print('Win gen: step size',self.step)
+
 
         self.Win=Win
         if self.Win is None and self.use_window:
+            if step is None:
+                self.step=np.int32(100.*((3000./nl)**2)*(1000./nwl)) #small step is useful for lower memory load
+                self.step=min(self.step,nl+1)
+        
+            self.lms=np.arange(nl,step=self.step)
+            print('Win gen: step size',self.step)
             self.set_wig3j()
             self.set_window(corrs=self.corrs,corr_indxs=self.corr_indxs)
 
@@ -630,7 +632,7 @@ class window_utils():
         del self.Win_cl_lm
         if self.do_cov:
             del self.Win_cov
-        del self.Win_cov_lm
+            del self.Win_cov_lm
         del self.wig_3j
         del self.wig_3j_2
         del self.mf_pm
