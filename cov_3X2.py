@@ -32,10 +32,10 @@ class cov_3X2():
                 use_window=True,window_lmax=None,store_win=False,Win=None,
                 f_sky=None,l_bins=None,bin_cl=False,#pseudo_cl=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
-                xi_win=False,
+                xi_win_approx=False,
                 corrs=[('shear','shear')],corr_indxs={},
                  wigner_files=None):
-        
+
         self.logger=logger
         if logger is None:
             self.logger=logging.getLogger() #not really being used right now
@@ -49,7 +49,7 @@ class cov_3X2():
         self.tidal_SSV_cov=tidal_SSV_cov
         self.l=l
         self.do_xi=do_xi
-        self.xi_win=xi_win
+        self.xi_win_approx=xi_win_approx
         self.corrs=corrs
 
         self.window_lmax=30 if window_lmax is None else window_lmax
@@ -63,10 +63,10 @@ class cov_3X2():
             z_PS_max=zk_bins['zmax']
         if zk_bins is not None and zs_bins is not None:
             z_PS_max=max(z_PS_max,zk_bins['zmax'])
-        if zk_bins is None and zs_bins is None: #z_PS_max is to defined maximum z for which P(k) is computed. 
+        if zk_bins is None and zs_bins is None: #z_PS_max is to defined maximum z for which P(k) is computed.
                                                 #We assume this will be larger for shear than galaxies (i.e. there are always sources behind galaxies).
             z_PS_max=zg_bins['zmax']
-            
+
         self.use_window=use_window
 
         self.HT=None
@@ -112,9 +112,9 @@ class cov_3X2():
         self.z_bins['shear']=self.tracer_utils.zs_bins
         self.z_bins['kappa']=self.tracer_utils.zk_bins
         self.z_bins['galaxy']=self.tracer_utils.zg_bins
-        
+
         self.spin={'galaxy':0,'kappa':0,'shear':2}
-        
+
         self.tracers=()
         n_bins={}
         self.corr_indxs=corr_indxs
@@ -125,30 +125,30 @@ class cov_3X2():
                 self.tracers+=(tracer,)
             else:
                 self.z_bins.pop(tracer, None)
-            
+
             if self.corr_indxs.get((tracer,tracer)) is not None:
                 continue
 
             self.corr_indxs[(tracer,tracer)]=[j for j in itertools.combinations_with_replacement(
                                                     np.arange(n_bins[tracer]),2)]
-            
+
             if tracer=='galaxy' and not self.do_cov:
                 self.corr_indxs[(tracer,tracer)]=[(i,i) for i in np.arange(n_bins[tracer])] #by default, no cross correlations between galaxy bins
-        
+
         for tracer1 in self.tracers:#zbin-indexs for cross correlations
             for tracer2 in self.tracers:
-                self.m1_m2s[(tracer1,tracer2)]=[(self.spin[tracer1],self.spin[tracer2])] 
+                self.m1_m2s[(tracer1,tracer2)]=[(self.spin[tracer1],self.spin[tracer2])]
                 if tracer1==tracer2:
                     continue
                 if self.corr_indxs.get((tracer1,tracer2)) is not None:
                     continue
                 self.corr_indxs[(tracer1,tracer2)]=[ k for l in [[(i,j) for i in np.arange(
                                         n_bins[tracer1])] for j in np.arange(n_bins[tracer2])] for k in l]
-                
+
         self.m1_m2s[('shear','shear')]=[(2,2),(2,-2)]
         self.m1_m2s[('window')]=[(0,0)]
 #         print('corr_indxs',self.corr_indxs)
-        
+
         self.stack_indxs=self.corr_indxs.copy()
 
         if np.isscalar(self.f_sky):
@@ -162,13 +162,13 @@ class cov_3X2():
                 for idx in indxs:
                     self.f_sky[kk][idx]=f_temp #*np.ones((n_indx,n_indx))
                     self.f_sky[kk[::-1]][idx[::-1]]=f_temp
-        
+
         self.Win={}
         self.Win=window_utils(window_l=self.window_l,l=self.l,corrs=self.corrs,m1_m2s=self.m1_m2s,\
                         use_window=use_window,do_cov=self.do_cov,cov_utils=self.cov_utils,
                         f_sky=f_sky,corr_indxs=self.corr_indxs,z_bins=self.z_bins,
                         window_lmax=self.window_lmax,Win=Win,HT=self.HT,do_xi=self.do_xi,
-                        xi_win=self.xi_win,
+                        xi_win_approx=self.xi_win_approx,
                         xi_bin_utils=self.xi_bin_utils,store_win=store_win,wigner_files=wigner_files)
         if self.Tri_cov:
             self.CTR=cov_matter_tri(k=self.l)
@@ -222,7 +222,7 @@ class cov_3X2():
                 self.xi_bin_utils[m1_m2]=self.binning.bin_utils(r=self.HT.theta[m1_m2]/d2r,
                                                     r_bins=self.theta_bins,
                                                     r_dim=2,mat_dims=[1,2])
-         
+
     def calc_cl(self,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear')):
         """
             Compute the angular power spectra, Cl between two source bins
@@ -247,7 +247,7 @@ class cov_3X2():
         cl=np.dot(cls.T*sc,dchi)
                 # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
         return cl
-    
+
     def cl_cov(self,cls=None, zs_indx=[],tracers=[],Win=None):
         """
             Computes the covariance between any two tomographic power spectra.
@@ -262,19 +262,19 @@ class cov_3X2():
 
         cov['G']=None
         cov['G1324_B']=None;cov['G1423_B']=None
-        
+
         if self.use_window:
             cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_window(cls,
-                                            self.SN,tracers,zs_indx,self.do_xi,Win['cov'][tracers][zs_indx])                               
-        else: 
+                                            self.SN,tracers,zs_indx,self.do_xi,Win['cov'][tracers][zs_indx])
+        else:
             fs=self.f_sky
-            if self.do_xi and self.xi_win: #in this case we need to use a separate function directly from xi_cov
+            if self.do_xi and self.xi_win_approx: #in this case we need to use a separate function directly from xi_cov
                 cov['G1324']=0
                 cov['G1423']=0
             else:
                 cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov(cls,
                                             self.SN,tracers,zs_indx,self.do_xi,fs)
-        cov['G']=cov['G1324']+cov['G1423'] 
+        cov['G']=cov['G1324']+cov['G1423']
         cov['final']=cov['G']
 
         if not self.do_xi:
@@ -283,8 +283,8 @@ class cov_3X2():
 
         cov['SSC']=0
         cov['Tri']=0
-        
-#         if not 'galaxy' in tracers: 
+
+#         if not 'galaxy' in tracers:
         if self.Tri_cov or self.SSV_cov:
             zs1=self.z_bins[tracers[0]][zs_indx[0]]
             zs2=self.z_bins[tracers[1]][zs_indx[1]]
@@ -316,11 +316,11 @@ class cov_3X2():
 
         if self.Tri_cov:
             cov['Tri']=self.CTR.cov_tri_zkernel(P=self.Ang_PS.clz['cls'],z_kernel=sig_cL/self.Ang_PS.clz['chi']**2) #FIXME: check dimensions, get correct factors of length.. chi**2 is guessed from eq. A3 of https://arxiv.org/pdf/1601.05779.pdf ... note that cls here is in units of P(k)/chi**2
-            fs0=self.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]] 
+            fs0=self.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]]
             fs0*=self.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
             fs0=np.sqrt(fs0)
             cov['Tri']/=self.cov_utils.gaussian_cov_norm_2D*fs0 #(2l+1)f_sky.. we didnot normalize gaussian covariance in trispectrum computation.
-        
+
         if self.use_window and (self.SSV_cov or self.Tri_cov): #Check: This is from writing p-cl as M@cl... cov(p-cl)=M@cov(cl)@M.T ... separate  M when different p-cl
             M1=Win['cl'][(tracers[0],tracers[1])][(zs_indx[0],zs_indx[1])]['M'] #12
             M2=Win['cl'][(tracers[2],tracers[3])][(zs_indx[2],zs_indx[3])]['M'] #34
@@ -360,7 +360,7 @@ class cov_3X2():
 #                     clij=clij@Win['cl'][corr][(i,j)]['M'] #pseudo cl.. now passed as input
             cl_b[(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
         return cl_b
-    
+
     def calc_pseudo_cl(self,cl,Win,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear')):
         return cl@Win['cl'][corr][(zs1_indx,zs2_indx)]['M'] #pseudo cl
 
@@ -438,7 +438,7 @@ class cov_3X2():
                 pcl[corr2][(j,i)]=pcl[corr][(i,j)]#useful in gaussian covariance calculation.
         for corr in corrs:
             cl_b[corr]=delayed(self.combine_cl_tomo)(pcl[corr],corr=corr,Win=self.Win.Win) #bin only pseudo-cl
-            
+
         print('cl dict done')
         if self.do_cov:
             start_j=0
@@ -486,15 +486,15 @@ class cov_3X2():
             n=len(self.theta_bins)-1
             cov_xi['final']=np.zeros((n,n))
             return cov_xi
-        
+
         SN1324=0
         SN1423=0
-        
+
         if np.all(np.array(tracers)=='shear') and not m1_m2==m1_m2_cross: #cross between xi+ and xi-
             if self.use_window:
                 G1324,G1423=self.cov_utils.gaussian_cov_window(cls,self.SN,tracers,z_indx,self.do_xi,Win['cov'][tracers][z_indx],Bmode_mf=-1)
             else:
-                if not self.xi_win:
+                if not self.xi_win_approx:
                     G1324,G1423=self.cov_utils.gaussian_cov(cls,self.SN,tracers,z_indx,self.do_xi,self.f_sky,Bmode_mf=-1)
                 else:
                     G1324=0
@@ -503,8 +503,8 @@ class cov_3X2():
         else:
             cov_cl_G=cov_cl['G1324']+cov_cl['G1423'] #FIXME: needs Bmode for shear
 
-        
-        if not self.use_window and self.xi_win: #This is an appproximation to account for window. Correct thing is pseudo cl covariance but it is expensive to very high l needed for proper wigner transforms.
+
+        if not self.use_window and self.xi_win_approx: #This is an appproximation to account for window. Correct thing is pseudo cl covariance but it is expensive to very high l needed for proper wigner transforms.
             HT_kwargs={'l_cl':self.l,'m1_m2':m1_m2,'m1_m2_cross':m1_m2_cross}
             bf=1
             if np.all(np.array(tracers)=='shear') and not m1_m2==m1_m2_cross: #cross between xi+ and xi-
@@ -518,7 +518,7 @@ class cov_3X2():
 
         cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=self.xi_bin_utils[m1_m2])
         #binning is cheap
- 
+
 #         cov_xi['final']=cov_xi['G']
         cov_xi['SSC']=0
         cov_xi['Tri']=0
@@ -533,25 +533,25 @@ class cov_3X2():
                                                             m1_m2_cross=m1_m2_cross,
                                                             cl_cov=cov_cl['Tri'])
             cov_xi['Tri']=self.binning.bin_2d(cov=cov_xi['Tri'],bin_utils=self.xi_bin_utils[m1_m2])
-            
+
         cov_xi['final']=cov_xi['G']+cov_xi['SSC']+cov_xi['Tri']
         #         if self.use_window: #pseudo_cl:
-        if self.use_window or self.xi_win:
+        if self.use_window or self.xi_win_approx:
             cov_xi['G']/=(Win['cl'][corr1][indxs_1]['xi_b']*Win['cl'][corr2][indxs_2]['xi_b'])
             cov_xi['final']/=(Win['cl'][corr1][indxs_1]['xi_b']*Win['cl'][corr2][indxs_2]['xi_b'])
-        
+
         return cov_xi
 
     def get_xi(self,cls={},m1_m2=[],corr=None,indxs=None,Win=None):
         cl=cls[corr][indxs] #this should be pseudo-cl when using window
         th,xi=self.HT.projected_correlation(l_cl=self.l,m1_m2=m1_m2,cl=cl)
-        if not self.use_window and self.xi_win: #This is an appproximation to account for window. Correct thing is pseudo cl but it is expensive to very high l needed for proper wigner transforms.
+        if not self.use_window and self.xi_win_approx: #This is an appproximation to account for window. Correct thing is pseudo cl but it is expensive to very high l needed for proper wigner transforms.
             xi=xi*Win['cl'][corr][indxs]['xi']
 
         xi_b=self.binning.bin_1d(xi=xi,bin_utils=self.xi_bin_utils[m1_m2])
 
-        if self.use_window or self.xi_win:
-            xi_b/=(Win['cl'][corr][indxs]['xi_b']) 
+        if self.use_window or self.xi_win_approx:
+            xi_b/=(Win['cl'][corr][indxs]['xi_b'])
         return xi_b
 
     def xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
