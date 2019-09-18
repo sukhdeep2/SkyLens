@@ -100,9 +100,7 @@ class Covariance_utils():
         CV2[23]=cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f
         return CV2
 
-
-    
-    def gaussian_cov_window(self,cls,SN,tracers,z_indx,do_xi,Win):
+    def gaussian_cov_window(self,cls,SN,tracers,z_indx,do_xi,Win,Bmode_mf=1):
         SN2=self.get_SN(SN,tracers,z_indx)
         CV=self.get_CV_cl(cls,tracers,z_indx)
         CV_B=self.get_CV_B_cl(cls,tracers,z_indx)
@@ -110,6 +108,10 @@ class Covariance_utils():
         G={1324:0,1423:0}
         cv_indxs={1324:(13,24),1423:(14,23)}
         
+        add_EB=1
+        if self.do_xi and np.all(np.array(tracers)=='shear'):
+            add_EB+=1
+            
         for corr_i in [1324,1423]:
             W_pm=Win['W_pm'][corr_i]
             c1=cv_indxs[corr_i][0]
@@ -118,21 +120,23 @@ class Covariance_utils():
             for k in Win['M'][corr_i].keys():
                 for wp in W_pm:
                     CV2=CV
-                    if wp<0:
-                        CV2=CV_B
-                    if k=='clcl': 
-                        G_t=np.outer(CV2[c1],CV2[c2])
-                    if k=='Ncl': 
-                        G_t=np.outer(SN2[c1],CV2[c2])
-                    if k=='clN': 
-                        G_t=np.outer(CV2[c1],SN2[c2])
-                    if k=='NN': 
-                        G_t=np.outer(SN2[c1],SN2[c2])
-
-                    G[corr_i]+=G_t*Win['M'][corr_i][k][wp]
+                    for a_EB in np.arange(add_EB):
+                        if wp<0 or a_EB>0:
+                            CV2=CV_B
+                        if k=='clcl': 
+                            G_t=np.outer(CV2[c1],CV2[c2])
+                        if k=='Ncl': 
+                            G_t=np.outer(SN2[c1],CV2[c2])
+                        if k=='clN': 
+                            G_t=np.outer(CV2[c1],SN2[c2])
+                        if k=='NN': 
+                            G_t=np.outer(SN2[c1],SN2[c2])
+                        if a_EB>0:
+                            G_t*=Bmode_mf #need to -1 for xi+/- cross covariance
+                        G[corr_i]+=G_t*Win['M'][corr_i][k][wp]
 
         return G[1324],G[1423]
-    
+        
     def get_CV_B_cl(self,cls,tracers,z_indx): #for shear B-mode
         sv_f={13:1,24:1,14:1,23:1}
         if tracers[0]=='shear' and tracers[2]=='shear':
@@ -169,32 +173,99 @@ class Covariance_utils():
 
 #         return G1324,G1423
 
-    def gaussian_cov(self,cls,SN,tracers,z_indx,do_xi): #no-window covariance
+    def gaussian_cov(self,cls,SN,tracers,z_indx,do_xi,f_sky,Bmode_mf=1): #no-window covariance
 
         SN2=self.get_SN(SN,tracers,z_indx)
         CV=self.get_CV_cl(cls,tracers,z_indx)
+        
+        def get_G4(CV,SN2):
+            G1324= ( CV[13]+ SN2[13])#/self.gaussian_cov_norm
+                 #get returns None if key doesnot exist. or 0 adds 0 is SN is none
 
-        G1324= ( CV[13]+ SN2[13])#/self.gaussian_cov_norm
-             #get returns None if key doesnot exist. or 0 adds 0 is SN is none
+            G1324*=( CV[24]+ SN2[24])
 
-        G1324*=( CV[24]+ SN2[24])
+            G1423= ( CV[14]+ SN2[14])#/self.gaussian_cov_norm
 
-        G1423= ( CV[14]+ SN2[14])#/self.gaussian_cov_norm
-
-        G1423*=(CV[23]+ SN2[23])
-
-#         G1423/=self.cov_utils.gaussian_cov_norm
+            G1423*=(CV[23]+ SN2[23])
+            return G1324,G1423
+            
+        G1324,G1423=get_G4(CV,SN2)
+        if self.do_xi and np.all(np.array(tracers)=='shear'):
+            CVB=self.get_CV_B_cl(cls,tracers,z_indx)
+            G1324_B,G1423_B=get_G4(CVB,SN2)
+            G1324+=G1324_B*Bmode_mf
+            G1423+=G1423_B*Bmode_mf
+        print(G1324,G1423,Bmode_mf)
         G1423=np.diag(G1423)
         G1324=np.diag(G1324)
-#         G=np.diag(G1423+G1324)
-# #         if not do_xi:
-#         G/=self.gaussian_cov_norm
+        
+        Norm=np.pi*4
+        
+        fs1324=1
+        fs0=1
+        fs1423=1
+        if f_sky is not None:
+            fs1324=np.sqrt(f_sky[tracers[0],tracers[2]][z_indx[0],z_indx[2]]*f_sky[tracers[1],tracers[3]][z_indx[1],z_indx[3]])
+            fs0=f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
+            fs1423=np.sqrt(f_sky[tracers[0],tracers[3]][z_indx[0],z_indx[3]]*f_sky[tracers[1],tracers[2]][z_indx[1],z_indx[2]])
+        
+        if not self.do_xi:
+            G1324/=self.gaussian_cov_norm_2D/fs1324*fs0
+            G1423/=self.gaussian_cov_norm_2D/fs1423*fs0
+        else:
+            G1324*=fs1324/fs0/Norm
+            G1423*=fs1423/fs0/Norm
+
+        if np.all(np.array(tracers)=='shear') and Bmode_mf<0:
+            G1324*=Bmode_mf
+            G1423*=Bmode_mf
+            
         return G1324,G1423
 
-
-
-    def shear_SN(self,SN,tracers,z_indx):
+    def xi_gaussian_cov_window_approx(self,cls,SN,tracers,z_indx,do_xi,Win,HT,HT_kwargs,Bmode_mf=1):
         SN2=self.get_SN(SN,tracers,z_indx)
-        SN1324=np.outer(SN2[13],SN2[24])
-        SN1423=np.outer(SN2[14],SN2[23])
-        return SN1324,SN1423
+        CV=self.get_CV_cl(cls,tracers,z_indx)
+        CV_B=self.get_CV_B_cl(cls,tracers,z_indx)
+        
+        G={1324:0,1423:0}
+        cv_indxs={1324:(13,24),1423:(14,23)}
+        
+        Norm=np.pi*4
+        
+        add_EB=1
+        if self.do_xi and np.all(np.array(tracers)=='shear'):
+            add_EB+=1
+            
+        for corr_i in [1324,1423]:
+            W_pm=Win['W_pm'][corr_i]
+            c1=cv_indxs[corr_i][0]
+            c2=cv_indxs[corr_i][1]
+
+            for k in Win['M'][corr_i].keys():
+                for wp in W_pm:
+                    CV2=CV
+                    for a_EB in np.arange(add_EB):
+                        if wp<0 or a_EB>0:
+                            CV2=CV_B
+                        if k=='clcl': 
+                            G_t=np.outer(CV2[c1],CV2[c2])
+                        if k=='Ncl': 
+                            G_t=np.outer(SN2[c1],CV2[c2])
+                        if k=='clN': 
+                            G_t=np.outer(CV2[c1],SN2[c2])
+                        if k=='NN': 
+                            G_t=np.outer(SN2[c1],SN2[c2])
+                        th,G_t=HT.projected_covariance2(cl_cov=G_t,**HT_kwargs)
+                        G_t*=Win['xi'][corr_i][k]
+                        G_t/=Norm
+                        if a_EB>0:
+                            G_t*=Bmode_mf #need to -1 for xi+/- cross covariance
+                        G[corr_i]+=G_t
+
+        return G[1324]+G[1423]
+
+#     def shear_SN(self,SN,tracers,z_indx):
+#         SN2=self.get_SN(SN,tracers,z_indx)
+#         SN1324=np.outer(SN2[13],SN2[24])
+#         SN1423=np.outer(SN2[14],SN2[23])
+#         return SN1324,SN1423

@@ -19,7 +19,7 @@ from multiprocessing import Pool,cpu_count
 class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,corrs=None,m1_m2s=None,use_window=None,f_sky=None,
                 do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,HT=None,xi_bin_utils=None,do_xi=False,
-                store_win=False,Win=None,wigner_files=None,step=None):
+                store_win=False,Win=None,wigner_files=None,step=None,xi_win_approx=False):
         self.Win=Win
         self.wigner_files=wigner_files
         self.wig_3j=None
@@ -44,18 +44,32 @@ class window_utils():
         nwl=len(self.window_l)*1.0
 
         self.step=step
-
+        if step is None:
+            self.step=np.int32(100.*((2500./nl)**2)*(1000./nwl)) #small step is useful for lower memory load
+            self.step=min(self.step,nl+1)
+        self.lms=np.arange(nl,step=self.step)
+        print('Win gen: step size',self.step)
 
         self.Win=Win
         if self.Win is None and self.use_window:
-            if step is None:
-                self.step=np.int32(100.*((3000./nl)**2)*(1000./nwl)) #small step is useful for lower memory load
-                self.step=min(self.step,nl+1)
-
-            self.lms=np.arange(nl,step=self.step)
-            print('Win gen: step size',self.step)
+            if self.do_xi:
+                print('Warning: window for xi is different from cl. Only one of xi or cl is supported. Hence cl window will be wrong.')
             self.set_wig3j()
             self.set_window(corrs=self.corrs,corr_indxs=self.corr_indxs)
+        elif self.do_xi and xi_win_approx:
+            self.Win={'cl':{corr:{} for corr in self.corrs},'cov':{corr1+corr2: {} for corr1 in self.corrs for corr2 in self.corrs}}
+            self.set_window_cl(corrs=self.corrs,corr_indxs=self.corr_indxs)
+
+            for k in self.Win_cl.keys():
+                wint=self.Win_cl[k]
+                self.Win['cl'][wint['corr']][wint['indxs']]=wint
+            if self.do_cov:
+                for k in self.Win_cov.keys():
+                    wint=self.Win_cov[k]
+                    corrs=wint['corr1']+wint['corr2']
+                    indxs=wint['indxs1']+wint['indxs2']
+                    self.Win['cov'][corrs][indxs]=wint
+#                     self.Win['cov']=self.Win_cov
 
 
     def wig3j_step_read(self,m=0,lm=None):
@@ -180,9 +194,9 @@ class window_utils():
         win={}
         win['corr']=corr
         win['indxs']=indxs
-        if not self.use_window:
-            win={'cl':self.f_sky, 'M':self.coupling_M,'xi':1,'xi_b':1}
-            return win
+#         if not self.use_window:
+#             win={'cl':self.f_sky, 'M':self.coupling_M,'xi':1,'xi_b':1}
+#             return win
 
         m1m2=np.absolute(self.m1_m2s[corr]).flatten()
         W_pm=0
@@ -190,6 +204,9 @@ class window_utils():
             W_pm=2 #we only deal with E mode\
             if corr==('shearB','shearB'):
                 W_pm=-2
+        if self.do_xi:
+            W_pm=0 #for xi estimators, there is no +/-. Note that this will result in wrong thing for pseudo-C_ell.
+                    #FIXME: hence pseudo-C_ell and xi together are not supported right now
 
         z_bin1=self.z_bins[corr[0]][indxs[0]]
         z_bin2=self.z_bins[corr[1]][indxs[1]]
@@ -226,7 +243,9 @@ class window_utils():
         if 'N' in win_M.keys():
             win2['M_noise']={lm:win_M['N']}
         if win['corr']==('shear','shear') and win['indxs'][0]==win['indxs'][1]: #FIXME: this should be dprecated once shearB is implemented.
-            win_M=self.coupling_matrix_large(win[12],wig_3j_2=wig_3j_2,mf_pm=mf_pm,W_pm=-2)
+
+            if not self.do_xi:#FIXME: hence pseudo-C_ell and xi together are not supported right now. for xi, window is same in xi+/-
+                win_M=self.coupling_matrix_large(win[12],wig_3j_2=wig_3j_2,mf_pm=mf_pm,W_pm=-2)
 #             win_M=self.coupling_matrix_large(win[12],wig_3j_2=wig_3j_2[-2])
             win2['M_B_noise']={}
             win2['M_B']={}
@@ -294,14 +313,16 @@ class window_utils():
         win['corr2']=corr2
         win['indxs1']=indxs1
         win['indxs2']=indxs2
-        if not self.use_window:
-            win={'cl1324':self.f_sky,'M1324':self.coupling_G, 'M1423':self.coupling_G, 'cl1423':self.f_sky}
-            return win
+#         if not self.use_window:
+#             win={'cl1324':self.f_sky,'M1324':self.coupling_G, 'M1423':self.coupling_G, 'cl1423':self.f_sky}
+#             return win
 
         def get_window_spins(cov_indxs=[(0,2),(1,3)]):    #W +/- factors based on spin
             W_pm=[0]
-#             corr1=(corr[cov_indxs[0][0]],corr[cov_indxs[0][1]])
-#             corr2=(corr[cov_indxs[1][0]],corr[cov_indxs[1][1]])
+            if self.do_xi:
+                return W_pm#for xi estimators, there is no +/-. Note that this will result in wrong thing for pseudo-C_ell.
+                    #FIXME: hence pseudo-C_ell and xi together are not supported right now
+
             s=[np.sum(self.m1_m2s[corr1]),np.sum(self.m1_m2s[corr2])]
 
             if s[0]==2 and s[1]==2: #gE,gE
@@ -410,11 +431,11 @@ class window_utils():
         win['xi_b']={1324:{},1423:{}}
         if self.do_xi:
             for k in win[1324].keys():
-                th,win['xi'][1324][k]=self.HT.projected_correlation(l_cl=self.window_l,m1_m2=(0,0),cl=win[1324][k])
-                win['xi_b'][1324][k]=self.binning.bin_1d(xi=win['xi'][1324][k],bin_utils=self.xi_bin_utils[(0,0)])
+                th,win['xi'][1324][k]=self.HT.projected_covariance(l_cl=self.window_l,m1_m2=(0,0),cl_cov=win[1324][k])
+                win['xi_b'][1324][k]=self.binning.bin_2d(cov=win['xi'][1324][k],bin_utils=self.xi_bin_utils[(0,0)])
             for k in win[1423].keys():
-                th,win['xi'][1423][k]=self.HT.projected_correlation(l_cl=self.window_l,m1_m2=(0,0),cl=win[1423][k])
-                win['xi_b'][1423][k]=self.binning.bin_1d(xi=win['xi'][1423][k],bin_utils=self.xi_bin_utils[(0,0)])
+                th,win['xi'][1423][k]=self.HT.projected_covariance(l_cl=self.window_l,m1_m2=(0,0),cl_cov=win[1423][k])
+                win['xi_b'][1423][k]=self.binning.bin_2d(cov=win['xi'][1423][k],bin_utils=self.xi_bin_utils[(0,0)])
 
         win['W_pm']=W_pm
         win['m1m2']=m1m2s
@@ -492,9 +513,7 @@ class window_utils():
 
         return dic
 
-    def set_window(self,corrs=None,corr_indxs=None,client=None):
-
-        self.Win={'cl':{}}
+    def set_window_cl(self,corrs=None,corr_indxs=None,client=None):
         if self.store_win and client is None:
             client=get_client()
 
@@ -540,7 +559,16 @@ class window_utils():
                 self.Win_cov=client.compute(self.Win_cov)
                 self.Win_cov=self.Win_cov.result()
             self.Win_cl=self.Win_cl.result()
-            print('got window cls, now to coupling matrices.')
+
+
+
+
+    def set_window(self,corrs=None,corr_indxs=None,client=None):
+        self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
+        if self.store_win and client is None:
+            client=get_client()
+        print('got window cls, now to coupling matrices.')
+        self.Win={'cl':{}}
 
         self.Win_cl_lm={}
         self.Win_cov_lm={}
@@ -612,7 +640,7 @@ class window_utils():
         del self.Win_cl_lm
         if self.do_cov:
             del self.Win_cov
-            del self.Win_cov_lm
+        del self.Win_cov_lm
         del self.wig_3j
         del self.wig_3j_2
         del self.mf_pm
