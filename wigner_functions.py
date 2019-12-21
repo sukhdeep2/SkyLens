@@ -24,6 +24,7 @@ def wigner_d(m1,m2,theta,l,l_use_bessel=1.e4):
     # bessel function. Fingers and toes crossed!!!
     # mpmath is slower and also has convergence issues at large ell.
     #https://github.com/scipy/scipy/issues/4446
+    
         l=np.atleast_1d(l)
         x=l<l_use_bessel
         l=np.atleast_1d(l[x])
@@ -43,8 +44,10 @@ def wigner_d(m1,m2,theta,l,l_use_bessel=1.e4):
     d_mat=d_mat.reshape(1,len(d_mat))
     theta=theta.reshape(len(theta),1)
     d_mat=d_mat*((np.sin(theta/2.0)**a)*(np.cos(theta/2.0)**b))
-    d_mat*=jacobi(l,a,b,np.cos(theta))
-
+    x=d_mat==0
+    d_mat*=jacobi(k,a,b,np.cos(theta)) #l
+    d_mat[x]=0
+    
     if l_use_bessel is not None:
         l=np.atleast_1d(l0)
         x=l>=l_use_bessel
@@ -53,13 +56,37 @@ def wigner_d(m1,m2,theta,l,l_use_bessel=1.e4):
         d_mat=np.append(d_mat,jn(m1-m2,l*theta),axis=1)
     return d_mat
 
-
 def wigner_d_parallel(m1,m2,theta,l,ncpu=None,l_use_bessel=1.e4):
     if ncpu is None:
         ncpu=cpu_count()
     p=Pool(ncpu)
     d_mat=np.array(p.map(partial(wigner_d,m1,m2,theta,l_use_bessel=l_use_bessel),l))
     return d_mat[:,:,0].T
+
+def wigner_d_recur(m1,m2,theta,l,l_use_bessel=1.e4):     #FIX: Can use recursion reltion from Kilbinger+ 2017
+    dmat=np.zeros((len(theta),len(l)))
+    theta=theta.reshape(len(theta),1)
+    l=l.reshape(1,len(l))
+    d100=np.cos(theta)
+    
+    A0=l*(2.*l-1.)
+
+    A0/=np.sqrt((l**2-m1**2)*(l**2-m2**2))
+    A1=d100-m1*m2*1.0/l/(l-1.)
+    A2=np.sqrt(((l-1)**2-m1**2)*((l-1)**2-m2**2))
+    A2/=(l-1)*(2*l-1)
+    il=0
+    for i in np.arange(len(l[0,:])):
+        if l[0,i]<np.absolute(m1) or l[0,i]<np.absolute(m2):
+            continue
+        if il<=2:
+            dmat[:,i]=wigner_d(m1,m2,theta,np.atleast_1d(l[0,i]),l_use_bessel=l_use_bessel)[:,0]
+            il+=1
+        else:
+            dmat[:,i]=A1[:,i]*dmat[:,i-1]-A2[0,i]*dmat[:,i-2]
+            dmat[:,i]*=A0[0,i]
+    return dmat
+
 
 def log_factorial(n):
     return loggamma(n+1)
