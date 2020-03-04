@@ -21,7 +21,7 @@ class wigner_transform():
         # self.theta=theta
         for (m1,m2) in m1_m2:
             self.wig_d[(m1,m2)]=wigner_d_parallel(m1,m2,theta,self.l,ncpu=ncpu)
-            # self.wig_d[(m1,m2)]*=self.norm #this works for covariance and correlation function
+#             self.wig_d[(m1,m2)]=wigner_d_recur(m1,m2,theta,self.l)
             self.theta[(m1,m2)]=theta #FIXME: Ugly
 
 

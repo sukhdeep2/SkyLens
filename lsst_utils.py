@@ -121,7 +121,10 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
                  AI_z=0,mag_fact=0,k_max=0.3):
     dzs=np.gradient(zs) if len(zs)>1 else 1
 
-    p_zs=p_zs/np.sum(p_zs*dzs)
+    if np.sum(p_zs*dzs)!=0:
+        p_zs=p_zs/np.sum(p_zs*dzs)
+    else:
+        p_zs*=0
     nz=dzs*p_zs*ns
 
     i=bin_indx
@@ -145,9 +148,9 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
 
 
 def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
-                    zp_sigma=None,zs=None,z_bins=None,f_sky=0.3,nside=256,use_window=False,
+                    zp_sigma=None,zs=None,n_zs=100,z_bins=None,f_sky=0.3,nside=256,use_window=False,
                     mask_start_pix=0,window_cl_fact=None,bg1=1,AI=0,AI_z=0,l=None,mag_fact=0,
-                     sigma_gamma=0.26,k_max=0.3,unit_win=False,use_shot_noise=True):
+                     sigma_gamma=0.26,k_max=0.3,unit_win=False,use_shot_noise=True,**kwargs):
     """
         Setting source redshift bins in the format used in code.
         Need
@@ -167,7 +170,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
         z_bins=np.linspace(min(zp)-0.0001,max(zp)+0.0001,nz_bins+1)
 
     if zs is None:
-        zs=np.linspace(0,max(z_bins)+1,200)
+        zs=np.linspace(0,max(z_bins)+1,n_zs)
     dzs=np.gradient(zs)
     dzp=np.gradient(zp) if len(zp)>1 else [1]
     zp=np.array(zp)
@@ -207,6 +210,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
         #sc=1./lu.sigma_crit(zl=zl_kernel,zs=zs[x],cosmo_h=cosmo_h)
         #zs_bins[i]['lens_kernel']=np.dot(zs_bins[i]['pzdz'],sc)
 
+#         print(zmax,zs_bins[i]['z'])
         zmax=max([zmax,max(zs_bins[i]['z'])])
         if use_shot_noise:
             zs_bins['SN']['galaxy'][:,i,i]=galaxy_shot_noise_calc(zg1=zs_bins[i],zg2=zs_bins[i])
@@ -396,13 +400,14 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
                         zp_sigma=z_sigma,z_bins=z_bins,f_sky=f_sky,nside=nside,
                            use_window=use_window,mask_start_pix=mask_start_pix,k_max=k_max,
                            l=l,sigma_gamma=sigma_gamma,AI=AI,AI_z=AI_z,unit_win=unit_win
-                           ,use_shot_noise=use_shot_noise)
+                           ,use_shot_noise=use_shot_noise,**kwargs)
 
 
 def DESI_lens_bins(dataset='lrg',nbins=1,window_cl_fact=None,z_bins=None,
                     f_sky=0.3,nside=256,use_window=False,mask_start_pix=0,bg1=1,
                        l=None,sigma_gamma=0,mag_fact=0,
                     **kwargs):
+
     home='./desi/data/desi/'
     fname=dataset+'_nz.dat'
     fname='nz_{d}.dat'.format(d=dataset)
@@ -420,12 +425,12 @@ def DESI_lens_bins(dataset='lrg',nbins=1,window_cl_fact=None,z_bins=None,
 
     if z_bins is None:
         z_bins=np.linspace(zmin, min(2,zmax), nbins+1)
-
+    print(dataset,zmin,zmax,z_bins)
     return source_tomo_bins(zp=z,p_zp=pz,ns=np.sum(pz),nz_bins=nbins,mag_fact=mag_fact,
                          ztrue_func=None,zp_bias=0,window_cl_fact=window_cl_fact,
                         zp_sigma=0,z_bins=z_bins,f_sky=f_sky,nside=nside,
                            use_window=use_window,mask_start_pix=mask_start_pix,bg1=bg1,
-                           l=l,sigma_gamma=sigma_gamma)
+                           l=l,sigma_gamma=sigma_gamma,**kwargs)
 
 
 def DES_lens_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigma_gamma=0,nside=256,mask_start_pix=0,window_cl_fact=0,unit_win=True,use_window=True,f_sky=1):

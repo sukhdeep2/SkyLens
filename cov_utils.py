@@ -195,7 +195,7 @@ class Covariance_utils():
             G1324_B,G1423_B=get_G4(CVB,SN2)
             G1324+=G1324_B*Bmode_mf
             G1423+=G1423_B*Bmode_mf
-        print(G1324,G1423,Bmode_mf)
+
         G1423=np.diag(G1423)
         G1324=np.diag(G1324)
         

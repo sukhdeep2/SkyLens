@@ -117,6 +117,7 @@ class cov_3X2():
 
         self.tracers=()
         n_bins={}
+
         self.corr_indxs=corr_indxs
         for tracer in ('shear','galaxy','kappa'):
             n_bins[tracer]=0
@@ -125,13 +126,15 @@ class cov_3X2():
                 self.tracers+=(tracer,)
             else:
                 self.z_bins.pop(tracer, None)
+                continue
 
             if self.corr_indxs.get((tracer,tracer)) is not None:
+#                 print('found',tracer,self.corr_indxs[(tracer,tracer)])
                 continue
 
             self.corr_indxs[(tracer,tracer)]=[j for j in itertools.combinations_with_replacement(
                                                     np.arange(n_bins[tracer]),2)]
-
+#             print(tracer,self.corr_indxs[(tracer,tracer)])
             if tracer=='galaxy' and not self.do_cov:
                 self.corr_indxs[(tracer,tracer)]=[(i,i) for i in np.arange(n_bins[tracer])] #by default, no cross correlations between galaxy bins
 
@@ -148,7 +151,7 @@ class cov_3X2():
         self.m1_m2s[('shear','shear')]=[(2,2),(2,-2)]
         self.m1_m2s[('window')]=[(0,0)]
 #         print('corr_indxs',self.corr_indxs)
-
+        print(self.corr_indxs,n_bins)
         self.stack_indxs=self.corr_indxs.copy()
 
         if np.isscalar(self.f_sky):
@@ -170,6 +173,7 @@ class cov_3X2():
                         window_lmax=self.window_lmax,Win=Win,HT=self.HT,do_xi=self.do_xi,
                         xi_win_approx=self.xi_win_approx,
                         xi_bin_utils=self.xi_bin_utils,store_win=store_win,wigner_files=wigner_files)
+        print('Window done')
         if self.Tri_cov:
             self.CTR=cov_matter_tri(k=self.l)
 
@@ -315,11 +319,12 @@ class cov_3X2():
             cov['SSC']=np.dot(clr.T,clr)
 
         if self.Tri_cov:
-            cov['Tri']=self.CTR.cov_tri_zkernel(P=self.Ang_PS.clz['cls'],z_kernel=sig_cL/self.Ang_PS.clz['chi']**2) #FIXME: check dimensions, get correct factors of length.. chi**2 is guessed from eq. A3 of https://arxiv.org/pdf/1601.05779.pdf ... note that cls here is in units of P(k)/chi**2
+            cov['Tri']=self.CTR.cov_tri_zkernel(P=self.Ang_PS.clz['cls'],z_kernel=sig_cL/self.Ang_PS.clz['chi']**1) #FIXME: check dimensions, get correct factors of length.. chi**2 is guessed from eq. A3 of https://arxiv.org/pdf/1601.05779.pdf ... note that cls here is in units of P(k)/chi**2
             fs0=self.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]]
             fs0*=self.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
             fs0=np.sqrt(fs0)
-            cov['Tri']/=self.cov_utils.gaussian_cov_norm_2D*fs0 #(2l+1)f_sky.. we didnot normalize gaussian covariance in trispectrum computation.
+            cov['Tri']/=self.cov_utils.gaussian_cov_norm_2D**2 #Since there is no dirac delta, there should be 2 factor of (2l+1)dl... eq. A3 of https://arxiv.org/pdf/1601.05779.pdf
+            cov['Tri']/=fs0 #(2l+1)f_sky.. we didnot normalize gaussian covariance in trispectrum computation.
 
         if self.use_window and (self.SSV_cov or self.Tri_cov): #Check: This is from writing p-cl as M@cl... cov(p-cl)=M@cov(cl)@M.T ... separate  M when different p-cl
             M1=Win['cl'][(tracers[0],tracers[1])][(zs_indx[0],zs_indx[1])]['M'] #12
@@ -328,9 +333,11 @@ class cov_3X2():
         else:
             cov['final']=cov['G']+cov['SSC']+cov['Tri']
 
-        if not self.do_xi:
-            for k in ['final','G','SSC','Tri']:#no need to bin G1324 and G1423
+        
+        for k in ['final','G','SSC','Tri']:#no need to bin G1324 and G1423
+            if self.l_bins is not None:
                 cl_none,cov[k+'_b']=self.bin_cl_func(cov=cov[k])
+            if not self.do_xi:
                 del cov[k]
         return cov
 
@@ -490,7 +497,7 @@ class cov_3X2():
         SN1324=0
         SN1423=0
 
-        if np.all(np.array(tracers)=='shear') and not m1_m2==m1_m2_cross: #cross between xi+ and xi-
+        if np.all(np.array(tracers)=='shear') and  m1_m2!=m1_m2_cross: #cross between xi+ and xi-
             if self.use_window:
                 G1324,G1423=self.cov_utils.gaussian_cov_window(cls,self.SN,tracers,z_indx,self.do_xi,Win['cov'][tracers][z_indx],Bmode_mf=-1)
             else:

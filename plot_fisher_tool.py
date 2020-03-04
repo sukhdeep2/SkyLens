@@ -34,12 +34,15 @@ def tune_ytick(ax,fontsize=15):
     return ax
 
 class fisher_tool():
-    def __init__(self,Fishers,par_cen,par_prior_variance=None,pars=None,par_labels=par_labels,ax_lim_nsigma=3,fisher_titles={}):
+    def __init__(self,Fishers,par_cen,par_prior_variance=None,pars=None,par_labels=par_labels,ax_lim_nsigma=3,fisher_titles={},
+                print_fom=True,print_par_error=True):
         self.init_fisher(Fishers=Fishers,par_prior_variance=par_prior_variance,pars=pars)
         self.par_cen       = par_cen
         self.ax_lim_nsigma=ax_lim_nsigma
         self.fisher_titles=fisher_titles
         self.par_labels=par_labels
+        self.print_par_error=print_par_error
+        self.print_fom=print_fom
         self.cal_Cov_par()
         self.cal_Par_err()
         self.cal_Corr_par()
@@ -130,8 +133,8 @@ class fisher_tool():
             #ax.text(0.75,0.82, corr_coe ,transform=ax.transAxes,color=color,fontsize=15)
 #             area_t=np.format_float_scientific((1./area),precision=1,exp_digits=1)
             area_t="%d"%(1./area)
-            
-            ax.text(text_x+0.05*(4-len(area_t)),text_y, area_t ,transform=ax.transAxes,color=color,fontsize=text_size,zorder=10,
+            if self.print_fom:
+                ax.text(text_x+0.05*(4-len(area_t)),text_y, area_t ,transform=ax.transAxes,color=color,fontsize=text_size,zorder=10,
                    bbox=dict(facecolor='white', alpha=0.5,lw=0,pad=0))
 #             text_y=0.11
             text_y-=0.15
@@ -214,7 +217,8 @@ class fisher_tool():
                         while sigma2==0:
                             sigma2=np.around(sigma,decimals=decimals)
                             decimals+=1
-                        ax[0,-2].text(x=1.1,y=ytext,s=self.par_labels[par_i]+'$='+str(sigma2)+'$',
+                        if self.print_par_error:
+                            ax[0,-2].text(x=1.1,y=ytext,s=self.par_labels[par_i]+'$='+str(sigma2)+'$',
                                      color=color,fontsize=text_fontsize)
                         ytext-=0.3
                     ax[i,j].set_yticks([])
