@@ -179,7 +179,7 @@ class cov_matter_tri():
 
         return result
     
-    def cov_tri_zkernel(self,P, l=None,k=None,z_kernel=None):
+    def cov_tri_zkernel(self,P, l=None,k=None,z_kernel=None,chi=None):
         """Covariance from trispectrum, without super-sample covariance."""
         
         if k is None:
@@ -195,10 +195,12 @@ class cov_matter_tri():
             2: 1 / 4,
             4: 9 / 64
         }
-
-        sig_F=np.sqrt(z_kernel) #kernel is function of l as well due to spin factors
-
-        CG = P*sig_F.T #*np.sqrt(2. / self.N)  # sqrt of Gaussian cov (of Harnois-Deraps&Pen)... FIXME: need to account for this
+        
+        sig_F=z_kernel#/self.Ang_PS.clz['chi']**2
+        sig_F=np.sqrt(sig_F) #kernel is function of l as well due to spin factors
+        
+        self.N_chi=np.outer(1./chi**2,self.N)
+        CG = P*sig_F.T*np.sqrt(2. / self.N_chi)  # sqrt of Gaussian cov (of Harnois-Deraps&Pen)... FIXME: need to account for this
 
         
         if l is None:
