@@ -252,6 +252,16 @@ class cov_3X2():
                 # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
         return cl
 
+    def cov_four_kernels(self,zs_indx=[],tracers=[]):
+        zs1=self.z_bins[tracers[0]][zs_indx[0]]
+        zs2=self.z_bins[tracers[1]][zs_indx[1]]
+        zs3=self.z_bins[tracers[2]][zs_indx[2]]
+        zs4=self.z_bins[tracers[3]][zs_indx[3]]
+#                 sig_cL=zs1['kernel_int']*zs2['kernel_int']*zs3['kernel_int']*zs4['kernel_int']
+        sig_cL=zs1['Gkernel_int']*zs2['Gkernel_int']*zs3['Gkernel_int']*zs4['Gkernel_int']#Only use lensing kernel... not implemented for galaxies (galaxies have magnification)
+        sig_cL*=self.Ang_PS.clz['dchi']
+        return sig_cL
+    
     def cl_cov(self,cls=None, zs_indx=[],tracers=[],Win=None):
         """
             Computes the covariance between any two tomographic power spectra.
@@ -288,27 +298,21 @@ class cov_3X2():
         cov['SSC']=0
         cov['Tri']=0
 
-#         if not 'galaxy' in tracers:
         if self.Tri_cov or self.SSV_cov:
-            zs1=self.z_bins[tracers[0]][zs_indx[0]]
-            zs2=self.z_bins[tracers[1]][zs_indx[1]]
-            zs3=self.z_bins[tracers[2]][zs_indx[2]]
-            zs4=self.z_bins[tracers[3]][zs_indx[3]]
-#                 sig_cL=zs1['kernel_int']*zs2['kernel_int']*zs3['kernel_int']*zs4['kernel_int']
-            sig_cL=zs1['Gkernel_int']*zs2['Gkernel_int']*zs3['Gkernel_int']*zs4['Gkernel_int']#Only use lensing kernel... not implemented for galaxies
-            sig_cL*=self.Ang_PS.clz['dchi']
+            sig_cL=self.cov_four_kernels(zs_indx=zs_indx,tracers=tracers)
 
         if self.SSV_cov :
             clz=self.Ang_PS.clz
-            Win_cl=None
-            Om_w12=None
-            Om_w34=None
-            fs0=self.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]] * self.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
-            if self.use_window:
-                Win_cl=Win['cov'][tracers][zs_indx]['mask_comb_cl']
-                Om_w12=Win['cov'][tracers][zs_indx]['Om_w12']
-                Om_w34=Win['cov'][tracers][zs_indx]['Om_w34']
-            sigma_win=self.cov_utils.sigma_win_calc(cls_lin=clz['cls_lin'],Win_cl=Win_cl,Om_w12=Om_w12,Om_w34=Om_w34)
+#             Win_cl=None
+#             Om_w12=None
+#             Om_w34=None
+#             fs0=self.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]] * self.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
+#             if self.use_window:
+#                 Win_cl=Win['cov'][tracers][zs_indx]['mask_comb_cl']
+#                 Om_w12=Win['cov'][tracers][zs_indx]['Om_w12']
+#                 Om_w34=Win['cov'][tracers][zs_indx]['Om_w34']
+#             sigma_win=self.cov_utils.sigma_win_calc(cls_lin=clz['cls_lin'],Win_cl=Win_cl,Om_w12=Om_w12,Om_w34=Om_w34)
+            sigma_win=self.cov_utils.sigma_win_calc(clz=clz,Win=Win,tracers=tracers,zs_indx=zs_indx)
 
             clr=self.Ang_PS.clz['clsR']
             if self.tidal_SSV_cov:

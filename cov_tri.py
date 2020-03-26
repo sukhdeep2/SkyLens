@@ -213,9 +213,9 @@ class cov_matter_tri():
                     CGi=self.lamU_1D[l][i]*CGl
                     result_l+=lamb[i] * np.dot(CGi.T,CGi)
    
-                print(l,np.all(result_l.T==result_l))
+#                 print(l,np.all(result_l.T==result_l))
                 result+=result_l
-                print(np.all(result.T==result))
+#                 print(np.all(result.T==result))
         return result
 
     def cov2cor(self,C):
