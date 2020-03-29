@@ -1,27 +1,41 @@
+import sys, os, gc, threading, subprocess
+from thread_count import *
+os.environ['OMP_NUM_THREADS'] = '35'
+#pid=os.getpid()
+#print('pid: ',pid, sys.version)
+
+thread_count()
+
+import tracemalloc
 import pickle
 from cov_3X2 import *
 from lsst_utils import *
 from scipy.stats import norm,mode,skew,kurtosis,percentileofscore
 
-
+import sys
 
 from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
 #http://distributed.readthedocs.io/en/latest/_modules/distributed/worker.html
 
 test_run=True
+gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
 
-use_complicated_window=True
+use_complicated_window=np.bool(np.int16(sys.argv[1]))
+unit_window=np.bool(np.int16(sys.argv[2]))
+
+lognormal=np.bool(np.int16(sys.argv[3]))
+do_blending=np.bool(np.int16(sys.argv[4]))
+do_SSV_sim=np.bool(np.int16(sys.argv[5]))
+use_shot_noise=np.bool(np.int16(sys.argv[6]))
+
 nsim=100
-lognormal=False
-lognormal_scale=2
 
-do_blending=True
-do_SSV_sim=True
+lognormal_scale=2
 
 nside=1024
 lmax_cl=1920#
-window_lmax=2000
+window_lmax=2000 #0
 Nl_bins=37 #40
 
 use_shot_noise=True
@@ -33,28 +47,33 @@ n_source_bins=1
 sigma_gamma=0.3944/np.sqrt(2.)  #*2**0.25
 
 store_win=True
-unit_window=False
 smooth_window=False
 
 if test_run:
     nside=128
     lmax_cl=int(nside*2.9)
-#     window_lmax=500
-    window_lmax=nside*3-1
+    window_lmax=50
+#    window_lmax=nside*3-1
     Nl_bins=7 #40
-    nsim=10
+    nsim=100
 
     
 wigner_files={}
-wigner_files[0]= '/Users/Deep/dask_temp/dask_wig3j_l3500_w2100_0_reorder.zarr'
-wigner_files[2]= '/Users/Deep/dask_temp/dask_wig3j_l3500_w2100_2_reorder.zarr'
+wig_home='/global/cscratch1/sd/sukhdeep/dask_temp/'
+#wig_home='/Users/Deep/dask_temp/'
+wigner_files[0]= wig_home+'/dask_wig3j_l3500_w2100_0_reorder.zarr'
+wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 
 l0w=np.arange(3*nside-1)
 
-
+memory='120gb'
+ncpu=64
+if test_run:
+    memory='20gb'
+    ncpu=4
 worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
-LC=LocalCluster(n_workers=1,processes=False,memory_limit='30gb',threads_per_worker=5,
-                local_dir='/Users/Deep/temp/NGL-worker/',
+LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
+                local_dir=wig_home+'/NGL-worker/',
                **worker_kwargs,
                 #scheduler_port=12234,
 #                 dashboard_address=8801
@@ -62,7 +81,7 @@ LC=LocalCluster(n_workers=1,processes=False,memory_limit='30gb',threads_per_work
 #                memory_monitor_interval='2000ms')
                )
 client=Client(LC,)#diagnostics_port=8801,)
-
+print(client)
 
 #setup parameters
 lmin_cl=0
@@ -128,15 +147,17 @@ sigma=50
 ww=1000*np.exp(-(l0w-mean)**2/sigma**2)
 
 
-
+print('getting win')
 z0=0.5
 zl_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=10,use_window=use_window,nbins=1,window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
                          f_sky=f_sky,nside=nside,unit_win=unit_window,use_shot_noise=True)
 
+print('zlbin done')
 z0=1 #1087
 zs_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=30,use_window=use_window,window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
                               f_sky=f_sky,nbins=n_source_bins,nside=nside,unit_win=unit_window,use_shot_noise=True) #p_zp=np.array([1])
-
+#gc.collect()
+print('zsbin done',thread_count())
 if not use_shot_noise:
     for t in zs_bin1['SN'].keys():
         zs_bin1['SN'][t]*=0
@@ -151,13 +172,27 @@ kappa_win=cov_3X2(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0
                   wigner_files=wigner_files,
 #                  Win=kappa_win.Win.Win
                  )
+print('kappa_win 1')
+thread_count()
 
-clG_win=kappa_win.cl_tomo(corrs=corrs) 
+clG_win=kappa_win.cl_tomo(corrs=corrs)
+print('kappa_win 2')
+thread_count()
 cl0_win=clG_win['stack'].compute()
 
 if do_xi:
     xiWG_L=kappa_win.xi_tomo()
     xiW_L=xiWG_L['stack'].compute()
+#gc.collect()
+
+print('kappa_win done')
+thread_count()
+
+del kappa_win
+gc.collect()
+print('kappa_win del')
+thread_count()
+crash
 
 l=kappa_win.window_l
 Om_W=np.pi*4*f_sky
@@ -209,6 +244,7 @@ for corr in corrs:
     
 mask=zs_bin1[0]['window']>-1.e-20
 
+
 def bin_coupling_M(kappa_class,coupling_M): #following https://arxiv.org/pdf/astro-ph/0105302.pdf 
 #construct coupling matrix for the binned c_ell. This assumes that the C_ell within a bin follows powerlaw. 
 #Without this assumption we cannot undo the effects of binning
@@ -241,7 +277,7 @@ seed=12334
 def get_clsim2(clg0,window,mask,kappa_class,coupling_M,coupling_M_inv,ndim,i):
     print(i)
     local_state = np.random.RandomState(seed+i)
-    cl_map=hp.synfast(clg0,nside=nside,rng=local_state,new=True,pol=True)
+    cl_map=hp.synfast(clg0,nside=nside,rng=local_state,new=True,pol=True,verbose=False)
 
     if ndim>1:
         cl_map[0]*=window['galaxy']
@@ -495,11 +531,15 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     corr_t=[corr_gg,corr_ll,corr_ggl] #order in which sim corrs are output.
     seed=12334
     def get_clsim(i):
-        print('doing map: ',i)
+        tracemalloc.clear_traces()
+        tracemalloc.start()
+
+
+        print('doing map: ',i,thread_count())
         local_state = np.random.RandomState(seed+i)
 #         cl_map=hp.synfast(clg0,nside=nside,RNG=local_state,new=True,pol=True)
         if lognormal:
-            cl_map=hp.synfast(clg0,nside=nside,rng=local_state,new=True,pol=False)
+            cl_map=hp.synfast(clg0,nside=nside,rng=local_state,new=True,pol=False,verbose=False)
             cl_map_min=np.absolute(cl_map.min(axis=1))
             lmin_match=10
             lmax_match=100
@@ -511,12 +551,12 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
             cl_map[1,:],cl_map[2,:]=kappa_to_shear_map(kappa_map=cl_map[1])#,nside=nside)
 
         else:
-            cl_map=hp.synfast(clg0,nside=nside,rng=local_state,new=True,pol=True)
+            cl_map=hp.synfast(clg0,nside=nside,rng=local_state,new=True,pol=True,verbose=False)
             
 
         N_map=0
         if use_shot_noise:
-            N_map=hp.synfast(clN0,nside=nside,rng=local_state,new=True,pol=True)
+            N_map=hp.synfast(clN0,nside=nside,rng=local_state,new=True,pol=True,verbose=False)
         
         tracers=['galaxy','shear','shear']
         if ndim>1:
@@ -614,7 +654,15 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                     clg_b[k][:,ii]=clp_b[:,ii]@coupling_M_binned_inv[k][corr_t[ii]] #be careful with ordering as coupling matrix is not symmetric
                 if corr_t[ii]==corr_ll:
                     clgB_b['iMaster'][:,ii]=clpB_b[:,ii]@coupling_M_binned_inv['iMaster']['shear_B']
-                
+            dd=gc.get_debug()
+            snapshot1 = tracemalloc.take_snapshot()
+            top_stats = snapshot1.statistics('lineno')
+            stat = top_stats[3]
+            print("%s memory blocks: %.1f MiB" % (stat.count, stat.size / 1024**2))
+            for line in stat.traceback.format():
+                print(line)
+            print('got map ',i,thread_count())
+            gc.collect()
             return clpi.T,clgi.T,clp_b,clpi_B.T,clg_b,clpB_b,clgB_b
         else:
             return clpi.T,clgi.T
@@ -626,7 +674,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
             clg[i,:,:]+=x[1]
         return clp,clg 
     
-    print('generating maps')
+    print('generating maps', thread_count())
     if convolve_win:
         futures={}
 #         for i in np.arange(Rsize):
@@ -636,10 +684,11 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
 #         clpg.compute()
         i=0
         j=0
-        step=min(5,Rsize)
+        step=min(np.int(5),Rsize)
         funct=partial(get_clsim2,clg0,window,mask,SN,coupling_M,coupling_M_inv,ndim)
         while j<Rsize:
             futures={}
+            #client=Client(LC,)
             for ii in np.arange(step):
                 futures[ii]=delayed(get_clsim)(i+ii)  
             futures=client.compute(futures)
@@ -653,14 +702,16 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                     clgB_b['iMaster'][i,:]=clgB_b_i['iMaster']
                         
                 i+=1
-            print('done map ',i)
+            print('done map ',i, thread_count())
             del futures
-#             client.restart()
-            print('done map ',i)
+            gc.collect()
+            #client.restart()
+            #client.close()
+            print('done map ',i, thread_count())
             j+=step
         
     print('done generating maps')
-    
+    #client=Client(LC,)    
     outp['clg_b_stats']={}
     outp['clgB_b_stats']={}
     for k in clg_b.keys():
@@ -740,10 +791,10 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
 #     outp['coupling_M_binned2wt_inv']=coupling_M_binned2wt_inv
     outp['use_shot_noise']=use_shot_noise
     
-    
+    #client.close()
     return outp
 
-fname='/Users/Deep/dask_temp/tests/non_gaussian_likeli_sims_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
+fname=wig_home+'/tests/non_gaussian_likeli_sims_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
 if lognormal:
     fname+='_lognormal'+str(lognormal_scale)
 if not use_shot_noise:
@@ -755,13 +806,16 @@ if do_blending:
 
 if unit_window:
     fname+='_unit_window'
+if use_complicated_window:
+    fname+='_cWin'
 if smooth_window:
     fname+='_smooth_window'
 fname+='.pkl'
 
 print(fname)
 
-client.restart()
+#client.restart()
+#client.close()
 cl_sim_W=sim_cl_xi(Rsize=nsim,do_norm=False,#cl0=clG0['cl'][corrs[0]][(0,0)].compute(),
           kappa_class=kappa_win,fsky=f_sky,use_shot_noise=use_shot_noise,use_cosmo_power=use_cosmo_power,
              convolve_win=True,nside=nside,lognormal=lognormal,lognormal_scale=lognormal_scale,add_SSV=do_SSV_sim,add_tidal_SSV=do_SSV_sim,add_blending=do_blending)
@@ -779,3 +833,5 @@ written=True
 
 print(fname)
 print('all done')
+
+LC.close()

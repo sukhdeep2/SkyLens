@@ -61,6 +61,8 @@ def wigner_d_parallel(m1,m2,theta,l,ncpu=None,l_use_bessel=1.e4):
         ncpu=cpu_count()
     p=Pool(ncpu)
     d_mat=np.array(p.map(partial(wigner_d,m1,m2,theta,l_use_bessel=l_use_bessel),l))
+    p.close()
+    p.join()
     return d_mat[:,:,0].T
 
 def wigner_d_recur(m1,m2,theta,l,l_use_bessel=1.e4):     #FIX: Can use recursion reltion from Kilbinger+ 2017
@@ -490,6 +492,7 @@ def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None,asym_fact=np.inf):
             p=Pool(ncpu)
             d_mat2=p.map(partial(wigner_3j_3,asym_fact, m_1, m_2, m_3),c,chunksize=100)
             p.close()
+            p.join()
             indx1=np.searchsorted(j_1,c[:,0])
             indx2=np.searchsorted(j_2,c[:,1])
             indx3=np.searchsorted(j_3,c[:,2])
