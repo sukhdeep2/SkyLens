@@ -1,6 +1,6 @@
 import sys, os, gc, threading, subprocess
 from thread_count import *
-os.environ['OMP_NUM_THREADS'] = '35'
+os.environ['OMP_NUM_THREADS'] = '20'
 #pid=os.getpid()
 #print('pid: ',pid, sys.version)
 
@@ -18,7 +18,7 @@ from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
 #http://distributed.readthedocs.io/en/latest/_modules/distributed/worker.html
 
-test_run=True
+test_run=False
 gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
 
 use_complicated_window=np.bool(np.int16(sys.argv[1]))
@@ -29,7 +29,7 @@ do_blending=np.bool(np.int16(sys.argv[4]))
 do_SSV_sim=np.bool(np.int16(sys.argv[5]))
 use_shot_noise=np.bool(np.int16(sys.argv[6]))
 
-nsim=100
+nsim=1000
 
 lognormal_scale=2
 
@@ -188,12 +188,6 @@ if do_xi:
 print('kappa_win done')
 thread_count()
 
-del kappa_win
-gc.collect()
-print('kappa_win del')
-thread_count()
-crash
-
 l=kappa_win.window_l
 Om_W=np.pi*4*f_sky
 theta_win=np.sqrt(Om_W/np.pi)
@@ -350,7 +344,7 @@ def calc_sim_stats(sim=[],sim_truth=[],PC=False):
     
 def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=None,use_shot_noise=True,
              convolve_win=False,nside=nside,use_cosmo_power=True,lognormal=False,lognormal_scale=1, add_SSV=True,add_tidal_SSV=True,
-              add_blending=True,blending_coeff=.01,fiber_coll_coeff=0.01):
+              add_blending=False,blending_coeff=-.01,fiber_coll_coeff=-0.01):
     l=kappa_class.l
     shear_lcut=l>=2
     
@@ -535,10 +529,11 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
         tracemalloc.start()
 
 
-        print('doing map: ',i,thread_count())
+        print('doing map: ',i,thread_count(), 'lognormal:',lognormal,'blending', add_blending)
         local_state = np.random.RandomState(seed+i)
 #         cl_map=hp.synfast(clg0,nside=nside,RNG=local_state,new=True,pol=True)
         if lognormal:
+            print('doing lognormal')
             cl_map=hp.synfast(clg0,nside=nside,rng=local_state,new=True,pol=False,verbose=False)
             cl_map_min=np.absolute(cl_map.min(axis=1))
             lmin_match=10
