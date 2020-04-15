@@ -1,4 +1,5 @@
 from lensing_lensing import *
+import numpy as np
 
 def fisher():
   def __init__(self,):

@@ -29,7 +29,7 @@ do_blending=np.bool(np.int16(sys.argv[4]))
 do_SSV_sim=np.bool(np.int16(sys.argv[5]))
 use_shot_noise=np.bool(np.int16(sys.argv[6]))
 
-nsim=100
+nsim=1000
 
 lognormal_scale=2
 
@@ -90,7 +90,6 @@ l0=np.arange(lmin_cl,lmax_cl)
 lmin_cl_Bins=lmin_cl+10
 lmax_cl_Bins=lmax_cl-10
 l_bins=np.int64(np.logspace(np.log10(lmin_cl_Bins),np.log10(lmax_cl_Bins),Nl_bins))
-# l_bins=np.int64(np.linspace(lmin_cl_Bins,lmax_cl_Bins,Nl_bins))
 lb=(l_bins[1:]+l_bins[:-1])*.5
 
 l=l0 #np.unique(np.int64(np.logspace(np.log10(lmin_cl),np.log10(lmax_cl),Nl_bins*20))) #if we want to use fewer ell
@@ -126,37 +125,34 @@ n_th_bins=20
 th_bins=np.logspace(np.log10(th_min),np.log10(th_max),n_th_bins+1)
 th=np.logspace(np.log10(th_min*0.98),np.log10(1),n_th_bins*30)
 th2=np.linspace(1,th_max*1.02,n_th_bins*30)
-# th2=np.logspace(np.log10(1),np.log10(th_max),60*6)
 th=np.unique(np.sort(np.append(th,th2)))
 thb=np.sqrt(th_bins[1:]*th_bins[:-1])
 
 bin_xi=True
 
-# HT_kwargs={'l_min':l_min,  'l_max':l_max,
-#                         'theta_min':th_min*d2r*.9, 'theta_max':th_max*d2r,
-#                         'n_zeros':40000, 'prune_theta':prune_theta, 'm1_m2':[(2,2),(2,-2),(0,2),(0,0)]}
 l0_win=np.arange(lmax_cl)
 WT_L_kwargs={'l': l0_win,'theta': th*d2r,'m1_m2':[(2,2),(2,-2),(0,2),(2,0),(0,0)]}
 WT_L=None
 if do_xi:
     WT_L=wigner_transform(**WT_L_kwargs)
     
-# l0w=np.arange(512)+1
 mean=150
 sigma=50
 ww=1000*np.exp(-(l0w-mean)**2/sigma**2)
 
-
 print('getting win')
 z0=0.5
-zl_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=10,use_window=use_window,nbins=1,window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
-                         f_sky=f_sky,nside=nside,unit_win=unit_window,use_shot_noise=True)
+zl_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=10,use_window=use_window,nbins=1,
+                            window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
+                            f_sky=f_sky,nside=nside,unit_win=unit_window,use_shot_noise=True)
 
 print('zlbin done')
 z0=1 #1087
-zs_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=30,use_window=use_window,window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
-                              f_sky=f_sky,nbins=n_source_bins,nside=nside,unit_win=unit_window,use_shot_noise=True) #p_zp=np.array([1])
-#gc.collect()
+zs_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=30,use_window=use_window,
+                                    window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
+                                    f_sky=f_sky,nbins=n_source_bins,nside=nside,
+                                    unit_win=unit_window,use_shot_noise=True)
+
 print('zsbin done',thread_count())
 if not use_shot_noise:
     for t in zs_bin1['SN'].keys():
@@ -169,8 +165,7 @@ kappa_win=cov_3X2(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0
             use_window=use_window,store_win=store_win,window_lmax=window_lmax,corrs=corrs,
             SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=f_sky,
             HT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi,
-                  wigner_files=wigner_files,
-#                  Win=kappa_win.Win.Win
+            wigner_files=wigner_files,
                  )
 print('kappa_win 1')
 thread_count()
@@ -183,16 +178,6 @@ cl0_win=clG_win['stack'].compute()
 if do_xi:
     xiWG_L=kappa_win.xi_tomo()
     xiW_L=xiWG_L['stack'].compute()
-#gc.collect()
-
-print('kappa_win done')
-thread_count()
-
-del kappa_win
-gc.collect()
-print('kappa_win del')
-thread_count()
-crash
 
 l=kappa_win.window_l
 Om_W=np.pi*4*f_sky

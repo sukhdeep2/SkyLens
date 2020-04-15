@@ -1,10 +1,10 @@
 import os,sys
-
 import numpy as np
 from scipy.interpolate import interp1d
 from scipy.integrate import quad as scipy_int1d
 from scipy.special import jn, jn_zeros
 from wigner_functions import *
+from binning import *
 import healpy as hp
 
 d2r=np.pi/180.
@@ -23,7 +23,7 @@ class Covariance_utils():
         self.f_sky=f_sky
         self.do_xi=do_xi
 #         self.pseudo_cl=pseudo_cl
-
+        self.binning=binning()
         self.use_window=use_window
         self.wig_3j=wig_3j
         self.sample_variance_f=1
@@ -105,7 +105,7 @@ class Covariance_utils():
         CV2[23]=cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f
         return CV2
 
-    def gaussian_cov_window(self,cls,SN,tracers,z_indx,do_xi,Win,Bmode_mf=1):
+    def gaussian_cov_window(self,cls,SN,tracers,z_indx,do_xi,Win,Bmode_mf=1,bin_window=False,bin_utils=None):
         SN2=self.get_SN(SN,tracers,z_indx)
         CV=self.get_CV_cl(cls,tracers,z_indx)
         CV_B=self.get_CV_B_cl(cls,tracers,z_indx)
@@ -138,6 +138,8 @@ class Covariance_utils():
                             G_t=np.outer(SN2[c1],SN2[c2])
                         if a_EB>0:
                             G_t*=Bmode_mf #need to -1 for xi+/- cross covariance
+                        if bin_window:
+                            G_t=self.binning.bin_2d(cov=G_t,bin_utils=bin_utils)
                         G[corr_i]+=G_t*Win['M'][corr_i][k][wp]
 
         return G[1324],G[1423]

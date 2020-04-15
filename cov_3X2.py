@@ -30,7 +30,7 @@ class cov_3X2():
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
                 Tri_cov=False,
                 use_window=True,window_lmax=None,store_win=False,Win=None,
-                f_sky=None,l_bins=None,bin_cl=False,#pseudo_cl=False,
+                f_sky=None,l_bins=None,bin_cl=False,use_binned_l=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 xi_win_approx=False,
                 corrs=[('shear','shear')],corr_indxs={},
@@ -47,7 +47,12 @@ class cov_3X2():
         self.SSV_cov=SSV_cov
         self.Tri_cov=Tri_cov #small scale trispectrum
         self.tidal_SSV_cov=tidal_SSV_cov
-        self.l=l
+        self.l=l*1
+        self.l_bins=l_bins
+        
+        self.use_binned_l=use_binned_l
+        self.lb=np.int32((self.l[1:]+self.l[:-1])*.5)
+        
         self.do_xi=do_xi
         self.xi_win_approx=xi_win_approx
         self.corrs=corrs
@@ -66,8 +71,6 @@ class cov_3X2():
         if zk_bins is None and zs_bins is None: #z_PS_max is to defined maximum z for which P(k) is computed.
                                                 #We assume this will be larger for shear than galaxies (i.e. there are always sources behind galaxies).
             z_PS_max=zg_bins['zmax']
-
-        self.use_window=use_window
 
         self.HT=None
         if do_xi:
@@ -96,7 +99,7 @@ class cov_3X2():
                                 z_PS_max=z_PS_max)
                         #FIXME: Need a dict for these args
 
-        self.l_bins=l_bins
+        
         self.stack_data=stack_data
         self.theta_bins=theta_bins
         self.bin_utils=None
@@ -167,12 +170,18 @@ class cov_3X2():
                     self.f_sky[kk[::-1]][idx[::-1]]=f_temp
 
         self.Win={}
-        self.Win=window_utils(window_l=self.window_l,l=self.l,corrs=self.corrs,m1_m2s=self.m1_m2s,\
-                        use_window=use_window,do_cov=self.do_cov,cov_utils=self.cov_utils,
+        self.use_window=False
+        self.bin_window=False
+        self.do_cov=False #FIXME
+        self.Win=window_utils(window_l=self.window_l,l=l,l_bins=self.l_bins,corrs=self.corrs,m1_m2s=self.m1_m2s,\
+                        use_window=use_window,do_cov=do_cov,cov_utils=self.cov_utils,
                         f_sky=f_sky,corr_indxs=self.corr_indxs,z_bins=self.z_bins,
                         window_lmax=self.window_lmax,Win=Win,HT=self.HT,do_xi=self.do_xi,
-                        xi_win_approx=self.xi_win_approx,
+                        xi_win_approx=self.xi_win_approx,kappa_class=self,
                         xi_bin_utils=self.xi_bin_utils,store_win=store_win,wigner_files=wigner_files)
+        self.use_window=use_window
+        self.do_cov=do_cov
+        self.bin_window=self.Win.bin_window
         print('Window done')
         if self.Tri_cov:
             self.CTR=cov_matter_tri(k=self.l)
@@ -279,7 +288,8 @@ class cov_3X2():
 
         if self.use_window:
             cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_window(cls,
-                                            self.SN,tracers,zs_indx,self.do_xi,Win['cov'][tracers][zs_indx])
+                                            self.SN,tracers,zs_indx,self.do_xi,Win['cov'][tracers][zs_indx],
+                                            bin_window=self.bin_window,bin_utils=self.cl_bin_utils)
         else:
             fs=self.f_sky
             if self.do_xi and self.xi_win_approx: #in this case we need to use a separate function directly from xi_cov
@@ -333,14 +343,20 @@ class cov_3X2():
         if self.use_window and (self.SSV_cov or self.Tri_cov): #Check: This is from writing p-cl as M@cl... cov(p-cl)=M@cov(cl)@M.T ... separate  M when different p-cl
             M1=Win['cl'][(tracers[0],tracers[1])][(zs_indx[0],zs_indx[1])]['M'] #12
             M2=Win['cl'][(tracers[2],tracers[3])][(zs_indx[2],zs_indx[3])]['M'] #34
+            if self.bin_window:
+                for k in ['SSC','Tri']:
+                    cov[k]=self.bin_cl_func(cov=cov[k])
             cov['final']=cov['G']+ M1@(cov['SSC']+cov['Tri'])@M2.T
         else:
             cov['final']=cov['G']+cov['SSC']+cov['Tri']
 
         
         for k in ['final','G','SSC','Tri']:#no need to bin G1324 and G1423
-            if self.l_bins is not None:
-                cl_none,cov[k+'_b']=self.bin_cl_func(cov=cov[k])
+            if self.l_bins is not None and not self.bin_window:
+                # cl_none,cov[k+'_b']=self.bin_cl_func(cov=cov[k])
+                cov[k+'_b']=self.bin_cl_func(cov=cov[k])
+            if self.bin_window:
+                cov[k+'_b']=cov[k]
             if not self.do_xi:
                 del cov[k]
         return cov
@@ -358,18 +374,19 @@ class cov_3X2():
         if self.bin_cl:
             if not cl is None:
                 cl_b=self.binning.bin_1d(xi=cl,bin_utils=self.cl_bin_utils)
+                return cl_b
             if not cov is None:
                 cov_b=self.binning.bin_2d(cov=cov,bin_utils=self.cl_bin_utils)
-        return cl_b,cov_b
+                return cov_b
+        # return cl_b,cov_b
 
-    def combine_cl_tomo(self,cl_compute_dict={},corr=None,Win=None):
+    def combine_cl_tomo(self,cl_compute_dict={},corr=None,):#Win=None):
         cl_b={}#,corr2:{}}
 
         for (i,j) in self.corr_indxs[corr]+self.cov_indxs:
             clij=cl_compute_dict[(i,j)]
-#             if self.use_window:
-#                     clij=clij@Win['cl'][corr][(i,j)]['M'] #pseudo cl.. now passed as input
-            cl_b[(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
+            # cl_b[(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
+            cl_b[(i,j)]=self.bin_cl_func(cl=clij,cov=None)
         return cl_b
 
     def calc_pseudo_cl(self,cl,Win,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear')):
@@ -431,26 +448,44 @@ class cov_3X2():
         pcl={} #pseudo_cl
         cov={}
         cl_b={}
+        pcl_b={}
         for corr in corrs2:
             corr2=corr[::-1]
             cl[corr]={}
             cl[corr2]={}
             pcl[corr]={}
             pcl[corr2]={}
+            cl_b[corr]={}
+            cl_b[corr2]={}
+            pcl_b[corr]={}
+            pcl_b[corr2]={}
             corr_indxs=self.corr_indxs[(corr[0],corr[1])]#+self.cov_indxs
             for (i,j) in corr_indxs:
                 # out[(i,j)]
                 cl[corr][(i,j)]=delayed(self.calc_cl)(zs1_indx=i,zs2_indx=j,corr=corr)
+                cl_b[corr][(i,j)]=delayed(self.bin_cl_func)(cl=cl[corr][(i,j)],cov=None)
                 if self.use_window:
-                    pcl[corr][(i,j)]=delayed(self.calc_pseudo_cl)(cl[corr][(i,j)],Win=self.Win.Win,zs1_indx=i,zs2_indx=j,corr=corr)
+                    if not self.bin_window:
+                        pcl[corr][(i,j)]=delayed(self.calc_pseudo_cl)(cl[corr][(i,j)],Win=self.Win.Win,zs1_indx=i,
+                                                zs2_indx=j,corr=corr)
+                        pcl_b[corr][(i,j)]=delayed(self.bin_cl_func)(cl=pcl[corr][(i,j)],cov=None)
+                    else:
+                        pcl[corr][(i,j)]=None
+                        pcl_b[corr][(i,j)]=delayed(self.calc_pseudo_cl)(cl_b[corr][(i,j)],Win=self.Win.Win,zs1_indx=i,
+                                                zs2_indx=j,corr=corr)
                 else:
                     pcl[corr][(i,j)]=cl[corr][(i,j)]
+                    pcl_b[corr][(i,j)]=cl_b[corr][(i,j)]
                 cl[corr2][(j,i)]=cl[corr][(i,j)]#useful in gaussian covariance calculation.
                 pcl[corr2][(j,i)]=pcl[corr][(i,j)]#useful in gaussian covariance calculation.
-        for corr in corrs:
-            cl_b[corr]=delayed(self.combine_cl_tomo)(pcl[corr],corr=corr,Win=self.Win.Win) #bin only pseudo-cl
-
-        print('cl dict done')
+                cl_b[corr2][(j,i)]=cl_b[corr][(i,j)]#useful in gaussian covariance calculation.
+                pcl_b[corr2][(j,i)]=pcl_b[corr][(i,j)]#useful in gaussian covariance calculation.
+        # for corr in corrs2:
+        #     cl_b[corr]=delayed(self.combine_cl_tomo)(cl[corr],corr=corr) #binning needed when constructing win
+        #     if self.use_window:
+        #         pcl_b[corr]=delayed(self.combine_cl_tomo)(pcl[corr],corr=corr,Win=self.Win.Win) #bin only pseudo-cl
+    
+        print('cl dict done',cl_b.keys())
         if self.do_cov:
             start_j=0
             corrs_iter=[(corrs[i],corrs[j]) for i in np.arange(len(corrs)) for j in np.arange(i,len(corrs))]
@@ -467,17 +502,19 @@ class cov_3X2():
                 else:
                     cov_indxs_iter=[ k for l in [[(i,j) for i in np.arange(
                                     len(corr1_indxs))] for j in np.arange(len(corr2_indxs))] for k in l]
-
+                Win=None
+                if self.use_window:
+                    Win=self.Win.Win
                 for (i,j) in cov_indxs_iter:
                     indx=corr1_indxs[i]+corr2_indxs[j]
-                    cov[corr1+corr2][indx]=delayed(self.cl_cov)(cls=cl, zs_indx=indx,Win=self.Win.Win,
+                    cov[corr1+corr2][indx]=delayed(self.cl_cov)(cls=cl, zs_indx=indx,Win=Win,
                                                                     tracers=corr1+corr2)
                     indx2=corr2_indxs[j]+corr1_indxs[i]
                     cov[corr2+corr1][indx2]=cov[corr1+corr2][indx]
 
-        out_stack=delayed(self.stack_dat)({'cov':cov,'cl_b':cl_b,'est':'cl_b'},corrs=corrs,
+        out_stack=delayed(self.stack_dat)({'cov':cov,'pcl_b':pcl_b,'est':'pcl_b'},corrs=corrs,
                                           corr_indxs=stack_corr_indxs)
-        return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl,'pseudo_cl':pcl}
+        return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl,'pseudo_cl':pcl,'pseudo_cl_b':pcl_b}
 
     def xi_cov(self,cov_cl={},cls={},m1_m2=None,m1_m2_cross=None,clr=None,clrk=None,indxs_1=[],
                indxs_2=[],corr1=[],corr2=[], Win=None):
