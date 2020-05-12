@@ -13,11 +13,11 @@ d2r=np.pi/180.
 c=c.to(u.km/u.second)
 
 class Angular_power_spectra():
-    def __init__(self,silence_camb=False,l=np.arange(2,2001),power_spectra_kwargs={},
+    def __init__(self,l=np.arange(2,2001),power_spectra_kwargs={},
                 z_PS=None,nz_PS=100,log_z_PS=False,z_PS_max=None,logger=None,window_l=None,
                 SSV_cov=False,tracer='kappa',cov_utils=None):
         self.logger=logger
-        self.PS=Power_Spectra(silence_camb=silence_camb,SSV_cov=SSV_cov,**power_spectra_kwargs)
+        self.PS=Power_Spectra(SSV_cov=SSV_cov,**power_spectra_kwargs)
         self.l=l
         self.window_l=window_l
         self.cl_f=(l+0.5)**2/(l*(l+1.)) # cl correction from Kilbinger+ 2017

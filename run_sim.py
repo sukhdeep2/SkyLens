@@ -206,11 +206,11 @@ bi=(0,0)
 cl0={'cl_b':{},'cov':{},'cl':{}}
 cl0_win={'cl_b':{},'cov':{}}
 for corr in corrs:
-    cl0['cl_b'][corr]=clG0['cl_b'][corr][bi].compute()
+    cl0['cl_b'][corr]=clG0['pseudo_cl_b'][corr][bi].compute()
     cl0['cl'][corr]=clG0['cl'][corr][bi].compute()
     cl0['cov'][corr]=clG0['cov'][corr+corr][bi+bi].compute()
     
-    cl0_win['cl_b'][corr]=clG_win['cl_b'][corr][bi].compute()
+    cl0_win['cl_b'][corr]=clG_win['pseudo_cl_b'][corr][bi].compute()
     cl0_win['cov'][corr]=clG_win['cov'][corr+corr][bi+bi].compute()['final_b']
     
 from binning import *
@@ -413,7 +413,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
         clG0=kappa_class.cl_tomo() 
         for corr in kappa_class.corrs:
             cl0[corr]=clG0['cl'][corr][(0,0)].compute()
-            clp0[corr]=clG0['cl_b'][corr][(0,0)].compute()
+            clp0[corr]=clG0['pseudo_cl_b'][corr][(0,0)].compute()
     clg0={}
     clN0={}
     for corr in kappa_class.corrs: #ordering: TT, EE, BB, TE if 4 cl as input.. use newbool=True

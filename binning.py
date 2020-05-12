@@ -66,7 +66,7 @@ class binning():
         cov_b/=bin_utils['norm_m'][2]
         return cov_b
     
-    def bin_2d_coupling(self,cov=[],bin_utils=None,wt_b=None,wt0=None,partial_bin_side=None,lm=None,lm_step=None): #asymmetric binning
+    def bin_2d_coupling(self,cov=[],bin_utils=None,wt_b=None,wt0=None,partial_bin_side=None,lm=0,lm_step=-1): #asymmetric binning
         binning_mat=bin_utils['binning_mat']
         if wt_b is None:
             wt_b=bin_utils['wt_b']
@@ -75,7 +75,8 @@ class binning():
         if len(wt0.shape)==1:
             binning_mat2=wt0[:,None]*binning_mat*wt_b
         else:
-            binning_mat2=wt0@binning_mat@wt_b
+            binning_mat2=wt0@binning_mat@wt_b #FIXME: Test this.
+        
         rdr=bin_utils['r_dr']
         binning_mat=binning_mat*rdr[:,None]/bin_utils['norm'][None,:]
         if partial_bin_side is None:
@@ -87,6 +88,34 @@ class binning():
             
 #         cov_b/=bin_utils['norm_m'][1][:,None]
         return cov_b
+
+    def bin_2d_WT(self,wig_mat=[],bin_utils_xi=None,bin_utils_cl=None,
+                wt_b=None,wt0=None): 
+        if bin_utils_cl is not None:
+            binning_mat_cl=bin_utils_cl['binning_mat']
+            if wt_b is None:
+                wt_b=bin_utils_cl['wt_b']
+            if wt0 is None:
+                wt0=bin_utils_cl['wt0']
+            if len(wt0.shape)==1:
+                binning_mat_cl2=wt0[:,None]*binning_mat_cl*wt_b
+            else:
+                binning_mat_cl2=wt0@binning_mat_cl@wt_b #FIXME: Test this.
+                # rdr=bin_utils_cl['r_dr']
+            # binning_mat_cl=binning_mat_cl*rdr[:,None]/bin_utils_cl['norm'][None,:] #cl is inverse binning.
+            wm=wig_mat@binning_mat_cl2
+        else:
+            wm=wig_mat
+        
+        wig_mat_b=wm
+        if bin_utils_xi is not None:
+            binning_mat_xi=bin_utils_xi['binning_mat']
+            
+            rdr=bin_utils_xi['r_dr']
+            binning_mat_xi=binning_mat_xi*rdr[:,None]/bin_utils_xi['norm'][None,:]
+
+            wig_mat_b=binning_mat_xi.T@wm
+        return wig_mat_b
 
     def bin_mat(self,r=[],mat=[],r_bins=[],r_dim=2,bin_utils=None):#works for cov and skewness
         ndim=len(mat.shape)

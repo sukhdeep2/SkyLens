@@ -6,7 +6,7 @@ import numpy as np
 import itertools
 
 class wigner_transform():
-    def __init__(self,theta=[],l=[],m1_m2=[(0,0)],logger=None,ncpu=None,use_window=False,**kwargs):
+    def __init__(self,theta=[],l=[],m1_m2=[(0,0)],logger=None,ncpu=None,**kwargs):
         self.name='Wigner'
         self.logger=logger
         self.l=l
@@ -24,6 +24,12 @@ class wigner_transform():
 #             self.wig_d[(m1,m2)]=wigner_d_recur(m1,m2,theta,self.l)
             self.theta[(m1,m2)]=theta #FIXME: Ugly
 
+    def reset_theta_l(self,theta=None,l=None):
+        if theta is None:
+            theta=self.theta
+        if l is None:
+            l=self.l
+        self.__init__(theta=theta,l=l,m1_m2=self.m1_m2s,logger=self.logger)
 
     def cl_grid(self,l_cl=[],cl=[],taper=False,**kwargs):
         if taper:
@@ -53,9 +59,12 @@ class wigner_transform():
             cl2=cl_int(self.l,self.l)
         return cl2
 
-    def projected_correlation(self,l_cl=[],cl=[],m1_m2=[],taper=False,**kwargs):
-        cl2=self.cl_grid(l_cl=l_cl,cl=cl,taper=taper,**kwargs)
-        w=np.dot(self.wig_d[m1_m2]*self.grad_l*self.norm,cl2)
+    def projected_correlation(self,l_cl=[],cl=[],m1_m2=[],taper=False,wig_d=None,**kwargs):
+        if wig_d is None:
+            cl2=self.cl_grid(l_cl=l_cl,cl=cl,taper=taper,**kwargs)
+            w=np.dot(self.wig_d[m1_m2]*self.grad_l*self.norm,cl2)
+        else:
+            w=np.dot(wig_d,cl)
         return self.theta[m1_m2],w
 
     def projected_covariance(self,l_cl=[],cl_cov=[],m1_m2=[],m1_m2_cross=None,

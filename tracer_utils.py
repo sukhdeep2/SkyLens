@@ -1,5 +1,5 @@
 import os,sys
-
+import copy
 from power_spectra import *
 from angular_power_spectra import *
 from hankel_transform import *
@@ -30,11 +30,11 @@ class Tracer_utils():
 
     def set_zbins(self,z_bins={},tracer=None):
         if tracer=='shear':
-            self.zs_bins=z_bins
+            self.zs_bins=copy.deepcopy(z_bins)
         if tracer=='galaxy':
-            self.zg_bins=z_bins
+            self.zg_bins=copy.deepcopy(z_bins)
         if tracer=='kappa':
-            self.zk_bins=z_bins
+            self.zk_bins=copy.deepcopy(z_bins)
         if z_bins is not None:
             self.set_noise(tracer=tracer)
         

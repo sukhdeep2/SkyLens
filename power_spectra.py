@@ -21,7 +21,7 @@ cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817
                 'Ase9':2.2,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
                 'w':-1,'wa':0})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
-pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':5000,'scenario':'dmo','pk_func':'class_pk'}
+pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':2000,'scenario':'dmo','pk_func':'class_pk'}
 
 # baryonic scenario option:
 # "owls_AGN","owls_DBLIMFV1618","owls_NOSN","owls_NOSN_NOZCOOL","owls_NOZCOOL","owls_REF","owls_WDENS"
@@ -72,7 +72,7 @@ class_accuracy_settings={ #from Vanessa. To avoid class errors due to compiler i
 
 class Power_Spectra():
     def __init__(self,cosmo_params=cosmo_fid,pk_params=pk_params,cosmo=cosmo,
-                 silence_camb=False,SSV_cov=False,scenario=None,
+                 silence_camb=True,SSV_cov=False,scenario=None,
                  logger=None):
         self.logger=logger
         self.cosmo_params=cosmo_params

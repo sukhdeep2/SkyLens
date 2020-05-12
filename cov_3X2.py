@@ -15,6 +15,7 @@ from astropy import units as u
 import numpy as np
 from scipy.interpolate import interp1d
 import warnings,logging
+import copy
 
 d2r=np.pi/180.
 c=c.to(u.km/u.second)
@@ -22,7 +23,7 @@ c=c.to(u.km/u.second)
 #corrs=['gg','gl_p','gl_k','ll_p','ll_m','ll_k','ll_kp']
 
 class cov_3X2():
-    def __init__(self,silence_camb=False,l=np.arange(2,2001),HT=None,Ang_PS=None,
+    def __init__(self,l=np.arange(2,2001),HT=None,Ang_PS=None,
                 cov_utils=None,logger=None,tracer_utils=None,#lensing_utils=None,galaxy_utils=None,
                 zs_bins=None,zk_bins=None,zg_bins=None,galaxy_bias_func=None,
                 power_spectra_kwargs={},HT_kwargs=None,
@@ -32,9 +33,54 @@ class cov_3X2():
                 use_window=True,window_lmax=None,store_win=False,Win=None,
                 f_sky=None,l_bins=None,bin_cl=False,use_binned_l=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
-                xi_win_approx=False,
+                use_binned_theta=False, xi_win_approx=False,
                 corrs=[('shear','shear')],corr_indxs={},
-                 wigner_files=None):
+                 wigner_files=None,name=''):
+
+        inp_args = copy.deepcopy(locals())
+        self.l=l*1.
+        self.l0=l*1.
+        self.l_bins=l_bins
+        self.use_binned_l=use_binned_l
+        self.use_binned_theta=use_binned_theta
+        self.name=name
+        
+        if use_binned_l:
+            self.lb=np.int32((self.l_bins[1:]+self.l_bins[:-1])*.5)
+            inp_args['use_binned_l']=False
+            inp_args['use_binned_theta']=False
+            inp_args['use_window']=False
+            inp_args['do_cov']=False #FIXME
+            inp_args['bin_xi']=False
+            inp_args['name']='S0'
+            del inp_args['self']
+            inp_args2=copy.deepcopy(inp_args)
+            self.kappa0=cov_3X2(**inp_args)
+
+            inp_args2['l']=self.lb
+            inp_args2['name']='S_b'
+            inp_args2['l_bins']=None
+            inp_args2['bin_cl']=False
+            inp_args2['do_xi']=False
+            self.kappa_b=cov_3X2(**inp_args2)
+
+            if do_xi and self.use_binned_theta:
+                self.thb=(theta_bins[1:]+theta_bins[:-1])*.5 #FIXME:this may not be effective theta of meaurements
+                inp_args_xi=copy.deepcopy(inp_args)
+                inp_args_xi['name']='S_b_xi'
+                
+                inp_args_xi['HT'].reset_theta_l(theta=self.thb)
+                self.kappa_b_xi=cov_3X2(**inp_args_xi)
+                
+                self.xi0=self.kappa0.xi_tomo()['xi']
+                self.xi_b=self.kappa_b_xi.xi_tomo()['xi']
+            self.l=self.lb*1.
+            self.c_ell0=self.kappa0.cl_tomo()['cl']
+            self.c_ell_b=self.kappa_b.cl_tomo()['cl']
+        else:
+            self.kappa_b=self
+            self.kappa0=self
+
 
         self.logger=logger
         if logger is None:
@@ -47,11 +93,6 @@ class cov_3X2():
         self.SSV_cov=SSV_cov
         self.Tri_cov=Tri_cov #small scale trispectrum
         self.tidal_SSV_cov=tidal_SSV_cov
-        self.l=l*1
-        self.l_bins=l_bins
-        
-        self.use_binned_l=use_binned_l
-        self.lb=np.int32((self.l[1:]+self.l[:-1])*.5)
         
         self.do_xi=do_xi
         self.xi_win_approx=xi_win_approx
@@ -61,7 +102,7 @@ class cov_3X2():
         self.window_l=np.arange(self.window_lmax+1)
         self.f_sky=f_sky #should be a dict with full overlap entries for all tracers and bins.
                         #If scalar will be converted to dict later in this function
-
+        
         if zs_bins is not None:
             z_PS_max=zs_bins['zmax']
         if zk_bins is not None:
@@ -71,34 +112,6 @@ class cov_3X2():
         if zk_bins is None and zs_bins is None: #z_PS_max is to defined maximum z for which P(k) is computed.
                                                 #We assume this will be larger for shear than galaxies (i.e. there are always sources behind galaxies).
             z_PS_max=zg_bins['zmax']
-
-        self.HT=None
-        if do_xi:
-            self.set_HT(HT=HT,HT_kwargs=HT_kwargs)
-
-        self.tracer_utils=tracer_utils
-        if tracer_utils is None:
-            self.tracer_utils=Tracer_utils(zs_bins=zs_bins,zg_bins=zg_bins,zk_bins=zk_bins,
-                                            logger=self.logger,l=self.l)
-
-        self.cov_utils=cov_utils
-        if cov_utils is None:
-            self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,
-                                            do_xi=do_xi,
-                                            do_sample_variance=do_sample_variance,
-                                            use_window=use_window,
-                                            window_l=self.window_l)
-
-        self.Ang_PS=Ang_PS
-        if Ang_PS is None:
-            self.Ang_PS=Angular_power_spectra(silence_camb=silence_camb,
-                                SSV_cov=SSV_cov,l=self.l,logger=self.logger,
-                                power_spectra_kwargs=power_spectra_kwargs,
-                                cov_utils=self.cov_utils,window_l=self.window_l,
-                                z_PS=z_PS,nz_PS=nz_PS,log_z_PS=log_z_PS,
-                                z_PS_max=z_PS_max)
-                        #FIXME: Need a dict for these args
-
         
         self.stack_data=stack_data
         self.theta_bins=theta_bins
@@ -106,10 +119,14 @@ class cov_3X2():
 
         self.bin_cl=bin_cl
         self.bin_xi=bin_xi
-        self.set_bin_params()
         self.cov_indxs=[]
         self.corr_indxs={}
         self.m1_m2s={}
+
+        self.tracer_utils=tracer_utils
+        if tracer_utils is None:
+            self.tracer_utils=Tracer_utils(zs_bins=zs_bins,zg_bins=zg_bins,zk_bins=zk_bins,
+                                            logger=self.logger,l=self.l)
 
         self.z_bins={}
         self.z_bins['shear']=self.tracer_utils.zs_bins
@@ -169,19 +186,49 @@ class cov_3X2():
                     self.f_sky[kk][idx]=f_temp #*np.ones((n_indx,n_indx))
                     self.f_sky[kk[::-1]][idx[::-1]]=f_temp
 
+        
+        self.HT=HT
+        self.set_bin_params()
+        if do_xi:
+            self.set_HT(HT=HT,HT_kwargs=HT_kwargs)
+        
+
+        self.cov_utils=cov_utils
+        if cov_utils is None:
+            self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,
+                                            do_xi=self.do_xi,
+                                            do_sample_variance=do_sample_variance,
+                                            use_window=use_window,
+                                            window_l=self.window_l)
+
+        self.Ang_PS=Ang_PS
+        if Ang_PS is None:
+            self.Ang_PS=Angular_power_spectra(
+                                SSV_cov=self.SSV_cov,l=self.l,logger=self.logger,
+                                power_spectra_kwargs=power_spectra_kwargs,
+                                cov_utils=self.cov_utils,window_l=self.window_l,
+                                z_PS=z_PS,nz_PS=nz_PS,log_z_PS=log_z_PS,
+                                z_PS_max=z_PS_max)
+                        #FIXME: Need a dict for these args
+
         self.Win={}
-        self.use_window=False
-        self.bin_window=False
-        self.do_cov=False #FIXME
-        self.Win=window_utils(window_l=self.window_l,l=l,l_bins=self.l_bins,corrs=self.corrs,m1_m2s=self.m1_m2s,\
+        # self.use_window=False
+        # self.bin_window=False
+        # self.do_cov=False #FIXME
+        self.use_window=use_window
+        self.do_cov=do_cov
+        
+
+        self.Win=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,m1_m2s=self.m1_m2s,\
                         use_window=use_window,do_cov=do_cov,cov_utils=self.cov_utils,
                         f_sky=f_sky,corr_indxs=self.corr_indxs,z_bins=self.z_bins,
                         window_lmax=self.window_lmax,Win=Win,HT=self.HT,do_xi=self.do_xi,
-                        xi_win_approx=self.xi_win_approx,kappa_class=self,
-                        xi_bin_utils=self.xi_bin_utils,store_win=store_win,wigner_files=wigner_files)
-        self.use_window=use_window
-        self.do_cov=do_cov
+                        xi_win_approx=self.xi_win_approx,
+                        kappa_class0=self.kappa0,kappa_class_b=self.kappa_b,
+                        xi_bin_utils=self.xi_bin_utils,store_win=store_win,wigner_files=wigner_files,
+                        bin_window=self.use_binned_l)
         self.bin_window=self.Win.bin_window
+        
         print('Window done')
         if self.Tri_cov:
             self.CTR=cov_matter_tri(k=self.l)
@@ -195,31 +242,23 @@ class cov_3X2():
 
     def set_HT(self,HT=None,HT_kwargs=None):
         self.HT=HT #We are using Wigner transforms now. Change to WT maybe?
-        self.m1_m2s=self.HT.m1_m2s
-        self.l=self.HT.l
-        # if HT is None:
-        #     if HT_kwargs is None:
-        #         th_min=1./60. if theta_bins is None else np.amin(theta_bins)
-        #         th_max=5 if theta_bins is None else np.amax(theta_bins)
-        #         HT_kwargs={'l_min':min(l),'l_max':max(l),
-        #                     'theta_min':th_min*d2r,'theta_max':th_max*d2r,
-        #                     'n_zeros':2000,'prune_theta':2,'m1_m2':[(0,0)]}
-        #     HT_kwargs['logger']=self.logger
-        #     self.HT=hankel_transform(**HT_kwargs)
-        #
-        # self.l_cut_jnu={}
-        # self.m1_m2s=self.HT.m1_m2s
-        # self.l_cut_jnu['m1_m2s']=self.m1_m2s
-        # if self.HT.name=='Hankel':
-        #     self.l=np.unique(np.hstack((self.HT.l[i] for i in self.m1_m2s)))
-        #     for m1_m2 in self.m1_m2s:
-        #         self.l_cut_jnu[m1_m2]=np.isin(self.l,(self.HT.l[m1_m2]))
-
-        # if self.HT.name=='Wigner':
-        # self.l=self.HT.l
-            # for m1_m2 in self.m1_m2s:
-            #     self.l_cut_jnu[m1_m2]=np.isin(self.l,(self.l))
-            # #FIXME: This is ugly
+        self.HT_binned={corr:{} for corr in self.corrs} #intialized later.
+        if self.do_xi and (self.use_binned_l or self.use_binned_theta):
+            for corr in self.corrs:
+                m1_m2s=self.m1_m2s[corr]
+                self.HT_binned[corr]={m1_m2s[im]:{} for im in np.arange(len(m1_m2s))}
+                for indxs in self.corr_indxs[corr]:    
+                    cl0=self.c_ell0[corr][indxs].compute()
+                    cl_b=self.c_ell_b[corr][indxs].compute()
+                    for im in np.arange(len(m1_m2s)):
+                        m1_m2=m1_m2s[im]
+                        # xi0=self.xi0[corr][m1_m2][indxs].compute()
+                        # xi_b=self.xi_b[corr][m1_m2][indxs].compute()
+                        self.HT_binned[corr][m1_m2][indxs]=self.binning.bin_2d_WT(
+                                                            wig_mat=self.HT.wig_d[m1_m2]*self.HT.grad_l*self.HT.norm,
+                                                                wt0=cl0,wt_b=1./cl_b,bin_utils_cl=self.cl_bin_utils,
+                                                                bin_utils_xi=self.xi_bin_utils[m1_m2])
+                        
 
     def set_bin_params(self):
         """
@@ -227,15 +266,15 @@ class cov_3X2():
         """
         self.binning=binning()
         if self.bin_cl:
-            self.cl_bin_utils=self.binning.bin_utils(r=self.l,r_bins=self.l_bins,
+            self.cl_bin_utils=self.binning.bin_utils(r=self.l0,r_bins=self.l_bins,
                                                 r_dim=2,mat_dims=[1,2])
         self.xi_bin_utils={}
         if self.do_xi and self.bin_xi:
-            for m1_m2 in self.m1_m2s:
+            for m1_m2 in self.HT.m1_m2s:
                 self.xi_bin_utils[m1_m2]=self.binning.bin_utils(r=self.HT.theta[m1_m2]/d2r,
                                                     r_bins=self.theta_bins,
                                                     r_dim=2,mat_dims=[1,2])
-
+            
     def calc_cl(self,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear')):
         """
             Compute the angular power spectra, Cl between two source bins
@@ -256,8 +295,11 @@ class cov_3X2():
 #             dchi/=clz['cH']
 #         if corr[1]=='galaxy':
 #             dchi/=clz['cH']
-
-        cl=np.dot(cls.T*sc,dchi)
+        try:
+            cl=np.dot(cls.T*sc,dchi)
+        except:
+            print(self.name,cls.shape,sc.shape,dchi.shape)
+            crash
                 # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
         return cl
 
@@ -373,24 +415,30 @@ class cov_3X2():
         cov_b=None
         if self.bin_cl:
             if not cl is None:
-                cl_b=self.binning.bin_1d(xi=cl,bin_utils=self.cl_bin_utils)
+                if self.use_binned_l:
+                    cl_b=cl*1.
+                else:
+                    cl_b=self.binning.bin_1d(xi=cl,bin_utils=self.cl_bin_utils)
                 return cl_b
             if not cov is None:
-                cov_b=self.binning.bin_2d(cov=cov,bin_utils=self.cl_bin_utils)
+                if self.use_binned_l:
+                    cov_b=cov*1.
+                else:
+                    cov_b=self.binning.bin_2d(cov=cov,bin_utils=self.cl_bin_utils)
                 return cov_b
         # return cl_b,cov_b
 
-    def combine_cl_tomo(self,cl_compute_dict={},corr=None,):#Win=None):
-        cl_b={}#,corr2:{}}
+    # def combine_cl_tomo(self,cl_compute_dict={},corr=None,):#Win=None):
+    #     cl_b={}#,corr2:{}}
 
-        for (i,j) in self.corr_indxs[corr]+self.cov_indxs:
-            clij=cl_compute_dict[(i,j)]
-            # cl_b[(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
-            cl_b[(i,j)]=self.bin_cl_func(cl=clij,cov=None)
-        return cl_b
+    #     for (i,j) in self.corr_indxs[corr]+self.cov_indxs:
+    #         clij=cl_compute_dict[(i,j)]
+    #         # cl_b[(i,j)],cov_none=self.bin_cl_func(cl=clij,cov=None)
+    #         cl_b[(i,j)]=self.bin_cl_func(cl=clij,cov=None)
+    #     return cl_b
 
     def calc_pseudo_cl(self,cl,Win,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear')):
-        return cl@Win['cl'][corr][(zs1_indx,zs2_indx)]['M'] #pseudo cl
+        return cl@Win['cl'][corr][(zs1_indx,zs2_indx)]['M'] 
 
     def cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
                 corrs=None,bias_kwargs={},bias_func=None,stack_corr_indxs=None):
@@ -592,12 +640,17 @@ class cov_3X2():
 
     def get_xi(self,cls={},m1_m2=[],corr=None,indxs=None,Win=None):
         cl=cls[corr][indxs] #this should be pseudo-cl when using window
-        th,xi=self.HT.projected_correlation(l_cl=self.l,m1_m2=m1_m2,cl=cl)
-        if not self.use_window and self.xi_win_approx: #This is an appproximation to account for window. Correct thing is pseudo cl but it is expensive to very high l needed for proper wigner transforms.
+        wig_m=None
+        if self.use_binned_l or self.use_binned_theta:
+            wig_m=self.HT_binned[corr][m1_m2][indxs]
+        th,xi=self.HT.projected_correlation(l_cl=self.l,m1_m2=m1_m2,cl=cl,wig_d=wig_m)
+        if not self.use_window and self.xi_win_approx: 
             xi=xi*Win['cl'][corr][indxs]['xi']
 
-        xi_b=self.binning.bin_1d(xi=xi,bin_utils=self.xi_bin_utils[m1_m2])
-
+        xi_b=xi
+        if self.bin_xi and not self.use_binned_theta:
+            xi_b=self.binning.bin_1d(xi=xi,bin_utils=self.xi_bin_utils[m1_m2])
+        
         if self.use_window or self.xi_win_approx:
             xi_b/=(Win['cl'][corr][indxs]['xi_b'])
         return xi_b

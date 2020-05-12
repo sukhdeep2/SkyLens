@@ -20,7 +20,7 @@ class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,corrs=None,m1_m2s=None,use_window=None,f_sky=None,
                 do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,HT=None,xi_bin_utils=None,do_xi=False,
                 store_win=False,Win=None,wigner_files=None,step=None,xi_win_approx=False,
-                kappa_class=None,bin_window=True):
+                kappa_class0=None,kappa_class_b=None,bin_window=True):
         self.Win=Win
         self.wigner_files=wigner_files
         self.wig_3j=None
@@ -53,10 +53,17 @@ class window_utils():
         print('Win gen: step size',self.step)
 
         self.bin_window=bin_window
+        self.binnings=None
         if bin_window:
             self.binnings=binning()
-            self.c_ell=kappa_class.cl_tomo()
-            self.kappa_class=kappa_class
+            self.kappa_class0=kappa_class0
+            self.kappa_class_b=kappa_class_b
+
+            self.c_ell0=kappa_class0.cl_tomo()['cl']
+            if kappa_class_b is not None:
+                self.c_ell_b=kappa_class_b.cl_tomo()['cl']
+            else:
+                self.c_ell_b=kappa_class0.cl_tomo()['cl_b']
 
         self.Win=Win
         if self.Win is None and self.use_window:
@@ -174,9 +181,8 @@ class window_utils():
         for k in win.keys():
             M[k]=wig@(win[k]*(2*self.window_l+1))
             M[k]/=4.*np.pi
-            # if self.bin_window and binning_util is not None:
-                #FIXME: use kappa_class bin utils and pass weights here. For covariance use out products.
-            M[k]=self.binnings.bin_2d_coupling(cov=M[k],bin_utils=self.kappa_class.cl_bin_utils,
+            if self.bin_window:# and bin_wt is not None:
+                M[k]=self.binnings.bin_2d_coupling(cov=M[k],bin_utils=self.kappa_class0.cl_bin_utils,
                     partial_bin_side=2,lm=lm,lm_step=self.step,wt0=bin_wt['wt0'],wt_b=bin_wt['wt_b'])
         if W_pm!=0:
             del wig
@@ -230,9 +236,10 @@ class window_utils():
             win[12]['N']=hp.alm2cl(alms1=alm1,alms2=alm2,lmax_out=self.window_lmax) #This is f_sky*cl.
 
         win['binning_util']=None
+        win['bin_wt']=None
         if self.bin_window:
-            cl0=self.c_ell['cl'][corr][indxs]
-            cl_b=self.c_ell['cl_b'][corr][indxs]
+            cl0=self.c_ell0[corr][indxs]
+            cl_b=self.c_ell_b[corr][indxs]
             win['bin_wt']={'wt_b':1./cl_b,'wt0':cl0}
             
         win['W_pm']=W_pm
@@ -251,21 +258,17 @@ class window_utils():
             win2=win
         
         win_M=self.coupling_matrix_large(win[12], wig_3j_2=wig_3j_2,mf_pm=mf_pm,bin_wt=win['bin_wt']
-        ,W_pm=win['W_pm'],lm=lm)
+                                         ,W_pm=win['W_pm'],lm=lm)
 #         win_M=self.coupling_matrix_large(win[12],wig_3j_2=wig_3j_2[win['W_pm']])
         win2['M'][lm]=win_M['cl']
         if 'N' in win_M.keys():
             win2['M_noise']={lm:win_M['N']}
-        if win['corr']==('shear','shear') and win['indxs'][0]==win['indxs'][1]: #FIXME: this should be dprecated once shearB is implemented.
-
-            if not self.do_xi:#FIXME: hence pseudo-C_ell and xi together are not supported right now. for xi, window is same in xi+/-
-                win_M=self.coupling_matrix_large(win[12],wig_3j_2=wig_3j_2,mf_pm=mf_pm,W_pm=-2,bin_wt=win['bin_wt'],
+        if win['corr']==('shear','shear') and win['indxs'][0]==win['indxs'][1] and not self.do_xi: #B-mode for cl
+            #FIXME for xi, window is same in xi+/-. pseudo-C_ell and xi together are not supported right now.
+            win_M=self.coupling_matrix_large(win[12],wig_3j_2=wig_3j_2,mf_pm=mf_pm,W_pm=-2,bin_wt=win['bin_wt'],
                                                 lm=lm)
-#             win_M=self.coupling_matrix_large(win[12],wig_3j_2=wig_3j_2[-2])
-            win2['M_B_noise']={}
-            win2['M_B']={}
-            win2['M_B_noise'][lm]=win_M['N']
-            win2['M_B'][lm]=win_M['cl']
+            win2['M_B_noise']={lm: win_M['N']}
+            win2['M_B']={lm: win_M['cl']}
         return win2
 
     def return_dict_cl(self,result,corrs): #combine partial matrices
@@ -378,11 +381,11 @@ class window_utils():
 
         m1m2s[1324]=np.array([self.cov_m1m2s(corr=(corr[0],corr[2])), #13
                               self.cov_m1m2s(corr=(corr[1],corr[3])) #24
-                    ])
+                              ])
 
         m1m2s[1423]=np.array([self.cov_m1m2s(corr=(corr[0],corr[3])), #14
                               self.cov_m1m2s(corr=(corr[1],corr[2])) #23
-                    ])
+                            ])
 
         W_pm={} #W +/- factors based on spin
         W_pm[1324]=get_window_spins(cov_indxs=[(0,2),(1,3)])
@@ -439,17 +442,18 @@ class window_utils():
 
 
         win['binning_util']=None
+        win['bin_wt']=None
         if self.bin_window:  #FIXME: this will be used to get an approximation, because we donot save unbinned covariance
             win['bin_wt']={}
-            win['bin_wt']['cl13']=self.c_ell['cl'][(corr[0],corr[2])][(indxs[0],indxs[2])]
-            win['bin_wt']['cl24']=self.c_ell['cl'][(corr[1],corr[3])][(indxs[1],indxs[3])] 
-            win['bin_wt']['cl14']=self.c_ell['cl'][(corr[0],corr[3])][(indxs[0],indxs[3])]
-            win['bin_wt']['cl23']=self.c_ell['cl'][(corr[1],corr[2])][(indxs[1],indxs[2])] 
+            win['bin_wt']['cl13']=self.c_ell0[(corr[0],corr[2])][(indxs[0],indxs[2])]
+            win['bin_wt']['cl24']=self.c_ell0[(corr[1],corr[3])][(indxs[1],indxs[3])] 
+            win['bin_wt']['cl14']=self.c_ell0[(corr[0],corr[3])][(indxs[0],indxs[3])]
+            win['bin_wt']['cl23']=self.c_ell0[(corr[1],corr[2])][(indxs[1],indxs[2])] 
 
-            win['bin_wt']['cl_b13']=self.c_ell['cl_b'][(corr[0],corr[2])][(indxs[0],indxs[2])]
-            win['bin_wt']['cl_b24']=self.c_ell['cl_b'][(corr[1],corr[3])][(indxs[1],indxs[3])] 
-            win['bin_wt']['cl_b14']=self.c_ell['cl_b'][(corr[0],corr[3])][(indxs[0],indxs[3])]
-            win['bin_wt']['cl_b23']=self.c_ell['cl_b'][(corr[1],corr[2])][(indxs[1],indxs[2])] 
+            win['bin_wt']['cl_b13']=self.c_ell_b[(corr[0],corr[2])][(indxs[0],indxs[2])]
+            win['bin_wt']['cl_b24']=self.c_ell_b[(corr[1],corr[3])][(indxs[1],indxs[3])] 
+            win['bin_wt']['cl_b14']=self.c_ell_b[(corr[0],corr[3])][(indxs[0],indxs[3])]
+            win['bin_wt']['cl_b23']=self.c_ell_b[(corr[1],corr[2])][(indxs[1],indxs[2])] 
             
         win['f_sky12'],mask12=self.mask_comb(z_bin1['window'],z_bin2['window'],
                                      )#For SSC
@@ -485,16 +489,18 @@ class window_utils():
         return win
 
     def get_cov_coupling_lm(self,win,lm,wig_3j_2_1324,wig_3j_2_1423,mf_pm,m1m2s):
-        bin_wt={}
+        bin_wt=None
         for corr_i in [1324,1423]:
-            wig_i=wig_3j_2_1324
             if corr_i==1423:
                 wig_i=wig_3j_2_1423
-                bin_wt['wt0']=np.outer(win['bin_wt']['cl14'],win['bin_wt']['cl23']) #FIXME: this is an approximation because we donot save unbinned covariance
-                bin_wt['wt_b']=1./np.outer(win['bin_wt']['cl_b14'],win['bin_wt']['cl_b23'])
+                if self.bin_window:
+                    bin_wt={'wt0':np.outer(win['bin_wt']['cl14'],win['bin_wt']['cl23'])} #FIXME: this is an approximation because we donot save unbinned covariance
+                    bin_wt['wt_b']=1./np.outer(win['bin_wt']['cl_b14'],win['bin_wt']['cl_b23'])
             else:
-                bin_wt['wt0']=np.outer(win['bin_wt']['cl13'],win['bin_wt']['cl24']) #FIXME: this is an approximation because we donot save unbinned covariance
-                bin_wt['wt_b']=1./np.outer(win['bin_wt']['cl_b13'],win['bin_wt']['cl_b24'])
+                wig_i=wig_3j_2_1324
+                if self.bin_window:
+                    bin_wt={'wt0':np.outer(win['bin_wt']['cl13'],win['bin_wt']['cl24'])} #FIXME: this is an approximation because we donot save unbinned covariance
+                    bin_wt['wt_b']=1./np.outer(win['bin_wt']['cl_b13'],win['bin_wt']['cl_b24'])
             for wp in win['W_pm'][corr_i]:
                 win_t=self.coupling_matrix_large(win[corr_i], wig_3j_2=wig_i,mf_pm=mf_pm,W_pm=wp,
                                                 bin_wt=bin_wt,lm=lm)
