@@ -6,7 +6,6 @@ os.environ['OMP_NUM_THREADS'] = '20'
 
 thread_count()
 
-import tracemalloc
 import pickle
 from cov_3X2 import *
 from lsst_utils import *

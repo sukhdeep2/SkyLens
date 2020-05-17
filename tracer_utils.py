@@ -15,7 +15,8 @@ d2r=np.pi/180.
 c=c.to(u.km/u.second)
 
 class Tracer_utils():
-    def __init__(self,zs_bins=None,zg_bins=None,zk_bins=None,logger=None,l=None):
+    def __init__(self,zs_bins=None,zg_bins=None,zk_bins=None,logger=None,l=None,
+                ):
         self.logger=logger
         self.l=l
         #Gravitaional const to get Rho crit in right units
@@ -23,21 +24,29 @@ class Tracer_utils():
         self.G2*=8*np.pi/3.
     
         self.SN={}
+
+        self.n_bins={}
+        self.z_bins={}
+        self.spin={'galaxy':0,'kappa':0,'shear':2}
         
         self.set_zbins(z_bins=zs_bins,tracer='shear')
         self.set_zbins(z_bins=zg_bins,tracer='galaxy')
         self.set_zbins(z_bins=zk_bins,tracer='kappa')
+        self.tracers=list(self.z_bins.keys())
+        self.set_z_PS_max()
+        
+        
+    def set_z_PS_max(self):
+        self.z_PS_max=0 #max z for power spectra calcs
+        z_max_all=np.array([self.z_bins[tracer]['zmax'] for tracer in self.tracers])
+        self.z_PS_max=max(z_max_all)
 
     def set_zbins(self,z_bins={},tracer=None):
-        if tracer=='shear':
-            self.zs_bins=copy.deepcopy(z_bins)
-        if tracer=='galaxy':
-            self.zg_bins=copy.deepcopy(z_bins)
-        if tracer=='kappa':
-            self.zk_bins=copy.deepcopy(z_bins)
         if z_bins is not None:
+            self.z_bins[tracer]=z_bins
+            self.n_bins[tracer]=z_bins['n_bins']
             self.set_noise(tracer=tracer)
-        
+    
     def Rho_crit(self,cosmo_h=None):
         #G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)
         #rc=3*cosmo_h.H0**2/(8*np.pi*G2)
@@ -56,12 +65,13 @@ class Tracer_utils():
         return sigma_c.value
 
     def get_z_bins(self,tracer=None):
-        if tracer=='shear':
-             return self.zs_bins
-        if tracer=='galaxy':
-            return self.zg_bins
-        if tracer=='kappa':
-            return self.zk_bins
+        return self.z_bins[tracer]
+        # if tracer=='shear':
+        #      return self.zs_bins
+        # if tracer=='galaxy':
+        #     return self.zg_bins
+        # if tracer=='kappa':
+        #     return self.zk_bins
 
     def set_noise(self,tracer=None):
         """

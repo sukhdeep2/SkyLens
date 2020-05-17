@@ -17,8 +17,8 @@ import time,gc
 from multiprocessing import Pool,cpu_count
 
 class window_utils():
-    def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,corrs=None,m1_m2s=None,use_window=None,f_sky=None,
-                do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,HT=None,xi_bin_utils=None,do_xi=False,
+    def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,corrs=None,s1_s2s=None,use_window=None,f_sky=None,
+                do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,WT=None,xi_bin_utils=None,do_xi=False,
                 store_win=False,Win=None,wigner_files=None,step=None,xi_win_approx=False,
                 kappa_class0=None,kappa_class_b=None,bin_window=True):
         self.Win=Win
@@ -27,9 +27,9 @@ class window_utils():
         self.window_lmax=window_lmax
         self.window_l=window_l
         self.l=l
-        self.HT=HT #for correlation windows
+        self.WT=WT #for correlation windows
         self.corrs=corrs
-        self.m1_m2s=m1_m2s
+        self.s1_s2s=s1_s2s
         self.use_window=use_window
         self.do_cov=do_cov
         self.do_xi=do_xi
@@ -127,7 +127,7 @@ class window_utils():
         if not self.use_window:
             return
 
-        m_s=np.concatenate([np.abs(i).flatten() for i in self.m1_m2s.values()])
+        m_s=np.concatenate([np.abs(i).flatten() for i in self.s1_s2s.values()])
         self.m_s=np.sort(np.unique(m_s))
 
         if self.wigner_files is None:
@@ -157,7 +157,7 @@ class window_utils():
 
         self.wig_m1m2s={}
         for corr in self.corrs:
-            mi=np.sort(np.absolute(self.m1_m2s[corr]).flatten())
+            mi=np.sort(np.absolute(self.s1_s2s[corr]).flatten())
             self.wig_m1m2s[corr]=str(mi[0])+str(mi[1])
         print('wigner done',self.wig_3j.keys())
 
@@ -211,7 +211,7 @@ class window_utils():
 #             win={'cl':self.f_sky, 'M':self.coupling_M,'xi':1,'xi_b':1}
 #             return win
 
-        m1m2=np.absolute(self.m1_m2s[corr]).flatten()
+        m1m2=np.absolute(self.s1_s2s[corr]).flatten()
         W_pm=0
         if np.sum(m1m2)!=0:
             W_pm=2 #we only deal with E mode\
@@ -245,7 +245,7 @@ class window_utils():
         win['W_pm']=W_pm
         win['m1m2']=m1m2
         if self.do_xi:
-            th,win['xi']=self.HT.projected_correlation(l_cl=self.window_l,m1_m2=(0,0),cl=win[12]['cl'])
+            th,win['xi']=self.WT.projected_correlation(l_cl=self.window_l,s1_s2=(0,0),cl=win[12]['cl'])
             win['xi_b']=self.binning.bin_1d(xi=win['xi'],bin_utils=self.xi_bin_utils[(0,0)])
 
         win['M']={} #self.coupling_matrix_large(win['cl'], m1m2,wig_3j_2=wig_3j_2,W_pm=W_pm)*(2*self.l[:,None]+1) #FIXME: check ordering
@@ -331,7 +331,7 @@ class window_utils():
         return dic
 
     def cov_m1m2s(self,corr): #when spins are not same, we set them to 0. Expressions are not well defined in this case. Should be ok for l>~50 ish
-            m1m2=np.absolute(self.m1_m2s[corr]).flatten()
+            m1m2=np.absolute(self.s1_s2s[corr]).flatten()
             if m1m2[0]==m1m2[1]:
                 return m1m2[0]
             else:
@@ -355,7 +355,7 @@ class window_utils():
                 return W_pm#for xi estimators, there is no +/-. Note that this will result in wrong thing for pseudo-C_ell.
                     #FIXME: hence pseudo-C_ell and xi together are not supported right now
 
-            s=[np.sum(self.m1_m2s[corr1]),np.sum(self.m1_m2s[corr2])]
+            s=[np.sum(self.s1_s2s[corr1]),np.sum(self.s1_s2s[corr2])]
 
             if s[0]==2 and s[1]==2: #gE,gE
                 W_pm=[2]
@@ -478,10 +478,10 @@ class window_utils():
         win['xi_b']={1324:{},1423:{}}
         if self.do_xi:
             for k in win[1324].keys():
-                th,win['xi'][1324][k]=self.HT.projected_covariance(l_cl=self.window_l,m1_m2=(0,0),cl_cov=win[1324][k])
+                th,win['xi'][1324][k]=self.WT.projected_covariance(l_cl=self.window_l,s1_s2=(0,0),cl_cov=win[1324][k])
                 win['xi_b'][1324][k]=self.binning.bin_2d(cov=win['xi'][1324][k],bin_utils=self.xi_bin_utils[(0,0)])
             for k in win[1423].keys():
-                th,win['xi'][1423][k]=self.HT.projected_covariance(l_cl=self.window_l,m1_m2=(0,0),cl_cov=win[1423][k])
+                th,win['xi'][1423][k]=self.WT.projected_covariance(l_cl=self.window_l,s1_s2=(0,0),cl_cov=win[1423][k])
                 win['xi_b'][1423][k]=self.binning.bin_2d(cov=win['xi'][1423][k],bin_utils=self.xi_bin_utils[(0,0)])
 
         win['W_pm']=W_pm

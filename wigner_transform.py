@@ -6,7 +6,7 @@ import numpy as np
 import itertools
 
 class wigner_transform():
-    def __init__(self,theta=[],l=[],m1_m2=[(0,0)],logger=None,ncpu=None,**kwargs):
+    def __init__(self,theta=[],l=[],s1_s2=[(0,0)],logger=None,ncpu=None,**kwargs):
         self.name='Wigner'
         self.logger=logger
         self.l=l
@@ -16,10 +16,10 @@ class wigner_transform():
                                                     #are even for all correlations we need.
         self.wig_d={}
         self.wig_3j={}
-        self.m1_m2s=m1_m2
+        self.s1_s2s=s1_s2
         self.theta={}
         # self.theta=theta
-        for (m1,m2) in m1_m2:
+        for (m1,m2) in s1_s2:
             self.wig_d[(m1,m2)]=wigner_d_parallel(m1,m2,theta,self.l,ncpu=ncpu)
 #             self.wig_d[(m1,m2)]=wigner_d_recur(m1,m2,theta,self.l)
             self.theta[(m1,m2)]=theta #FIXME: Ugly
@@ -29,7 +29,7 @@ class wigner_transform():
             theta=self.theta
         if l is None:
             l=self.l
-        self.__init__(theta=theta,l=l,m1_m2=self.m1_m2s,logger=self.logger)
+        self.__init__(theta=theta,l=l,s1_s2=self.s1_s2s,logger=self.logger)
 
     def cl_grid(self,l_cl=[],cl=[],taper=False,**kwargs):
         if taper:
@@ -59,38 +59,38 @@ class wigner_transform():
             cl2=cl_int(self.l,self.l)
         return cl2
 
-    def projected_correlation(self,l_cl=[],cl=[],m1_m2=[],taper=False,wig_d=None,**kwargs):
+    def projected_correlation(self,l_cl=[],cl=[],s1_s2=[],taper=False,wig_d=None,**kwargs):
         if wig_d is None:
             cl2=self.cl_grid(l_cl=l_cl,cl=cl,taper=taper,**kwargs)
-            w=np.dot(self.wig_d[m1_m2]*self.grad_l*self.norm,cl2)
+            w=np.dot(self.wig_d[s1_s2]*self.grad_l*self.norm,cl2)
         else:
             w=np.dot(wig_d,cl)
-        return self.theta[m1_m2],w
+        return self.theta[s1_s2],w
 
-    def projected_covariance(self,l_cl=[],cl_cov=[],m1_m2=[],m1_m2_cross=None,
+    def projected_covariance(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
                             taper=False,**kwargs):
-        if m1_m2_cross is None:
-            m1_m2_cross=m1_m2
+        if s1_s2_cross is None:
+            s1_s2_cross=s1_s2
         #when cl_cov can be written as vector, eg. gaussian covariance
         cl2=self.cl_grid(l_cl=l_cl,cl=cl_cov,taper=taper,**kwargs)
-        cov=np.einsum('rk,k,sk->rs',self.wig_d[m1_m2]*np.sqrt(self.norm),cl2*self.grad_l,
-                    self.wig_d[m1_m2_cross]*np.sqrt(self.norm),optimize=True)
+        cov=np.einsum('rk,k,sk->rs',self.wig_d[s1_s2]*np.sqrt(self.norm),cl2*self.grad_l,
+                    self.wig_d[s1_s2_cross]*np.sqrt(self.norm),optimize=True)
         #FIXME: Check normalization
-        return self.theta[m1_m2],cov
+        return self.theta[s1_s2],cov
 
-    def projected_covariance2(self,l_cl=[],cl_cov=[],m1_m2=[],m1_m2_cross=None,
+    def projected_covariance2(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
                                 taper=False,**kwargs):
         #when cl_cov is a 2-d matrix
-        if m1_m2_cross is None:
-            m1_m2_cross=m1_m2
-        cl_cov2=cl_cov  #self.cl_cov_grid(l_cl=l_cl,cl_cov=cl_cov,m1_m2=m1_m2,taper=taper,**kwargs)
+        if s1_s2_cross is None:
+            s1_s2_cross=s1_s2
+        cl_cov2=cl_cov  #self.cl_cov_grid(l_cl=l_cl,cl_cov=cl_cov,s1_s2=s1_s2,taper=taper,**kwargs)
 
-        cov=np.einsum('rk,kk,sk->rs',self.wig_d[m1_m2]*np.sqrt(self.norm)*self.grad_l,cl_cov2,
-                    self.wig_d[m1_m2_cross]*np.sqrt(self.norm),optimize=True)
-#         cov=np.dot(self.wig_d[m1_m2]*self.grad_l*np.sqrt(self.norm),np.dot(self.wig_d[m1_m2_cross]*np.sqrt(self.norm),cl_cov2).T)
+        cov=np.einsum('rk,kk,sk->rs',self.wig_d[s1_s2]*np.sqrt(self.norm)*self.grad_l,cl_cov2,
+                    self.wig_d[s1_s2_cross]*np.sqrt(self.norm),optimize=True)
+#         cov=np.dot(self.wig_d[s1_s2]*self.grad_l*np.sqrt(self.norm),np.dot(self.wig_d[s1_s2_cross]*np.sqrt(self.norm),cl_cov2).T)
         # cov*=self.norm
         #FIXME: Check normalization
-        return self.theta[m1_m2],cov
+        return self.theta[s1_s2],cov
 
     def taper(self,l=[],large_k_lower=10,large_k_upper=100,low_k_lower=0,low_k_upper=1.e-5):
         #FIXME there is no check on change in taper_kwargs
@@ -108,12 +108,12 @@ class wigner_transform():
     def diagonal_err(self,cov=[]):
         return np.sqrt(np.diagonal(cov))
 
-    def skewness(self,l_cl=[],cl1=[],cl2=[],cl3=[],m1_m2=[],taper=False,**kwargs):
-        cl1=self.cl_grid(l_cl=l_cl,cl=cl1,m1_m2=m1_m2,taper=taper,**kwargs)
-        cl2=self.cl_grid(l_cl=l_cl,cl=cl2,m1_m2=m1_m2,taper=taper,**kwargs)
-        cl3=self.cl_grid(l_cl=l_cl,cl=cl3,m1_m2=m1_m2,taper=taper,**kwargs)
-        skew=np.einsum('ji,ki,li',self.wig_d[m1_m2],self.wig_d[m1_m2],
-                        self.wig_d[m1_m2]*cl1*cl2*cl3)
+    def skewness(self,l_cl=[],cl1=[],cl2=[],cl3=[],s1_s2=[],taper=False,**kwargs):
+        cl1=self.cl_grid(l_cl=l_cl,cl=cl1,s1_s2=s1_s2,taper=taper,**kwargs)
+        cl2=self.cl_grid(l_cl=l_cl,cl=cl2,s1_s2=s1_s2,taper=taper,**kwargs)
+        cl3=self.cl_grid(l_cl=l_cl,cl=cl3,s1_s2=s1_s2,taper=taper,**kwargs)
+        skew=np.einsum('ji,ki,li',self.wig_d[s1_s2],self.wig_d[s1_s2],
+                        self.wig_d[s1_s2]*cl1*cl2*cl3)
         skew*=self.norm
         #FIXME: Check normalization
-        return self.theta[m1_m2],skew
+        return self.theta[s1_s2],skew
