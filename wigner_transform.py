@@ -11,11 +11,9 @@ class wigner_transform():
         self.logger=logger
         self.l=l
         self.grad_l=np.gradient(l)
-        self.norm=(2*l+1.)/(4.*np.pi) #ignoring some factors of -1,
-                                                    #assuming sum and differences of m1,m2
-                                                    #are even for all correlations we need.
+        self.norm=(2*l+1.)/(4.*np.pi) 
         self.wig_d={}
-        self.wig_3j={}
+        # self.wig_3j={}
         self.s1_s2s=s1_s2
         self.theta={}
         # self.theta=theta
@@ -25,6 +23,9 @@ class wigner_transform():
             self.theta[(m1,m2)]=theta #FIXME: Ugly
 
     def reset_theta_l(self,theta=None,l=None):
+        """
+        In case theta ell values are changed. This can happen when we implement the binning scheme.
+        """
         if theta is None:
             theta=self.theta
         if l is None:
@@ -32,6 +33,11 @@ class wigner_transform():
         self.__init__(theta=theta,l=l,s1_s2=self.s1_s2s,logger=self.logger)
 
     def cl_grid(self,l_cl=[],cl=[],taper=False,**kwargs):
+        """
+        Interpolate a given C_ell onto the grid of ells for which WT is intialized. 
+        This is to generalize in case user doesnot want to compute C_ell at every ell.
+        Also apply tapering if needed.
+        """
         if taper:
             sself.taper_f=self.taper(l=l,**kwargs)
             cl=cl*taper_f
@@ -44,6 +50,11 @@ class wigner_transform():
         return cl2
 
     def cl_cov_grid(self,l_cl=[],cl_cov=[],taper=False,**kwargs):
+        """
+        Interpolate a given C_ell covariance onto the grid of ells for which WT is intialized. 
+        This is to generalize in case user doesnot want to compute C_ell at every ell.
+        Also apply tapering if needed.
+        """
         if taper:#FIXME there is no check on change in taper_kwargs
             if self.taper_f2 is None or not np.all(np.isclose(self.taper_f['l'],cl)):
                 self.taper_f=self.taper(l=l,**kwargs)
@@ -60,7 +71,10 @@ class wigner_transform():
         return cl2
 
     def projected_correlation(self,l_cl=[],cl=[],s1_s2=[],taper=False,wig_d=None,**kwargs):
-        if wig_d is None:
+        """
+        Get the projected correlation function from given c_ell.
+        """
+        if wig_d is None: #when using default wigner matrices, interpolate to ensure grids match.
             cl2=self.cl_grid(l_cl=l_cl,cl=cl,taper=taper,**kwargs)
             w=np.dot(self.wig_d[s1_s2]*self.grad_l*self.norm,cl2)
         else:
@@ -76,6 +90,7 @@ class wigner_transform():
         cov=np.einsum('rk,k,sk->rs',self.wig_d[s1_s2]*np.sqrt(self.norm),cl2*self.grad_l,
                     self.wig_d[s1_s2_cross]*np.sqrt(self.norm),optimize=True)
         #FIXME: Check normalization
+        #FIXME: need to allow user to input wigner matrices.
         return self.theta[s1_s2],cov
 
     def projected_covariance2(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
@@ -109,6 +124,9 @@ class wigner_transform():
         return np.sqrt(np.diagonal(cov))
 
     def skewness(self,l_cl=[],cl1=[],cl2=[],cl3=[],s1_s2=[],taper=False,**kwargs):
+        """
+        Because we can do 6 point functions as well :). 
+        """
         cl1=self.cl_grid(l_cl=l_cl,cl=cl1,s1_s2=s1_s2,taper=taper,**kwargs)
         cl2=self.cl_grid(l_cl=l_cl,cl=cl2,s1_s2=s1_s2,taper=taper,**kwargs)
         cl3=self.cl_grid(l_cl=l_cl,cl=cl3,s1_s2=s1_s2,taper=taper,**kwargs)

@@ -1,3 +1,7 @@
+"""
+This file contains a class with helper functions for covariance calculations.
+"""
+
 import os,sys
 import numpy as np
 from scipy.interpolate import interp1d
@@ -15,17 +19,8 @@ class Covariance_utils():
     def __init__(self,f_sky=0,l=None,logger=None,l_cut_jnu=None,do_sample_variance=True,
                  use_window=True,window_l=None,window_file=None,wig_3j=None, do_xi=False,
                 ):
-        self.logger=logger
-        self.l=l
-        self.window_l=window_l
-        self.window_file=window_file
-        # self.l_cut_jnu=l_cut_jnu #this is needed for hankel_transform case for xi. Need separate sigma_window calc.
-        self.f_sky=f_sky
-        self.do_xi=do_xi
-#         self.pseudo_cl=pseudo_cl
+        self.__dict__.update(locals()) #assign all input args to the class as properties
         self.binning=binning()
-        self.use_window=use_window
-        self.wig_3j=wig_3j
         self.sample_variance_f=1
         if not do_sample_variance:
             self.sample_variance_f=0 #remove sample_variance from gaussian part
@@ -42,6 +37,9 @@ class Covariance_utils():
         self.window_func()
 
     def window_func(self):
+        """
+        Set a default unit window used in some calculations (when survey window is not supplied.)
+        """
         if self.window_file is not None:
             W=np.genfromtxt(self.window_file,names=('l','cl'))
             window_l=W['l']
@@ -68,8 +66,11 @@ class Covariance_utils():
         return 0
 
     def sigma_win_calc(self,clz,Win=None,tracers=None,zs_indx=[]):#cls_lin, Win_cl=None,Om_w12=None,Om_w34=None):
+        """
+        compute mass variance on the scale of the survey window.
+        """
         cls_lin=clz['cls_lin']
-        if Win is None:
+        if Win is None: #use defaulr f_sky window
             Win_cl=self.Win
             Om_w12=self.Om_W
             Om_w34=self.Om_W
@@ -83,11 +84,20 @@ class Covariance_utils():
         return sigma_win
 
     def corr_matrix(self,cov=[]):
+        """
+        convert covariance matrix into correlation matrix.
+        """
         diag=np.diag(cov)
         return cov/np.sqrt(np.outer(diag,diag))
 
     def get_SN(self,SN,tracers,z_indx):
-            #get shot noise/shape noise for given set of tracer and z_bins
+        """
+            get shot noise/shape noise for given set of tracer and z_bins.
+            Note that we assume shot noise is function of ell in general. 
+            Default is to set that function to constant. For e.x., CMB lensing
+            noise is function of ell. Galaxy shot noise can also vary with ell, 
+            especially on small scales.
+        """
         SN2={}
         SN2[13]=SN[(tracers[0],tracers[2])][:,z_indx[0], z_indx[2] ] if SN.get((tracers[0],tracers[2])) is not None else np.zeros_like(self.l)
         SN2[24]=SN[(tracers[1],tracers[3])][:,z_indx[1], z_indx[3] ] if SN.get((tracers[1],tracers[3])) is not None else np.zeros_like(self.l)
@@ -97,7 +107,9 @@ class Covariance_utils():
         return SN2
 
     def get_CV_cl(self,cls,tracers,z_indx):
-            #get shot noise/shape noise for given set of tracer and z_bins
+        """
+        Get the tracer power spectra, C_ell, for covariance calculations.
+        """
         CV2={}
         CV2[13]=cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f
         CV2[24]=cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]*self.sample_variance_f
@@ -106,6 +118,10 @@ class Covariance_utils():
         return CV2
 
     def gaussian_cov_window(self,cls,SN,tracers,z_indx,do_xi,Win,Bmode_mf=1,bin_window=False,bin_utils=None):
+        """
+        Computes the power spectrum gaussian covariance, with proper factors of window. We have separate function for the 
+        case when window is not supplied.
+        """
         SN2=self.get_SN(SN,tracers,z_indx)
         CV=self.get_CV_cl(cls,tracers,z_indx)
         CV_B=self.get_CV_B_cl(cls,tracers,z_indx)
@@ -138,13 +154,18 @@ class Covariance_utils():
                             G_t=np.outer(SN2[c1],SN2[c2])
                         if a_EB>0:
                             G_t*=Bmode_mf #need to -1 for xi+/- cross covariance
-                        if bin_window:
-                            G_t=self.binning.bin_2d(cov=G_t,bin_utils=bin_utils)
+                        # if bin_window:
+                        #     G_t=self.binning.bin_2d(cov=G_t,bin_utils=bin_utils)
                         G[corr_i]+=G_t*Win['M'][corr_i][k][wp]
 
         return G[1324],G[1423]
         
-    def get_CV_B_cl(self,cls,tracers,z_indx): #for shear B-mode
+    def get_CV_B_cl(self,cls,tracers,z_indx): #
+        """ 
+            Return power spectra and noise contributions for shear B-mode covariance. We 
+            assume that the shear B-mode power spectra is zero (there is still E-mode contribution 
+            due to leakage caused by window).
+        """
         sv_f={13:1,24:1,14:1,23:1}
         if tracers[0]=='shear' and tracers[2]=='shear':
             sv_f[13]=0
@@ -162,30 +183,18 @@ class Covariance_utils():
         CV2[23]=cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f*sv_f[23]
         return CV2
             
-#         G1324= ( cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]*self.sample_variance_f*sv_f[13]
-#              + SN2[13]
-#                 )#/self.gaussian_cov_norm
-#              #get returns None if key doesnot exist. or 0 adds 0 is SN is none
-
-#         G1324=np.outer(G1324,( cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]*self.sample_variance_f*sv_f[24]
-#               + SN2[24]))
-
-#         G1423= ( cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]*self.sample_variance_f*sv_f[14]
-#               + SN2[14]
-#               )#/self.gaussian_cov_norm
-
-#         G1423=np.outer(G1423,(cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2])
-#                                                           ]*self.sample_variance_f*sv_f[23]
-#                     + SN2[23]))
-
-#         return G1324,G1423
-
     def gaussian_cov(self,cls,SN,tracers,z_indx,do_xi,f_sky,Bmode_mf=1): #no-window covariance
+        """
+        Gaussian covariance for the case when no window is supplied and only f_sky is used.
+        """
 
         SN2=self.get_SN(SN,tracers,z_indx)
         CV=self.get_CV_cl(cls,tracers,z_indx)
         
         def get_G4(CV,SN2):
+            """
+            return the two sub covariance matrix.
+            """
             G1324= ( CV[13]+ SN2[13])#/self.gaussian_cov_norm
                  #get returns None if key doesnot exist. or 0 adds 0 is SN is none
 
@@ -229,7 +238,12 @@ class Covariance_utils():
             
         return G1324,G1423
 
-    def xi_gaussian_cov_window_approx(self,cls,SN,tracers,z_indx,do_xi,Win,HT,HT_kwargs,Bmode_mf=1):
+    def xi_gaussian_cov_window_approx(self,cls,SN,tracers,z_indx,do_xi,Win,WT,WT_kwargs,Bmode_mf=1):
+        """
+        This returns correlation function gaussian covariance. Here window is assumed to decouple from the
+        covariance and the product of the two is taken.
+        """
+        #FIXME: Need to implement the case when we are only using bin centers.
         SN2=self.get_SN(SN,tracers,z_indx)
         CV=self.get_CV_cl(cls,tracers,z_indx)
         CV_B=self.get_CV_B_cl(cls,tracers,z_indx)
@@ -262,7 +276,7 @@ class Covariance_utils():
                             G_t=np.outer(CV2[c1],SN2[c2])
                         if k=='NN': 
                             G_t=np.outer(SN2[c1],SN2[c2])
-                        th,G_t=HT.projected_covariance2(cl_cov=G_t,**HT_kwargs)
+                        th,G_t=WT.projected_covariance2(cl_cov=G_t,**WT_kwargs)
                         G_t*=Win['xi'][corr_i][k]
                         G_t/=Norm
                         if a_EB>0:
@@ -270,9 +284,3 @@ class Covariance_utils():
                         G[corr_i]+=G_t
 
         return G[1324]+G[1423]
-
-#     def shear_SN(self,SN,tracers,z_indx):
-#         SN2=self.get_SN(SN,tracers,z_indx)
-#         SN1324=np.outer(SN2[13],SN2[24])
-#         SN1423=np.outer(SN2[14],SN2[23])
-#         return SN1324,SN1423

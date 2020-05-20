@@ -34,58 +34,37 @@ class Skylens():
                 f_sky=None,l_bins=None,bin_cl=False,use_binned_l=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 use_binned_theta=False, xi_win_approx=False,
-                corrs=[('shear','shear')],corr_indxs={},
+                corrs=None,corr_indxs={},
                  wigner_files=None,name=''):
 
         inp_args = copy.deepcopy(locals())
-        self.l=l*1.
+        self.__dict__.update(locals()) #assign all input args to the class as properties
         self.l0=l*1.
-        self.l_bins=l_bins
-        self.use_binned_l=use_binned_l
-        self.use_binned_theta=use_binned_theta
-        self.name=name
-        self.do_xi=do_xi
+
+        self.set_bin_params()
         self.set_binned_measure(inp_args)
 
-        self.logger=logger
         if logger is None:
             self.logger=logging.getLogger() #not really being used right now
             self.logger.setLevel(level=logging.DEBUG)
             logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s',
                                 level=logging.DEBUG, datefmt='%I:%M:%S')
 
-        self.do_cov=do_cov
-        self.SSV_cov=SSV_cov
-        self.Tri_cov=Tri_cov #small scale trispectrum
-        self.tidal_SSV_cov=tidal_SSV_cov
-        
-        self.xi_win_approx=xi_win_approx
-        self.corrs=corrs
-
-        self.window_lmax=30 if window_lmax is None else window_lmax
-        self.window_l=np.arange(self.window_lmax+1)
-
-        self.stack_data=stack_data
-        self.theta_bins=theta_bins
-        self.bin_utils=None
-
-        self.bin_cl=bin_cl
-        self.bin_xi=bin_xi
-
-        self.tracer_utils=tracer_utils
         if tracer_utils is None:
             self.tracer_utils=Tracer_utils(zs_bins=zs_bins,zg_bins=zg_bins,zk_bins=zk_bins,
                                             logger=self.logger,l=self.l)
 
-        self.z_bins=self.tracer_utils.z_bins
-        self.s1_s2s={}
         self.set_corr_indxs(corr_indxs=corr_indxs)
+        
+        self.window_lmax=30 if window_lmax is None else window_lmax
+        self.window_l=np.arange(self.window_lmax+1)
+
+        self.set_WT_spins()
+        self.set_WT_binned()
+
+        self.z_bins=self.tracer_utils.z_bins
         self.set_fsky(f_sky)
         
-        self.WT=WT
-        self.set_bin_params()
-        
-        self.cov_utils=cov_utils
         if cov_utils is None:
             self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,
                                             do_xi=self.do_xi,
@@ -93,7 +72,6 @@ class Skylens():
                                             use_window=use_window,
                                             window_l=self.window_l)
 
-        self.Ang_PS=Ang_PS
         if Ang_PS is None:
             self.Ang_PS=Angular_power_spectra(
                                 SSV_cov=self.SSV_cov,l=self.l,logger=self.logger,
@@ -107,10 +85,7 @@ class Skylens():
         # self.use_window=False
         # self.bin_window=False
         # self.do_cov=False #FIXME
-        self.use_window=use_window
-        self.do_cov=do_cov
         
-
         self.Win=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,s1_s2s=self.s1_s2s,\
                         use_window=use_window,do_cov=do_cov,cov_utils=self.cov_utils,
                         f_sky=f_sky,corr_indxs=self.corr_indxs,z_bins=self.z_bins,
@@ -125,30 +100,34 @@ class Skylens():
         if self.Tri_cov:
             self.CTR=cov_matter_tri(k=self.l)
 
-    def update_zbins(self,z_bins={},tracer='shear'):
-        self.tracer_utils.set_zbins(z_bins,tracer=tracer)
-        self.z_bins=self.tracer_utils.z_bins
-        return
-
     def set_binned_measure(self,inp_args):
+        """
+            If we only want to run computations at effective bin centers, then we 
+            need to bin the windows and wigner matrices properly, for which unbinned
+            quantities need to be computed once. This function sets up the unbinned
+            computations, which are used later for binning window coupling and wigner
+            matrices. 
+            This is useful when running multiple computations for chains etc. For 
+            covariance and one time calcs, may as well just do the full computation.
+        """
         if self.use_binned_l or self.use_binned_theta:
             self.lb=np.int32((self.l_bins[1:]+self.l_bins[:-1])*.5)
             inp_args['use_binned_l']=False
             inp_args['use_binned_theta']=False
             inp_args['use_window']=False
-            inp_args['do_cov']=False #FIXME
+            inp_args['do_cov']=False 
             inp_args['bin_xi']=False
             inp_args['name']='S0'
             del inp_args['self']
             inp_args2=copy.deepcopy(inp_args)
-            self.kappa0=Skylens(**inp_args)
+            self.kappa0=Skylens(**inp_args)  #to get unbinned c_ell and xi
 
             inp_args2['l']=self.lb
             inp_args2['name']='S_b'
             inp_args2['l_bins']=None
             inp_args2['bin_cl']=False
             inp_args2['do_xi']=False
-            self.kappa_b=Skylens(**inp_args2)
+            self.kappa_b=Skylens(**inp_args2) #to get binned c_ell
 
             if self.do_xi and self.use_binned_theta:
                 theta_bins=inp_args['theta_bins']
@@ -157,11 +136,10 @@ class Skylens():
                 inp_args_xi['name']='S_b_xi'
                 
                 inp_args_xi['WT'].reset_theta_l(theta=self.thb)
-                self.kappa_b_xi=Skylens(**inp_args_xi)
+                self.kappa_b_xi=Skylens(**inp_args_xi) #to get binned xi. 
                 
                 self.xi0=self.kappa0.xi_tomo()['xi']
                 self.xi_b=self.kappa_b_xi.xi_tomo()['xi']
-                self.set_WT_binned()
             self.l=self.lb*1.
             self.c_ell0=self.kappa0.cl_tomo()['cl']
             self.c_ell_b=self.kappa_b.cl_tomo()['cl']
@@ -170,22 +148,40 @@ class Skylens():
             self.kappa0=self
 
     def set_corr_indxs(self,corr_indxs=None):
+        """
+        set up the indexes for correlations. indexes= tracer and bin ids. 
+        User can input the corr_indxs which will be the ones computed (called stack_indxs later). 
+        However, when doing covariances, we may need to compute the 
+        aiddtional correlations, hence those are included added to the corr_indxs.
+        corr_indxs are used for constructing full compute graph but only the stack_indxs 
+        is actually computed when stack_dat is called. 
+        """
         self.stack_indxs=copy.deepcopy(corr_indxs)
         self.corr_indxs=corr_indxs
-        for tracer in self.tracer_utils.tracers:
-            if self.corr_indxs.get((tracer,tracer)) is not None:
-                continue
 
+        if self.corrs is None:
+            if bool(self.stack_indxs):
+                self.corrs=list(corr_indxs.keys())
+            else:
+                nt=len(self.tracer_utils.tracers)
+                self.corrs=[(self.tracer_utils.tracers[i],self.tracer_utils.tracers[j])
+                            for i in np.arange(nt)
+                            for j in np.arange(i,nt)
+                            ]
+
+        if not self.do_cov and  bool(self.stack_indxs):
+            print('not setting corr_indxs',self.do_cov , bool(self.stack_indxs))
+            return 
+        for tracer in self.tracer_utils.tracers:
             self.corr_indxs[(tracer,tracer)]=[j for j in itertools.combinations_with_replacement(
                                                     np.arange(self.tracer_utils.n_bins[tracer]),2)]
-#             print(tracer,self.corr_indxs[(tracer,tracer)])
+
             if tracer=='galaxy' and not self.do_cov:
                 self.corr_indxs[(tracer,tracer)]=[(i,i) for i in np.arange(self.tracer_utils.n_bins[tracer])] 
                 #by default, assume no cross correlations between galaxy bins
 
         for tracer1 in self.tracer_utils.tracers:#zbin-indexs for cross correlations
             for tracer2 in self.tracer_utils.tracers:
-                self.s1_s2s[(tracer1,tracer2)]=[(self.tracer_utils.spin[tracer1],self.tracer_utils.spin[tracer2])]
                 if tracer1==tracer2:
                     continue
                 if self.corr_indxs.get((tracer1,tracer2)) is not None:
@@ -193,12 +189,16 @@ class Skylens():
                 self.corr_indxs[(tracer1,tracer2)]=[ k for l in [[(i,j) for i in np.arange(
                                         self.tracer_utils.n_bins[tracer1])] 
                                         for j in np.arange(self.tracer_utils.n_bins[tracer2])] for k in l]
-        self.s1_s2s[('shear','shear')]=[(2,2),(2,-2)]
-        self.s1_s2s[('window')]=[(0,0)]
+        
         if self.stack_indxs is None or not bool(self.stack_indxs):
             self.stack_indxs=self.corr_indxs
 
     def set_fsky(self,f_sky):
+        """
+        We assume different tracers can have partial
+        overlap, in which case f_sky will be a dictionary with varying values for different two point correlations.
+        This function sets that dictionary if only single f_sky is passed.
+        """
         self.f_sky=f_sky
         if np.isscalar(self.f_sky): #this is dict because we allow for partial overlap between different tracers.
             f_temp=np.copy(self.f_sky)
@@ -212,8 +212,18 @@ class Skylens():
                     self.f_sky[kk][idx]=f_temp #*np.ones((n_indx,n_indx))
                     self.f_sky[kk[::-1]][idx[::-1]]=f_temp
 
+    def set_WT_spins(self):
+        self.s1_s2s={}
+        for tracer1 in self.tracer_utils.tracers:#zbin-indexs for cross correlations
+            for tracer2 in self.tracer_utils.tracers:
+                self.s1_s2s[(tracer1,tracer2)]=[(self.tracer_utils.spin[tracer1],self.tracer_utils.spin[tracer2])]
+        self.s1_s2s[('shear','shear')]=[(2,2),(2,-2)]
+        self.s1_s2s[('window')]=[(0,0)]
 
     def set_WT_binned(self):
+        """
+        If we only want to compute at bin centers, wigner transform matrices need to be binned.
+        """
         if not self.do_xi:
             return 
         WT=self.WT
@@ -232,6 +242,15 @@ class Skylens():
                                                                 wt0=cl0,wt_b=1./cl_b,bin_utils_cl=self.cl_bin_utils,
                                                                 bin_utils_xi=self.xi_bin_utils[s1_s2])
                         
+
+    def update_zbins(self,z_bins={},tracer='shear'):
+        """
+        If the tracer bins need to be updated. Ex. when running chains with varying photo-z params.
+        """
+        self.tracer_utils.set_zbins(z_bins,tracer=tracer)
+        self.z_bins=self.tracer_utils.z_bins
+        return
+
 
     def set_bin_params(self):
         """
@@ -295,7 +314,7 @@ class Skylens():
         if self.use_window:
             cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_window(cls,
                                             self.SN,tracers,zs_indx,self.do_xi,Win['cov'][tracers][zs_indx],
-                                            bin_window=self.bin_window,bin_utils=self.cl_bin_utils)
+                                            )#bin_window=self.bin_window,bin_utils=self.cl_bin_utils)
         else:
             fs=self.f_sky
             if self.do_xi and self.xi_win_approx: #in this case we need to use a separate function directly from xi_cov
@@ -401,7 +420,7 @@ class Skylens():
 
         #tracers=[j for i in corrs for j in i]
         tracers=np.unique([j for i in corrs for j in i])
-
+        
         corrs2=corrs.copy()
         if self.do_cov:#make sure we compute cl for all cross corrs necessary for covariance
                         #FIXME: If corrs are gg and ll only, this will lead to uncessary gl. This

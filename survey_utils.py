@@ -1,3 +1,8 @@
+"""
+A collection of functions that are used to generate mock survey data (galaxy, shear and CMB samples).
+Functions for LSST, DESI, DES, KiDS and CMB surveys.
+"""
+
 from scipy.stats import norm as gaussian
 import copy
 import numpy as np
@@ -57,10 +62,6 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None):
 
     pdf=gaussian.pdf(y.T,loc=zp+bias,scale=sigma).T
 
-    # pdf=np.zeros((len(zp),len(zs)))
-    # for i in np.arange(len(zp)):
-    #     pdf[i,:]=gaussian.pdf(zs,loc=zp[i]+bias[i],scale=sigma[i])
-
     dzp=np.gradient(zp) if len(zp)>1 else 1
 
     p_zs=np.dot(dzp*p_zp,pdf)
@@ -73,7 +74,7 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
     w_lmax=3*nside-1
     l0=np.arange(3*nside-1,dtype='int')
     corr=('galaxy','galaxy')
-    kappa0=cov_3X2(zg_bins=zs_bins,do_cov=False,bin_cl=False,l_bins=None,l=l0, zs_bins=None,use_window=False,
+    kappa0=Skylens(zg_bins=zs_bins,do_cov=False,bin_cl=False,l_bins=None,l=l0, zs_bins=None,use_window=False,
                    corrs=[corr],f_sky=f_sky)
     npix0=hp.nside2npix(nside)
 

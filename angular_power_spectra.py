@@ -1,3 +1,6 @@
+"""
+Class with some hwelper functions to convert the power spectra into form that is then input for C_ell calculations.
+"""
 import os,sys
 
 from power_spectra import *

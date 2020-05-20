@@ -1,3 +1,7 @@
+"""
+Class with utility functions for defining tracer properties, e.g. redshift kernels, galaxy bias, IA amplitude etc.
+"""
+
 import os,sys
 import copy
 from power_spectra import *
@@ -37,11 +41,17 @@ class Tracer_utils():
         
         
     def set_z_PS_max(self):
-        self.z_PS_max=0 #max z for power spectra calcs
+        """
+            Get max z for power spectra computations.
+        """
+        self.z_PS_max=0
         z_max_all=np.array([self.z_bins[tracer]['zmax'] for tracer in self.tracers])
         self.z_PS_max=max(z_max_all)
 
     def set_zbins(self,z_bins={},tracer=None):
+        """
+        Set tracer z_bins as class property.
+        """
         if z_bins is not None:
             self.z_bins[tracer]=z_bins
             self.n_bins[tracer]=z_bins['n_bins']
@@ -55,6 +65,9 @@ class Tracer_utils():
         return rc.value
 
     def sigma_crit(self,zl=[],zs=[],cosmo_h=None):
+        """
+        Inverse of lensing kernel.
+        """
         ds=cosmo_h.comoving_transverse_distance(zs)
         dl=cosmo_h.comoving_transverse_distance(zl)
         ddls=1.-np.multiply.outer(1./ds,dl)#(ds-dl)/ds
@@ -75,6 +88,7 @@ class Tracer_utils():
 
     def set_noise(self,tracer=None):
         """
+        Setting the noise of the tracers. We assume noise is in general a function of ell.
         """
         z_bins=self.get_z_bins(tracer=tracer)
         n_bins=z_bins['n_bins']
@@ -84,12 +98,19 @@ class Tracer_utils():
             self.SN[tracer][:,i,i]+=z_bins['SN'][tracer][:,i,i]
 
     def NLA_amp_z(self,z=[],z_bin={},cosmo_h=None):
+        """
+        Redshift dependent intrinsic alignment amplitude. This is assumed to be a function of ell in general, 
+        though here we set it as constant.
+        """
         AI=z_bin['AI']
         AI_z=z_bin['AI_z']
         return np.outer(AI*(1+z)**AI_z,np.ones_like(self.l)) #FIXME: This might need to change to account
     
     
     def constant_bias(self,z=[],z_bin={},cosmo_h=None):
+        """
+        Galaxy bias, assumed to be constant (ell and z independent).
+        """
         b=z_bin['b1']
         lb_m=z_bin['lm']
         lm=np.ones_like(self.l)
@@ -98,6 +119,10 @@ class Tracer_utils():
         return b*np.outer(np.ones_like(z),lm)
 
     def linear_bias_powerlaw(self,z_bin={},cosmo_h=None):
+        """
+        Galaxy bias, assumed to be constant (ell independent). Varies as powerlaw with redshift. This is useful
+        for some photo-z tests.
+        """
         b1=z_bin['b1']
         b2=z_bin['b2']
         lb_m=z_bin['lm']
@@ -107,6 +132,9 @@ class Tracer_utils():
         return np.outer(b1*(1+z_bin['z'])**b2,lm) #FIXME: This might need to change to account
     
     def spin_factor(self,l=None,tracer=None):
+        """
+        Spin of tracers. Needed for wigner transforms and pseudo-cl calculations.
+        """
         if l is None:
             l=self.l
         if tracer is None:
@@ -130,6 +158,10 @@ class Tracer_utils():
         return F.astype('float32')
     
     def set_kernel(self,cosmo_h=None,zl=None,tracer=None):
+        """
+        Set the tracer kernels. This includes the local kernel, e.g. galaxy density, IA and also the lensing 
+        kernel. Galaxies have magnification bias.
+        """
         self.set_lensing_kernel(cosmo_h=cosmo_h,zl=zl,tracer=tracer)
         self.set_galaxy_kernel(cosmo_h=cosmo_h,zl=zl,tracer=tracer)
         z_bins=self.get_z_bins(tracer=tracer)

@@ -1,3 +1,6 @@
+"""
+Class to compute the matter power spectra. Includes wrappers over class, camb, CCL and Bayonic physics PC's (Hung-Jin's method.)
+"""
 import camb
 from camb import model, initialpower
 #import pyccl
@@ -74,19 +77,11 @@ class Power_Spectra():
     def __init__(self,cosmo_params=cosmo_fid,pk_params=pk_params,cosmo=cosmo,
                  silence_camb=True,SSV_cov=False,scenario=None,
                  logger=None):
-        self.logger=logger
-        self.cosmo_params=cosmo_params
-        self.pk_params=pk_params
-        self.cosmo=cosmo
-        self.silence_camb=silence_camb
+        self.__dict__.update(locals()) #assign all input args to the class as properties
         self.cosmo_h=cosmo.clone(H0=100)
-        #self.pk_func=self.camb_pk_too_many_z if pk_func is None else pk_func
-        #self.pk_func=self.ccl_pk if pk_func is None else pk_func
+        
         pk_func=pk_params.get('pk_func')
         self.pk_func=self.class_pk if pk_func is None else getattr(self,pk_func)
-        self.SSV_cov=SSV_cov
-        self.scenario = scenario
-        self.pk=None
         if not pk_params is None:
             self.kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),
             pk_params['nk'])
@@ -218,6 +213,9 @@ class Power_Spectra():
             return pk,kh
 
     def camb_pk_too_many_z(self,z,cosmo_params=None,pk_params=None,return_s8=False):
+        """
+        Because CAMB used to complain when z array was too long.
+        """
         i=0
         pk=None #np.array([])
         z_step=140 #camb cannot handle more than 150 redshifts
@@ -323,7 +321,11 @@ class Power_Spectra():
             return pkbary,kh  #,pk,PkR.T
 
 
-    def R1_calc(self,k=None,pk=None,k_NonLinear=3.2,axis=0): #eq 2.5, R1, Barriera+ 2017
+    def R1_calc(self,k=None,pk=None,k_NonLinear=3.2,axis=0): 
+        """
+        Response function used in calculation of super sample covariance.
+        eq 2.5, R1, Barriera+ 2017
+        """
         G1=26./21.*np.ones_like(k)
         x=k>k_NonLinear
 #         G1[x]*=k_NonLinear/k[x]
@@ -333,7 +335,10 @@ class Power_Spectra():
         R=1 - 1./3*dpk + G1
         return R
 
-    def R_K_calc(self,k=None,pk=None,k_NonLinear=3.2,axis=0): #eq 2.5, R1
+    def R_K_calc(self,k=None,pk=None,k_NonLinear=3.2,axis=0):
+        """
+        Response function used in calculation of super sample covariance.
+        """
         GK=8./7.*np.ones_like(k)
         x=k>k_NonLinear
         BK=2.2
