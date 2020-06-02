@@ -34,7 +34,7 @@ class Skylens():
                 f_sky=None,l_bins=None,bin_cl=False,use_binned_l=False,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 use_binned_theta=False, xi_win_approx=False,
-                corrs=None,corr_indxs={},
+                corrs=None,corr_indxs=None,
                  wigner_files=None,name=''):
 
         inp_args = copy.deepcopy(locals())
@@ -158,7 +158,7 @@ class Skylens():
         """
         self.stack_indxs=copy.deepcopy(corr_indxs)
         self.corr_indxs=corr_indxs
-
+        print('indxs: ',self.stack_indxs,self.corr_indxs)
         if self.corrs is None:
             if bool(self.stack_indxs):
                 self.corrs=list(corr_indxs.keys())
@@ -169,9 +169,11 @@ class Skylens():
                             for j in np.arange(i,nt)
                             ]
 
-        if not self.do_cov and  bool(self.stack_indxs):
-            print('not setting corr_indxs',self.do_cov , bool(self.stack_indxs))
-            return 
+        if not self.do_cov and  (not self.stack_indxs is None):
+            print('not setting corr_indxs',self.do_cov , bool(self.stack_indxs), self.stack_indxs)
+            return
+        else:
+            self.corr_indxs={}
         for tracer in self.tracer_utils.tracers:
             self.corr_indxs[(tracer,tracer)]=[j for j in itertools.combinations_with_replacement(
                                                     np.arange(self.tracer_utils.n_bins[tracer]),2)]
@@ -190,7 +192,7 @@ class Skylens():
                                         self.tracer_utils.n_bins[tracer1])] 
                                         for j in np.arange(self.tracer_utils.n_bins[tracer2])] for k in l]
         
-        if self.stack_indxs is None or not bool(self.stack_indxs):
+        if self.stack_indxs is None:# or not bool(self.stack_indxs):
             self.stack_indxs=self.corr_indxs
 
     def set_fsky(self,f_sky):

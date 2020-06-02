@@ -53,8 +53,8 @@ class Tracer_utils():
         Set tracer z_bins as class property.
         """
         if z_bins is not None:
-            self.z_bins[tracer]=z_bins
-            self.n_bins[tracer]=z_bins['n_bins']
+            self.z_bins[tracer]=copy.deepcopy(z_bins)
+            self.n_bins[tracer]=self.z_bins[tracer]['n_bins']
             self.set_noise(tracer=tracer)
     
     def Rho_crit(self,cosmo_h=None):

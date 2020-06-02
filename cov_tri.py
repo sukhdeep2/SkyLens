@@ -1,5 +1,8 @@
+"""
+Matter trispectrum for covariance. Implementation of Harnois-Deraps&Pen 2011. 
+"""
 import numpy as np
-#Implementation of Harnois-Deraps&Pen
+#
 
 class cov_matter_tri():
     def __init__(self,k=None,l=None):
