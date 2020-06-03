@@ -96,13 +96,14 @@ class window_utils():
         """
         Here we set the spin dependent multiplicative factors (X+, X-).
         """
-        li1=np.int32(self.window_l).reshape(len(self.window_l),1,1)
-        li3=np.int32(self.l).reshape(1,1,len(self.l))
-        li2=np.int32(self.l[lm:lm+self.step]).reshape(1,len(self.l[lm:lm+self.step]),1)
-        mf=(-1)**(li1+li2+li3)
+        li1=np.float64(self.window_l).reshape(len(self.window_l),1,1)
+        li3=np.float64(self.l).reshape(1,1,len(self.l))
+        li2=np.float64(self.l[lm:lm+self.step]).reshape(1,len(self.l[lm:lm+self.step]),1)
+        mf=(-1.)**(li1+li2+li3)
         mf=mf.transpose(1,2,0)
         out={}
-        out['mf_p']=np.int8((1.+mf)/2.)#.astype('bool') #memory hog...
+        out['mf_p']=(1.+mf)/2.
+        # out['mf_p']=np.int8((1.+mf)/2.)#.astype('bool') #memory hog...
                               #bool doesn't help in itself, as it is also byte size in numpy.
                               #we donot need to store mf_n, as it is simply a 0-1 flip or "not" when written as bool
                               #using bool or int does cost somewhat in computation as numpy only computes with float 64 (or 32 
@@ -723,22 +724,24 @@ class window_utils():
                 self.Win_lm[lm]['cov']=self.Win_cov_lm[lm]
                 # if self.store_win:
                 #     self.Win_cov_lm[lm]=client.compute(self.Win_cov_lm[lm])#.result()
-            if self.store_win:
-                self.Win_lm[lm]=client.compute(self.Win_lm[lm])
+            t3=time.time()
+            # if self.store_win:
+            #     self.Win_lm[lm]=client.compute(self.Win_lm[lm])
                 # self.Win_cl_lm[lm]=self.Win_lm['cl']
                 # if self.do_cov:
                 #     self.Win_cov_lm[lm]=self.Win_lm['cov']
-            t3=time.time()
+            # t3=time.time()
             if self.store_win:
-                self.Win_lm[lm]=self.Win_lm[lm].result()
-                # self.Win_cl_lm[lm]=self.Win_cl_lm[lm].result()
+                self.Win_lm[lm]=client.compute(self.Win_lm[lm]).result()
+                # self.Win_lm[lm]=self.Win_lm[lm].result()
+                self.Win_cl_lm[lm]=self.Win_lm[lm]['cl']#.result()
                 # self.Win_cl_lm[lm]=self.Win_lm[lm].result()['cl']
                 t4=time.time()
-                # if self.do_cov:
-                    # self.Win_cov_lm[lm]=self.Win_lm[lm].result()['cov']
+                if self.do_cov:
+                    self.Win_cov_lm[lm]=self.Win_lm[lm]['cov']
                     # self.Win_cov_lm[lm]=self.Win_cov_lm[lm].result()
                 t2=time.time()
-                print('done coupling submatrix ',lm, t2-t1,t3-t1,t4-t3)
+                print('done coupling submatrix ',lm, 'time total, graph, compute', t2-t1,t3-t1,t4-t3)
                 del self.wig_3j_2[lm]
                 del self.mf_pm[lm]
                 # del self.Win_lm[lm]
