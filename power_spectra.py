@@ -1,11 +1,17 @@
 """
 Class to compute the matter power spectra. Includes wrappers over class, camb, CCL and Bayonic physics PC's (Hung-Jin's method.)
 """
-import camb
-from camb import model, initialpower
+try:
+    import camb
+    from camb import model, initialpower
+except:
+    camb=None
 #import pyccl
 import os,sys
-from classy import Class
+try:
+    from classy import Class
+except:
+    Class=None
 sys.path.insert(0,'./')
 
 import numpy as np
@@ -24,7 +30,7 @@ cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817
                 'Ase9':2.2,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
                 'w':-1,'wa':0})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
-pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':2000,'scenario':'dmo','pk_func':'class_pk'}
+pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':2000,'scenario':'dmo','pk_func':None}
 
 # baryonic scenario option:
 # "owls_AGN","owls_DBLIMFV1618","owls_NOSN","owls_NOSN_NOZCOOL","owls_NOZCOOL","owls_REF","owls_WDENS"
@@ -81,7 +87,10 @@ class Power_Spectra():
         self.cosmo_h=cosmo.clone(H0=100)
         
         pk_func=pk_params.get('pk_func')
-        self.pk_func=self.class_pk if pk_func is None else getattr(self,pk_func)
+        pk_func_default=self.class_pk
+        if Class is None:
+            pk_func_default=self.camb_pk_too_many_z
+        self.pk_func=pk_func_default if pk_func is None else getattr(self,pk_func)
         if not pk_params is None:
             self.kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),
             pk_params['nk'])
