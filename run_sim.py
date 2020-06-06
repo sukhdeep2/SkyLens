@@ -1,11 +1,12 @@
 import sys, os, gc, threading, subprocess
 from thread_count import *
 os.environ['OMP_NUM_THREADS'] = '20'
+# import libpython
 #pid=os.getpid()
 #print('pid: ',pid, sys.version)
 
 #thread_count()
-
+# sys,settrace
 import pickle
 from skylens import *
 from survey_utils import *
@@ -29,7 +30,7 @@ do_blending=np.bool(np.int16(sys.argv[4]))
 do_SSV_sim=np.bool(np.int16(sys.argv[5]))
 use_shot_noise=np.bool(np.int16(sys.argv[6]))
 
-nsim=100
+nsim=1000
 
 lognormal_scale=2
 
@@ -60,17 +61,18 @@ if test_run:
     
 wigner_files={}
 # wig_home='/global/cscratch1/sd/sukhdeep/dask_temp/'
-wig_home='/Users/Deep/dask_temp/'
-wigner_files[0]= wig_home+'/dask_wig3j_l3500_w2100_0_reorder.zarr'
+#wig_home='/Users/Deep/dask_temp/'
+wig_home='/home/deep/repos/cosmic_shear/temp/'
+wigner_files[0]= wig_home+'/dask_wig3j_l6500_w2100_0_reorder.zarr'
 wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 
 l0w=np.arange(3*nside-1)
 
-memory='25gb'#'120gb'
-ncpu=6#4
+memory='55gb'#'120gb'
+ncpu=12 #4
 if test_run:
     memory='20gb'
-    ncpu=1
+    ncpu=4
 worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
 LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
                 local_dir=wig_home+'/NGL-worker/', **worker_kwargs,
@@ -145,14 +147,13 @@ zl_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=10,use_window=use_window,nbi
                             window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
                             f_sky=f_sky,nside=nside,unit_win=unit_window,use_shot_noise=True)
 
-print('zlbin done')
 z0=1 #1087
 zs_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=30,use_window=use_window,
                                     window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
                                     f_sky=f_sky,nbins=n_source_bins,nside=nside,
                                     unit_win=unit_window,use_shot_noise=True)
 
-# print('zsbin done',thread_count())
+print('zbins done')#,thread_count())
 if not use_shot_noise:
     for t in zs_bin1['SN'].keys():
         zs_bin1['SN'][t]*=0
@@ -165,22 +166,14 @@ kappa_win=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0
             SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=f_sky,
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi,
             wigner_files=wigner_files,
-                 )
-# print('kappa_win 1')
-# thread_count()
+)
 
 clG_win=kappa_win.cl_tomo(corrs=corrs)
-# print('kappa_win 2')
-# thread_count()
 cl0_win=clG_win['stack'].compute()
 
 if do_xi:
     xiWG_L=kappa_win.xi_tomo()
     xiW_L=xiWG_L['stack'].compute()
-#gc.collect()
-
-print('kappa_win done')
-# thread_count()
 
 l=kappa_win.window_l
 Om_W=np.pi*4*f_sky
@@ -224,13 +217,11 @@ Mwp_binning_utils={}
 Mw_binning_utils={}
 
 for corr in corrs:
-    print('bin0',corr)
     M_binnings[corr]=binning()
     wt_b=1./cl0['cl_b'][corr]
     wt0=cl0['cl'][corr]
     M_binning_utils[corr]=M_binnings[corr].bin_utils(r=kappa0.l,r_bins=kappa0.l_bins,
                                                 r_dim=2,mat_dims=[1,2],wt_b=wt_b,wt0=wt0)
-    print('bin0 1',corr)
     wt_b=1./clG_win['cl_b'][corr][bi].compute()
     wt0=clG_win['pseudo_cl'][corr][bi].compute()
     Mp_binning_utils[corr]=M_binnings[corr].bin_utils(r=kappa0.l,r_bins=kappa0.l_bins,
@@ -657,13 +648,13 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                     clg_b[k][:,ii]=clp_b[:,ii]@coupling_M_binned_inv[k][corr_t[ii]] #be careful with ordering as coupling matrix is not symmetric
                 if corr_t[ii]==corr_ll:
                     clgB_b['iMaster'][:,ii]=clpB_b[:,ii]@coupling_M_binned_inv['iMaster']['shear_B']
-            dd=gc.get_debug()
-            snapshot1 = tracemalloc.take_snapshot()
-            top_stats = snapshot1.statistics('lineno')
-            stat = top_stats[3]
-            print("%s memory blocks: %.1f MiB" % (stat.count, stat.size / 1024**2))
-            for line in stat.traceback.format():
-                print(line)
+            # dd=gc.get_debug()
+            # snapshot1 = tracemalloc.take_snapshot()
+            # top_stats = snapshot1.statistics('lineno')
+            # stat = top_stats[3]
+            # print("%s memory blocks: %.1f MiB" % (stat.count, stat.size / 1024**2))
+            # for line in stat.traceback.format():
+            #     print(line)
             # print('got map ',i,thread_count())
             gc.collect()
             return clpi.T,clgi.T,clp_b,clpi_B.T,clg_b,clpB_b,clgB_b
@@ -705,7 +696,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                     clgB_b['iMaster'][i,:]=clgB_b_i['iMaster']
                         
                 i+=1
-            # print('done map ',i, thread_count())
+            print('done map ',i, thread_count())
             del futures
             gc.collect()
             #client.restart()
@@ -796,8 +787,9 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     
     #client.close()
     return outp
-
-fname=wig_home+'/tests/non_gaussian_likeli_sims_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
+#test_home=wig_home+'/tests/'
+test_home='/home/deep/repos/cosmic_shear/tests/'
+fname=test_home+'/non_gaussian_likeli_sims_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
 if lognormal:
     fname+='_lognormal'+str(lognormal_scale)
 if not use_shot_noise:

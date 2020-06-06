@@ -32,8 +32,8 @@ class window_utils():
             self.step=np.int32(100.*((2000./nl)**2)*(1000./nwl)) #small step is useful for lower memory load
             self.step=min(self.step,nl+1)
             
-        self.lms=np.arange(nl,step=self.step)
-        print('Win gen: step size',self.step)
+        self.lms=np.int32(np.arange(nwl,step=self.step))
+        print('Win gen: step size',self.step,self.window_l,self.lms)
 
         if bin_window:
             self.binnings=binning()
