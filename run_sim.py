@@ -39,7 +39,6 @@ lmax_cl=1000#
 window_lmax=2000 #0
 Nl_bins=37 #40
 
-use_shot_noise=True
 use_cosmo_power=True
 use_window=True
 f_sky=0.3
@@ -57,6 +56,7 @@ if test_run:
 #    window_lmax=nside*3-1
     Nl_bins=7 #40
     nsim=100
+    print('this will be test run')
 
     
 wigner_files={}
@@ -157,8 +157,6 @@ print('zbins done')#,thread_count())
 if not use_shot_noise:
     for t in zs_bin1['SN'].keys():
         zs_bin1['SN'][t]*=0
-        zs_bin1w['SN'][t]*=0
-        zl_bin1w['SN'][t]*=0
         zl_bin1['SN'][t]*=0
 
 kappa_win=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
@@ -336,10 +334,12 @@ def calc_sim_stats(sim=[],sim_truth=[],PC=False):
         sim_stats['percetile_score']='not implemented for ndim>2'
     return sim_stats
     
-def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=None,use_shot_noise=True,
-             convolve_win=False,nside=nside,use_cosmo_power=True,lognormal=False,lognormal_scale=1, add_SSV=True,add_tidal_SSV=True,
-              add_blending=False,blending_coeff=-.01,fiber_coll_coeff=-0.01):
-    print('running sim_cl_xi')
+def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=None,
+            use_shot_noise=True,
+             convolve_win=False,nside=nside,use_cosmo_power=True,lognormal=False,
+             lognormal_scale=1, add_SSV=True,add_tidal_SSV=True,
+              add_blending=False,blending_coeff=-2,fiber_coll_coeff=-1):
+    print('running sim_cl_xi','lognormal:',lognormal,'blending', add_blending, 'SSV:',add_SSV)
     l=kappa_class.l
     shear_lcut=l>=2
     
@@ -571,8 +571,12 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                         window2+=cl_map[1]*blending_coeff
                         
                     window2[window2<0]=0
-                    window2/=window2[mask[tracer]].mean()
-                    
+                    window2/=window2[~mask[tracer]].mean()
+                    window2[mask[tracer]]=hp.UNSEEN
+                    # print('adding blending ',tracer,blending_coeff,fiber_coll_coeff)
+                    # print( 'window2',window2.max(),window2.min(),window2[mask[tracer]].min(),
+                    #         window2[mask[tracer]],window[tracer])
+                # print(np.all(window2==window[tracer]))   
                 cl_map[i]*=window2
                 if use_shot_noise:
                     N_map[i]*=np.sqrt(window2)
@@ -605,6 +609,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                 clpi_B[0]-=(np.ones_like(clpi[1])*SN[corr_ll][:,0,0])@coupling_M_N[corr_ll]*use_shot_noise
                 
             if add_SSV:
+                # print('adding SSV')
                 SSV_delta2=SSV_delta*kappa_class.Ang_PS.clz['dchi']
 #                 print('SSV delta shape',SSV_delta2.shape,SSV_response[corr_gg].shape)
                 tt=SSV_response[corr_gg]@SSV_delta2
@@ -813,7 +818,8 @@ print(fname)
 #client.close()
 cl_sim_W=sim_cl_xi(Rsize=nsim,do_norm=False,#cl0=clG0['cl'][corrs[0]][(0,0)].compute(),
           kappa_class=kappa_win,fsky=f_sky,use_shot_noise=use_shot_noise,use_cosmo_power=use_cosmo_power,
-             convolve_win=True,nside=nside,lognormal=lognormal,lognormal_scale=lognormal_scale,add_SSV=do_SSV_sim,add_tidal_SSV=do_SSV_sim,add_blending=do_blending)
+             convolve_win=True,nside=nside,lognormal=lognormal,lognormal_scale=lognormal_scale,
+             add_SSV=do_SSV_sim,add_tidal_SSV=do_SSV_sim,add_blending=do_blending)
 
 outp={}
 outp['simW']=cl_sim_W

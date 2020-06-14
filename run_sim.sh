@@ -10,3 +10,4 @@ log_file='./temp/run_sim'$use_complicated_window$unit_window$lognormal$do_blendi
 
 #conda_env py36
 python run_sim.py $use_complicated_window $unit_window $lognormal $do_blending $do_SSV_sim $use_shot_noise #|cat>>$log_file
+#---------------------------------------------------
