@@ -43,6 +43,7 @@ class Angular_power_spectra():
             Redshift range here will be from z=0 to z_max
         """
         z_min=0
+        
         if z_max is None:
             z_max=3
 
@@ -53,6 +54,7 @@ class Angular_power_spectra():
                 self.z=np.linspace(z_min,z_max,nz)
         else:
             self.z=z
+#        print(self.z.shape,z_max,nz)
         self.dz=np.gradient(self.z)
 
     def angular_power_z(self,z=None,pk_params=None,cosmo_h=None,

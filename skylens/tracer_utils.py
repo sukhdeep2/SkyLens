@@ -46,7 +46,7 @@ class Tracer_utils():
         """
         self.z_PS_max=0
         z_max_all=np.array([self.z_bins[tracer]['zmax'] for tracer in self.tracers])
-        self.z_PS_max=max(z_max_all)
+        self.z_PS_max=np.amax(z_max_all)[0] +0.01
 
     def set_zbins(self,z_bins={},tracer=None):
         """
@@ -223,13 +223,16 @@ class Tracer_utils():
             
             #pz_int=interp1d(z_bins[i]['z'],z_bins[i]['pz'],bounds_error=False,fill_value=0)
             #pz_zl=pz_int(zl)
+
             if len(z_bins[i]['pz'])==1: #interpolation doesnot work well when only 1 point
                 bb=np.digitize(z_bins[i]['z'],zl)
+                print(z_bins[i]['pz'],zl,z_bins[i]['z'],bb)
                 pz_zl=np.zeros_like(zl)
                 pz_zl[bb]=z_bins[i]['pz']  #assign to nearest zl
                 pz_zl/=np.sum(pz_zl*dzl)
             else:
                 pz_zl=np.interp(zl,z_bins[i]['z'],z_bins[i]['pz'],left=0,right=0) #this is linear interpolation
+                pz_zl/=np.sum(pz_zl*dzl)
             
             z_bins[i]['gkernel_int']=z_bins[i]['gkernel'].T*pz_zl #dzl multiplied later
             z_bins[i]['gkernel_int']/=np.sum(pz_zl*dzl)

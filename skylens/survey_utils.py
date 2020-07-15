@@ -569,6 +569,6 @@ def cmb_bins(zs=1100,l=None):
     cmbLensRec = CMBLensRec(cmb, save=False)
     SN=cmbLensRec.fN_k_mv(l)
     zs_bins['SN']={}
-    zs_bins['SN']['shear']=SN.reshape(len(SN),1,1)
+    zs_bins['SN']['kappa']=SN.reshape(len(SN),1,1)
     zs_bins['SN']['galaxy']=SN.reshape(len(SN),1,1)*0
     return zs_bins

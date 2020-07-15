@@ -219,7 +219,8 @@ class Skylens():
         for tracer1 in self.tracer_utils.tracers:#zbin-indexs for cross correlations
             for tracer2 in self.tracer_utils.tracers:
                 self.s1_s2s[(tracer1,tracer2)]=[(self.tracer_utils.spin[tracer1],self.tracer_utils.spin[tracer2])]
-        self.s1_s2s[('shear','shear')]=[(2,2),(2,-2)]
+        if 'shear' in self.tracer_utils.tracers:
+            self.s1_s2s[('shear','shear')]=[(2,2),(2,-2)]
         self.s1_s2s[('window')]=[(0,0)]
 
     def set_WT_binned(self):
