@@ -1,11 +1,17 @@
 """
 Class to compute the matter power spectra. Includes wrappers over class, camb, CCL and Bayonic physics PC's (Hung-Jin's method.)
 """
-import camb
-from camb import model, initialpower
+try:
+    import camb
+    from camb import model, initialpower
+except:
+    camb=None
 #import pyccl
 import os,sys
-from classy import Class
+try:
+    from classy import Class
+except:
+    Class=None
 sys.path.insert(0,'./')
 
 import numpy as np
@@ -81,7 +87,10 @@ class Power_Spectra():
         self.cosmo_h=cosmo.clone(H0=100)
         
         pk_func=pk_params.get('pk_func')
-        self.pk_func=self.class_pk if pk_func is None else getattr(self,pk_func)
+        pk_func_default=self.camb_pk_too_many_z
+        if camb is None:
+            pk_func_default=self.class_pk
+        self.pk_func=pk_func_default if pk_func is None else getattr(self,pk_func)
         if not pk_params is None:
             self.kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),
             pk_params['nk'])

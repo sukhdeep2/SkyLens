@@ -29,11 +29,11 @@ class window_utils():
 
         # self.step=step
         if step is None:
-            self.step=np.int32(100.*((2500./nl)**2)*(1000./nwl)) #small step is useful for lower memory load
+            self.step=np.int32(100.*((2000./nl)**2)*(1000./nwl)) #small step is useful for lower memory load
             self.step=min(self.step,nl+1)
             
-        self.lms=np.arange(nl,step=self.step)
-        print('Win gen: step size',self.step)
+        self.lms=np.int32(np.arange(nwl,step=self.step))
+        print('Win gen: step size',self.step)#,self.window_l,self.lms)
 
         if bin_window:
             self.binnings=binning()
@@ -96,9 +96,9 @@ class window_utils():
         """
         Here we set the spin dependent multiplicative factors (X+, X-).
         """
-        li1=np.float64(self.window_l).reshape(len(self.window_l),1,1)
-        li3=np.float64(self.l).reshape(1,1,len(self.l))
-        li2=np.float64(self.l[lm:lm+self.step]).reshape(1,len(self.l[lm:lm+self.step]),1)
+        li1=np.int32(self.window_l).reshape(len(self.window_l),1,1)
+        li3=np.int32(self.l).reshape(1,1,len(self.l))
+        li2=np.int32(self.l[lm:lm+self.step]).reshape(1,len(self.l[lm:lm+self.step]),1)
         mf=(-1.)**(li1+li2+li3)
         mf=mf.transpose(1,2,0)
         out={}
@@ -777,6 +777,7 @@ class window_utils():
         if self.do_cov:
             del self.Win_cov
             del self.Win_cov_lm
+        del self.Win_lm
         del self.wig_3j
         del self.wig_3j_2
         del self.mf_pm

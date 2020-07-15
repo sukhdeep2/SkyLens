@@ -420,6 +420,8 @@ class Skylens():
         l=self.l
         if corrs is None:
             corrs=self.corrs
+        if stack_corr_indxs is None:
+            stack_corr_indxs=self.stack_indxs
 
         #tracers=[j for i in corrs for j in i]
         tracers=np.unique([j for i in corrs for j in i])
