@@ -46,7 +46,7 @@ class Tracer_utils():
         """
         self.z_PS_max=0
         z_max_all=np.array([self.z_bins[tracer]['zmax'] for tracer in self.tracers])
-        self.z_PS_max=np.amax(z_max_all)[0] +0.01
+        self.z_PS_max=np.amax(z_max_all).item() +0.01
 
     def set_zbins(self,z_bins={},tracer=None):
         """
