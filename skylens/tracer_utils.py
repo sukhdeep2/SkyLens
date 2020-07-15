@@ -226,7 +226,7 @@ class Tracer_utils():
 
             if len(z_bins[i]['pz'])==1: #interpolation doesnot work well when only 1 point
                 bb=np.digitize(z_bins[i]['z'],zl)
-                print(z_bins[i]['pz'],zl,z_bins[i]['z'],bb)
+                
                 pz_zl=np.zeros_like(zl)
                 pz_zl[bb]=z_bins[i]['pz']  #assign to nearest zl
                 pz_zl/=np.sum(pz_zl*dzl)
