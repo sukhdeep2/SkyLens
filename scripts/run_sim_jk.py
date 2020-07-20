@@ -1,6 +1,7 @@
 import sys, os, gc, threading, subprocess
+sys.path.insert(0,'../skylens/')
 from thread_count import *
-os.environ['OMP_NUM_THREADS'] = '20'
+#os.environ['OMP_NUM_THREADS'] = '20'
 # import libpython
 #pid=os.getpid()
 #print('pid: ',pid, sys.version)
@@ -20,20 +21,38 @@ from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
 #http://distributed.readthedocs.io/en/latest/_modules/distributed/worker.html
 
+import argparse
+
+
 test_run=False
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--cw", "-cw",type=int, help="use complicated window")
+parser.add_argument("--uw", "-uw",type=int, help="use unit window")
+parser.add_argument("--lognormal", "-l",type=int, help="use complicated window")
+parser.add_argument("--blending", "-b",type=int, help="use complicated window")
+parser.add_argument("--ssv", "-ssv",type=int, help="use complicated window")
+parser.add_argument("--noise", "-sn",type=int, help="use complicated window")
+
+
+# Read arguments from the command line
+args = parser.parse_args()
+
 gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
 
-use_complicated_window=np.bool(np.int16(sys.argv[1]))
-unit_window=np.bool(np.int16(sys.argv[2]))
 
-lognormal=np.bool(np.int16(sys.argv[3]))
-do_blending=np.bool(np.int16(sys.argv[4]))
-do_SSV_sim=np.bool(np.int16(sys.argv[5]))
-use_shot_noise=np.bool(np.int16(sys.argv[6]))
+use_complicated_window=False if not args.cw else np.bool(args.cw)
+unit_window=False if not args.uw else np.bool(args.cw)
+lognormal=False if not args.lognormal else np.bool(args.lognormal)
+
+do_blending=False if not args.blending else np.bool(args.blending)
+do_SSV_sim=False if not args.ssv else np.bool(args.ssv)
+use_shot_noise=True if not args.noise else np.bool(args.noise)
+print(use_complicated_window,unit_window,lognormal,do_blending,do_SSV_sim,use_shot_noise)
 
 nsim=10
 
-njk1=10
+njk1=8
 njk2=njk1
 njk=njk1*njk2
 
