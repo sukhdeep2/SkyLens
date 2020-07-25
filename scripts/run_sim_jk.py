@@ -64,7 +64,7 @@ lognormal_scale=2
 
 nside=1024
 lmax_cl=1000#
-window_lmax=2000 #0
+window_lmax=20 #0
 Nl_bins=37 #40
 
 use_cosmo_power=True
@@ -83,6 +83,7 @@ if test_run:
     window_lmax=50
 #    window_lmax=nside*3-1
     Nl_bins=7 #40
+    njk=4
     nsim=10
     print('this will be test run')
 
@@ -326,15 +327,15 @@ def get_coupling_matrices(kappa_class=None):
             coupling_M_binned_inv['iMaster']['shear_B']=np.linalg.inv(coupling_M_binned['iMaster']['shear_B'])
 
     outp={}
-    outp['coupling_M']=coupling_M
+#     outp['coupling_M']=coupling_M
     outp['coupling_M_N']=coupling_M_N
     outp['coupling_M_binned']=coupling_M_binned
     outp['coupling_M_inv']=coupling_M_inv
     outp['coupling_M_binned_inv']=coupling_M_binned_inv
     
-    outp['coupling_M4']=coupling_M4
-    outp['coupling_M4_binned']=coupling_M4_binned
-    outp['coupling_M4_binned2']=coupling_M4_binned2
+#     outp['coupling_M4']=coupling_M4
+#     outp['coupling_M4_binned']=coupling_M4_binned
+#     outp['coupling_M4_binned2']=coupling_M4_binned2
 
     return outp
 
@@ -460,6 +461,7 @@ def get_cljk(cl_map,lmax=np.int(l0.max()),pol=True,coupling_M={}):
             cl_map_i[:,x]=hp.UNSEEN
 
         clp_jk[ijk]=hp.anafast(cl_map_i,lmax=lmax,pol=pol)
+        del cl_map_i
     return clp_jk
 
 def jk_mean(p={},njk=njk):
@@ -595,7 +597,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
             clg0['shear_B']=cl0[corr]*0
             clN0['shear_B']=shot_noise
             #clp_shear_B=shot_noise@coupling_M[corr_ll]+(cl0[corr_ll]+shot_noise)@coupling_M['shear_B']
-            clp_shear_B=cl0[corr_ll]@coupling_M['full']['coupling_M']['shear_B']
+#             clp_shear_B=cl0[corr_ll]@coupling_M['full']['coupling_M']['shear_B']
     ndim=len(kappa_class.corrs)
     print('ndim:',ndim)
     outp['clg0_0']=clg0.copy()
@@ -612,14 +614,14 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     sim_cl_shape=(Rsize,len(kappa_class.l),ndim)
     
     jk_stat_keys=['jk_mean','jk_err','jk_cov']
-    clp={'full':np.zeros(sim_cl_shape,dtype='float32')}
-    clp.update({jks:{} for jks in jk_stat_keys})
-    clg={'full':np.zeros(sim_cl_shape,dtype='float32')}
-    clg.update({jks:{} for jks in jk_stat_keys})
-    clpB={'full':np.zeros(sim_cl_shape,dtype='float32')}
-    clpB.update({jks:{} for jks in jk_stat_keys})
-    clgB={'full':np.zeros(sim_cl_shape,dtype='float32')}
-    clgB.update({jks:{} for jks in jk_stat_keys})
+#     clp={'full':np.zeros(sim_cl_shape,dtype='float32')}
+#     clp.update({jks:{} for jks in jk_stat_keys})
+#     clg={'full':np.zeros(sim_cl_shape,dtype='float32')}
+#     clg.update({jks:{} for jks in jk_stat_keys})
+#     clpB={'full':np.zeros(sim_cl_shape,dtype='float32')}
+#     clpB.update({jks:{} for jks in jk_stat_keys})
+#     clgB={'full':np.zeros(sim_cl_shape,dtype='float32')}
+#     clgB.update({jks:{} for jks in jk_stat_keys})
     cl_maps={}
     lmax=max(l)
     lmin=min(l)
@@ -669,7 +671,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
         binning_func=kappa_class.binning.bin_1d
         binning_utils=kappa_class.cl_bin_utils
         
-        clp_shear_B_b=binning_func(xi=clp_shear_B,bin_utils=binning_utils)
+#         clp_shear_B_b=binning_func(xi=clp_shear_B,bin_utils=binning_utils)
     
     
     gamma_trans_factor=0
@@ -738,6 +740,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                     clg_b[k][:,ii]=clp_b[:,ii]@coupling_M['coupling_M_binned_inv'][k][corr_t[ii]] #be careful with ordering as coupling matrix is not symmetric
                 if corr_t[ii]==corr_ll:
                     clgB_b['iMaster'][:,ii]=clpB_b[:,ii]@coupling_M['coupling_M_binned_inv']['iMaster']['shear_B']
+#             return clpi.T,clgi.T,clp_b,clpi_B.T,clg_b,clpB_b,clgB_b
             return clpi.T,clgi.T,clp_b,clpi_B.T,clg_b,clpB_b,clgB_b
         else:
             return clpi.T,clgi.T
@@ -798,10 +801,10 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                     cl_map[i]+=N_map[i]
                     N_map[i][mask[tracer]]=hp.UNSEEN
                 cl_map[i][mask[tracer]]=hp.UNSEEN
-                
+            del N_map    
             clpi_jk=get_cljk(cl_map,lmax=max(l),pol=True)         
             clpi_jk['full']=hp.anafast(cl_map, lmax=max(l),pol=True) #TT, EE, BB, TE, EB, TB for polarized input map
-                 
+            del cl_map   
         else:
             cl_map*=window
             cl_map[mask]=hp.UNSEEN
@@ -842,7 +845,8 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
             clgB_b_jk['iMaster']=jk_mean(clgB_b_jk['iMaster'],njk=njk)
             for k in clg_b_jk.keys():
                 clg_b_jk[k]=jk_mean(clg_b_jk[k],njk=njk)
-            return clpi_jk,clgi_jk,clp_b_jk,clpi_B_jk,clg_b_jk,clpB_b_jk,clgB_b_jk
+#             return clpi_jk,clgi_jk,clp_b_jk,clpi_B_jk,clg_b_jk,clpB_b_jk,clgB_b_jk
+            return clp_b_jk,clg_b_jk,clpB_b_jk,clgB_b_jk
         else:
             for ijk in clp_jk.keys():
                 clpi_jk[ijk],clgi_jk[ijk]=process_clpi(clpi_jk[ijk],coupling_M=coupling_M[ijk])
@@ -865,7 +869,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
 #         clpg.compute()
         i=0
         j=0
-        step=min(5,Rsize)
+        step= 1 #min(5,Rsize)
         funct=partial(get_clsim2,clg0,window,mask,SN,coupling_M['full'],ndim)
         while j<Rsize:
             futures={}
@@ -876,7 +880,8 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                 if l_bins is None:
                     clp[i],clg[i]=futures.result()[ii]
                 else:
-                    clp[i],clg[i],clp_b[i],clpB[i],clg_b[i],clpB_b[i],clgB_b[i]=futures.result()[ii]
+#                     clp[i],clg[i],clp_b[i],clpB[i],clg_b[i],clpB_b[i],clgB_b[i]=futures.result()[ii]
+                    clp_b[i],clg_b[i],clpB_b[i],clgB_b[i]=futures.result()[ii]
 #                     clp[i,:],clg[i,:],clp_b[i,:],clpB[i,:],clg_b_i,clpB_b[i,:],clgB_b_i=futures.result()[ii]
 #                     for k in clg_b_i.keys():
 #                         clg_b[k][i,:]=clg_b_i[i][k]
@@ -918,8 +923,8 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     clp_b=get_full_samp(clp_b)
     clgB_b=get_full_samp(clgB_b)
     clpB_b=get_full_samp(clpB_b)
-    clg=get_full_samp(clg)
-    clp=get_full_samp(clp)
+#     clg=get_full_samp(clg)
+#     clp=get_full_samp(clp)
     outp['clg_b_stats']={}
     outp['clgB_b_stats']={}
     for k in clg_b['full'].keys():
@@ -950,7 +955,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
 #     outp['xi_truth']=xi_truth
 #    outp['rb']=rb
 
-    outp['clpB']=clpB
+#     outp['clpB']=clpB
     outp['clg_b']=clg_b
     outp['clgB_b']=clg_b
     outp['clp_b']=clp_b
@@ -959,7 +964,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     outp['clN0']=clN0
     outp['cl0']=cl0
     outp['clp0']=clp0
-    outp['clp_shear_B_b']=clp_shear_B_b
+#     outp['clp_shear_B_b']=clp_shear_B_b
     outp['clp_shear_B']=clp_shear_B
 #     outp['clN']=clN
 #     outp['xig']=xig
@@ -968,7 +973,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
 #     outp['xiN']=xiN
 
 #     outp['clg']=clg
-    outp['clp']=clp
+#     outp['clp']=clp
 #     clg0_2=np.array(clg0)[[0,1,3],:]
 #     outp['clg_stats']={corr_t[ii]: calc_sim_stats(sim=clg[:,:,ii],sim_truth=clg0_2[ii]) for ii in np.arange(ndim)}#calc_sim_stats(sim=clg,sim_truth=clg0)
 #     outp['clp_stats']={corr_t[ii]: calc_sim_stats(sim=clp[:,:,ii],sim_truth=clp[:,:,ii].mean(axis=0)) for ii in np.arange(ndim)}#     calc_sim_stats(sim=clp,sim_truth=clp.mean(axis=0))
