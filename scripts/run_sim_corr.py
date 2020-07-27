@@ -3,8 +3,8 @@ sys.path.insert(0,'../skylens/')
 from thread_count import *
 os.environ['OMP_NUM_THREADS'] = '20'
 # import libpython
-#pid=os.getpid()
-#print('pid: ',pid, sys.version)
+pid=os.getpid()
+print('pid: ',pid, sys.version)
 
 #thread_count()
 # sys,settrace
@@ -23,7 +23,7 @@ from dask.distributed import Client  # we already had this above
 import argparse
 
 
-test_run=False
+test_run=True
 parser = argparse.ArgumentParser()
 parser.add_argument("--cw", "-cw",type=int, help="use complicated window")
 parser.add_argument("--uw", "-uw",type=int, help="use unit window")
@@ -76,7 +76,7 @@ if test_run:
 wigner_files={}
 # wig_home='/global/cscratch1/sd/sukhdeep/dask_temp/'
 #wig_home='/Users/Deep/dask_temp/'
-wig_home='/home/deep/repos/cosmic_shear/temp/'
+wig_home='/media/deep/repos/Skylens/temp/'
 wigner_files[0]= wig_home+'/dask_wig3j_l6500_w2100_0_reorder.zarr'
 wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 
@@ -596,7 +596,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     #client.close()
     return outp
 #test_home=wig_home+'/tests/'
-test_home='/home/deep/repos/cosmic_shear/tests/'
+test_home='/media/deep/data/repos/cosmic_shear/tests/'
 fname=test_home+'/corr_sims_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
 if lognormal:
     fname+='_lognormal'+str(lognormal_scale)

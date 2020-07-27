@@ -322,7 +322,7 @@ class Skylens():
                                             )#bin_window=self.bin_window,bin_utils=self.cl_bin_utils)
         else:
             fs=self.f_sky
-            if self.do_xi and self.xi_win_approx: #in this case we need to use a separate function directly from xi_cov
+            if self.do_xi and self.xi_win_approx and self.use_window : #in this case we need to use a separate function directly from xi_cov
                 cov['G1324']=0
                 cov['G1423']=0
             else:

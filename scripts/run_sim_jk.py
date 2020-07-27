@@ -1,17 +1,19 @@
 import sys, os, gc, threading, subprocess
 sys.path.insert(0,'../skylens/')
 from thread_count import *
-#os.environ['OMP_NUM_THREADS'] = '20'
-# import libpython
-#pid=os.getpid()
-#print('pid: ',pid, sys.version)
 
-#thread_count()
-# sys,settrace
+debug=False
+if debug:
+    import faulthandler; faulthandler.enable()
+
+
 import pickle
+import treecorr
 from skylens import *
 from survey_utils import *
 from jk_utils import *
+from binning import *
+
 from scipy.stats import norm,mode,skew,kurtosis,percentileofscore
 
 import sys
@@ -24,8 +26,8 @@ from dask.distributed import Client  # we already had this above
 import argparse
 
 
-test_run=False
 
+test_run=True
 parser = argparse.ArgumentParser()
 parser.add_argument("--cw", "-cw",type=int, help="use complicated window")
 parser.add_argument("--uw", "-uw",type=int, help="use unit window")
@@ -83,7 +85,7 @@ if test_run:
     window_lmax=50
 #    window_lmax=nside*3-1
     Nl_bins=7 #40
-    njk=4
+    njk=4 #4
     nsim=10
     print('this will be test run')
 
@@ -91,7 +93,7 @@ if test_run:
 wigner_files={}
 # wig_home='/global/cscratch1/sd/sukhdeep/dask_temp/'
 #wig_home='/Users/Deep/dask_temp/'
-wig_home='/home/deep/repos/cosmic_shear/temp/'
+wig_home='/home/deep/data/repos/SkyLens/temp/'
 wigner_files[0]= wig_home+'/dask_wig3j_l6500_w2100_0_reorder.zarr'
 wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 
@@ -119,8 +121,10 @@ l0=np.arange(lmin_cl,lmax_cl)
 
 lmin_cl_Bins=lmin_cl+10
 lmax_cl_Bins=lmax_cl-10
-l_bins=np.int64(np.logspace(np.log10(lmin_cl_Bins),np.log10(lmax_cl_Bins),Nl_bins))
+l_bins=np.unique(np.int64(np.logspace(np.log10(lmin_cl_Bins),np.log10(lmax_cl_Bins),Nl_bins)))
 lb=(l_bins[1:]+l_bins[:-1])*.5
+
+Nl_bins=len(lb)
 
 l=l0 #np.unique(np.int64(np.logspace(np.log10(lmin_cl),np.log10(lmax_cl),Nl_bins*20))) #if we want to use fewer ell
 
@@ -130,18 +134,11 @@ bin_cl=True
 SSV_cov=False
 tidal_SSV_cov=False
 
-do_xi=False
+do_pseudo_cl=True
 
+do_xi=True
+xi_win_approx=True
 
-w_smooth_lmax=1.e7 #some large number
-if smooth_window:
-    w_smooth_lmax=1000
-window_cl_fact=np.cos(np.pi/2*(l0w/w_smooth_lmax)**10)
-x=window_cl_fact<0
-x+=l0w>w_smooth_lmax
-window_cl_fact[x]=0
-if unit_window:
-    window_cl_fact=0
     
 corr_ggl=('galaxy','shear')
 corr_gg=('galaxy','galaxy')
@@ -157,11 +154,11 @@ th=np.logspace(np.log10(th_min*0.98),np.log10(1),n_th_bins*30)
 th2=np.linspace(1,th_max*1.02,n_th_bins*30)
 th=np.unique(np.sort(np.append(th,th2)))
 thb=np.sqrt(th_bins[1:]*th_bins[:-1])
-
+corr_config = {'min_sep':th_min*60, 'max_sep':th_max*60, 'nbins':n_th_bins, 'sep_units':'arcmin'}
 bin_xi=True
 
 l0_win=np.arange(lmax_cl)
-WT_L_kwargs={'l': l0_win,'theta': th*d2r,'m1_m2':[(2,2),(2,-2),(0,2),(2,0),(0,0)]}
+WT_L_kwargs={'l': l,'theta': th*d2r,'s1_s2':[(2,2),(2,-2),(0,2),(2,0),(0,0)]}
 WT_L=None
 if do_xi:
     WT_L=wigner_transform(**WT_L_kwargs)
@@ -173,18 +170,19 @@ ww=1000*np.exp(-(l0w-mean)**2/sigma**2)
 print('getting win')
 z0=0.5
 zl_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=10,use_window=use_window,nbins=1,
-                            window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
+                            window_cl_fact=(1+ww*use_complicated_window),
                             f_sky=f_sky,nside=nside,unit_win=unit_window,use_shot_noise=True)
 
 z0=1 #1087
 zs_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=30,use_window=use_window,
-                                    window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
+                                    window_cl_fact=(1+ww*use_complicated_window),
                                     f_sky=f_sky,nbins=n_source_bins,nside=nside,
                                     unit_win=unit_window,use_shot_noise=True)
 
-f_sky_jk=f_sky*(njk-1.)/njk
-if subsample:
-    f_sky_jk=f_sky/njk
+if njk>0:
+    f_sky_jk=f_sky*(njk-1.)/njk
+    if subsample:
+        f_sky_jk=f_sky/njk
 
 mask=zs_bin1[0]['window']>-1000
 mask=mask.astype('bool')
@@ -200,7 +198,7 @@ kappa_win=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0
             use_window=use_window,store_win=store_win,window_lmax=window_lmax,corrs=corrs,
             SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=f_sky,
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi,
-            wigner_files=wigner_files,
+            wigner_files=wigner_files,do_pseudo_cl=do_pseudo_cl,xi_win_approx=xi_win_approx
 )
 
 clG_win=kappa_win.cl_tomo(corrs=corrs)
@@ -210,16 +208,9 @@ if do_xi:
     xiWG_L=kappa_win.xi_tomo()
     xiW_L=xiWG_L['stack'].compute()
 
-l=kappa_win.window_l
-Om_W=np.pi*4*f_sky
-theta_win=np.sqrt(Om_W/np.pi)
-l_th=l*theta_win
-Win0=2*jn(1,l_th)/l_th
-Win0=np.nan_to_num(Win0)
-
 kappa0=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
             use_window=False,store_win=store_win,corrs=corrs,window_lmax=window_lmax,
-            SSV_cov=True,tidal_SSV_cov=True,f_sky=f_sky,
+            SSV_cov=True,tidal_SSV_cov=True,f_sky=f_sky,do_pseudo_cl=do_pseudo_cl,xi_win_approx=xi_win_approx,
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi)
 
 clG0=kappa0.cl_tomo(corrs=corrs) 
@@ -243,24 +234,23 @@ for corr in corrs:
     cl0_win['cl_b'][corr]=clG_win['pseudo_cl_b'][corr][bi].compute()
     cl0_win['cov'][corr]=clG_win['cov'][corr+corr][bi+bi].compute()['final_b']
 
-print('kappa done, binning coupling matrices')
-from binning import *
-M_binnings={}
+print('Skylens done, binning coupling matrices')
+
 M_binning_utils={}
 Mp_binning_utils={}
-Mwp_binning_utils={}
-Mw_binning_utils={}
 
-for corr in corrs:
-    M_binnings[corr]=binning()
-    wt_b=1./cl0['cl_b'][corr]
-    wt0=cl0['cl'][corr]
-    M_binning_utils[corr]=M_binnings[corr].bin_utils(r=kappa0.l,r_bins=kappa0.l_bins,
-                                                r_dim=2,mat_dims=[1,2],wt_b=wt_b,wt0=wt0)
-    wt_b=1./clG_win['cl_b'][corr][bi].compute()
-    wt0=clG_win['pseudo_cl'][corr][bi].compute()
-    Mp_binning_utils[corr]=M_binnings[corr].bin_utils(r=kappa0.l,r_bins=kappa0.l_bins,
-                                                r_dim=2,mat_dims=[1,2],wt_b=wt_b,wt0=wt0)
+M_binning=binning()
+
+if do_pseudo_cl:
+    for corr in corrs:
+        wt_b=1./cl0['cl_b'][corr]
+        wt0=cl0['cl'][corr]
+        M_binning_utils[corr]=M_binning.bin_utils(r=kappa0.l,r_bins=kappa0.l_bins,
+                                                    r_dim=2,mat_dims=[1,2],wt_b=wt_b,wt0=wt0)
+        wt_b=1./clG_win['cl_b'][corr][bi].compute()
+        wt0=clG_win['pseudo_cl'][corr][bi].compute()
+        Mp_binning_utils[corr]=M_binning.bin_utils(r=kappa0.l,r_bins=kappa0.l_bins,
+                                                    r_dim=2,mat_dims=[1,2],wt_b=wt_b,wt0=wt0)
     
     
 mask=zs_bin1[0]['window']>-1.e-20
@@ -271,14 +261,10 @@ print('binning coupling matrices done')
 def get_coupling_matrices(kappa_class=None): 
     coupling_M={}
     coupling_M_N={}
-    coupling_M_binned={'Master':{},'nMaster':{},'iMaster':{}}    
+    coupling_M_binned={'iMaster':{}} #{'Master':{},'nMaster':{},'iMaster':{}}    
     coupling_M_inv={}
-    coupling_M_binned_inv={'Master':{},'nMaster':{},'iMaster':{}}
+    coupling_M_binned_inv={'iMaster':{}} #,'nMaster':{},'Master':{}}
     
-    coupling_M4={}
-    coupling_M4_binned={}
-    coupling_M4_binned2={}
-
     corrs=kappa_class.corrs
     l_bins=kappa_class.l_bins
     fsky=kappa_class.f_sky[corr_gg][(0,0)]
@@ -292,24 +278,16 @@ def get_coupling_matrices(kappa_class=None):
         if corr==corr_ll:
             coupling_M['shear_B']=kappa_class.Win.Win['cl'][corr][(0,0)]['M_B']
             coupling_M_N['shear_B']=kappa_class.Win.Win['cl'][corr][(0,0)]['M_B_noise']
-        coupling_M_binned['Master'][corr]=bin_coupling_M(kappa_class,coupling_M[corr])
-        coupling_M_binned['nMaster'][corr]=kappa_class.binning.bin_2d(cov=coupling_M[corr],bin_utils=kappa_class.cl_bin_utils) 
-        coupling_M_binned['nMaster'][corr]*=dl
+        # coupling_M_binned['Master'][corr]=bin_coupling_M(kappa_class,coupling_M[corr])
+        # coupling_M_binned['nMaster'][corr]=kappa_class.binning.bin_2d(cov=coupling_M[corr],bin_utils=kappa_class.cl_bin_utils) 
+        # coupling_M_binned['nMaster'][corr]*=dl
 
-        coupling_M_binned['iMaster'][corr]=M_binnings[corr].bin_2d_coupling(cov=coupling_M[corr].T,bin_utils=M_binning_utils[corr])
+        coupling_M_binned['iMaster'][corr]=M_binning.bin_2d_coupling(cov=coupling_M[corr].T,bin_utils=M_binning_utils[corr])
         coupling_M_binned['iMaster'][corr]=coupling_M_binned['iMaster'][corr].T  #to keep the same order in dot product later. Remeber that the coupling matrix is not symmetric.
 
         if corr==corr_ll:
-            coupling_M_binned['iMaster']['shear_B']=M_binnings[corr].bin_2d_coupling(cov=coupling_M['shear_B'].T,bin_utils=M_binning_utils[corr])
+            coupling_M_binned['iMaster']['shear_B']=M_binning.bin_2d_coupling(cov=coupling_M['shear_B'].T,bin_utils=M_binning_utils[corr])
             coupling_M_binned['iMaster']['shear_B']=coupling_M_binned['iMaster']['shear_B'].T  #to keep the same order in dot product later. Remeber that the coupling matrix is not symmetric.
-
-
-#             coupling_M4=kappa_win.Win.Win['cov'][corr+corr][(0,0,0,0)]['M1324'][s] #*2
-#             coupling_M4_binned[corr]=bin_coupling_M(kappa_class,coupling_M4[corr])
-#             coupling_M4_binned2[corr]=kappa_class.binning.bin_2d(cov=coupling_M4[corr],bin_utils=kappa_class.cl_bin_utils) 
-#             coupling_M4_binned2[corr]*=dl
-#         kappa_class.binning.bin_2d(cov=coupling_M,bin_utils=kappa_win.cl_bin_utils)
-#             print(corr,coupling_M[corr])
 
         cut=l>=0
         if 'shear' in corr:
@@ -327,17 +305,93 @@ def get_coupling_matrices(kappa_class=None):
             coupling_M_binned_inv['iMaster']['shear_B']=np.linalg.inv(coupling_M_binned['iMaster']['shear_B'])
 
     outp={}
-#     outp['coupling_M']=coupling_M
     outp['coupling_M_N']=coupling_M_N
     outp['coupling_M_binned']=coupling_M_binned
     outp['coupling_M_inv']=coupling_M_inv
     outp['coupling_M_binned_inv']=coupling_M_binned_inv
-    
-#     outp['coupling_M4']=coupling_M4
-#     outp['coupling_M4_binned']=coupling_M4_binned
-#     outp['coupling_M4_binned2']=coupling_M4_binned2
-
     return outp
+
+
+def get_treecorr_cat_args(maps,masks=None):
+    tree_cat_args={}
+    if masks is None:
+        masks={}
+        for tracer in maps.keys():
+            masks[tracer]=maps[tracer]==hp.UNSEEN
+    for tracer in maps.keys():
+        seen_indices = np.where( ~masks[tracer] )[0]
+        theta, phi = hp.pix2ang(nside, seen_indices)
+        ra = np.degrees(np.pi*2.-phi)
+        dec = -np.degrees(theta-np.pi/2.)
+        tree_cat_args[tracer] = {'ra':ra, 'dec':dec, 'ra_units':'degrees', 'dec_units':'degrees'}
+    return tree_cat_args
+
+
+def get_xi_window_norm(window=None):
+    window_norm={}
+    mask={}
+    for tracer in window.keys():
+        # window[tracer]=kappa_class.z_bins[tracer][0]['window']
+        mask[tracer]=window[tracer]==hp.UNSEEN
+    tree_cat_args=get_treecorr_cat_args(window,masks=mask)
+    tree_cat= {tracer: treecorr.Catalog(w=window[tracer][~mask[tracer]], **tree_cat_args[tracer]) for tracer in window.keys()}
+    for corr in corrs:
+        tree_corrs=treecorr.NNCorrelation(**corr_config)
+        _=tree_corrs.process(tree_cat[corr[0]],tree_cat[corr[1]])
+        window_norm[corr]=tree_corrs.weight*1.
+    return window_norm
+
+def get_xi_window_norm_jk(kappa_class=None):
+    window_norm={}
+    window={}
+    for tracer in kappa_class.z_bins.keys():
+        window[tracer]=kappa_class.z_bins[tracer][0]['window']
+    window_norm['full']=get_xi_window_norm(window=window)
+    window_i={}
+    for ijk in np.arange(njk):
+        x=jkmap==ijk
+        for tracer in window.keys():
+            window_i[tracer]=window[tracer]*1.
+            window_i[tracer][x]=hp.UNSEEN
+        window_norm[ijk]=get_xi_window_norm(window=window_i)
+    return window_norm
+
+
+def get_xi(map,window_norm,mask=None):
+    
+    maps={'galaxy':map[0]}
+    maps['shear']={0:map[1],1:map[2]}
+    if mask is None:
+        mask={}
+        mask['galaxy']=maps['galaxy']==hp.UNSEEN
+        mask['shear']=maps['shear'][0]==hp.UNSEEN
+    tree_cat_args=get_treecorr_cat_args(maps,masks=mask)
+    tree_cat={}
+    tree_cat['galaxy']=treecorr.Catalog(w=maps['galaxy'][~mask['galaxy']], **tree_cat_args['galaxy'])
+    tree_cat['shear']=treecorr.Catalog(g1=maps['shear'][0][~mask['shear']],g2=maps['shear'][1][~mask['shear']], **tree_cat_args['shear'])
+    ndim=3 #FIXME
+    xi=np.zeros(n_th_bins*(ndim+1))
+    th_i=0
+    tree_corrs={}
+    for corr in corrs:
+        if corr==corr_ggl:
+            tree_corrs[corr]=treecorr.NGCorrelation(**corr_config)
+            tree_corrs[corr].process(tree_cat['galaxy'],tree_cat['shear'])
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xi*(tree_corrs[corr].weight/window_norm[corr])
+            th_i+=n_th_bins
+        if corr==corr_ll:
+            tree_corrs[corr]=treecorr.GGCorrelation(**corr_config)
+            tree_corrs[corr].process(tree_cat['shear'])
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xip*(tree_corrs[corr].weight/window_norm[corr])
+            th_i+=n_th_bins
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xim*(tree_corrs[corr].weight/window_norm[corr])
+            th_i+=n_th_bins
+        if corr==corr_gg:
+            tree_corrs[corr]=treecorr.NNCorrelation(**corr_config)
+            tree_corrs[corr].process(tree_cat['galaxy'])
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/window_norm[corr]
+            th_i+=n_th_bins
+    return xi
 
 
 def get_coupling_matrices_jk(kappa_class=None): 
@@ -366,7 +420,7 @@ def get_coupling_matrices_jk(kappa_class=None):
         kappa_win_JK=Skylens(zs_bins=zs_binjk,do_cov=do_cov_jk,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_binjk,
                 use_window=use_window,store_win=store_win,window_lmax=window_lmax,corrs=corrs,
                 SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=f_sky_jk,
-                WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi,
+                WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=False,
                       wigner_files=wigner_files,
     #                  Win=kappa_win.Win.Win
                      )
@@ -411,10 +465,10 @@ def bin_coupling_M2(kappa_class,coupling_M): #following https://arxiv.org/pdf/as
     return P.T@coupling_M@Q.T
 
 seed=12334
-def get_clsim2(clg0,window,mask,kappa_class,coupling_M,coupling_M_inv,ndim,i):
+def get_clsim2(cl0,window,mask,kappa_class,coupling_M,coupling_M_inv,ndim,i):
     print(i)
     local_state = np.random.RandomState(seed+i)
-    cl_map=hp.synfast(clg0,nside=nside,rng=local_state,new=True,pol=True,verbose=False)
+    cl_map=hp.synfast(cl0,nside=nside,rng=local_state,new=True,pol=True,verbose=False)
 
     if ndim>1:
         cl_map[0]*=window['galaxy']
@@ -423,35 +477,40 @@ def get_clsim2(clg0,window,mask,kappa_class,coupling_M,coupling_M_inv,ndim,i):
         cl_map[2]*=window['shear']#shear_2
         cl_map[1][mask['shear']]=hp.UNSEEN
         cl_map[2][mask['shear']]=hp.UNSEEN
-        clpi=hp.anafast(cl_map, lmax=max(l),pol=True) #TT, EE, BB, TE, EB, TB for polarized input map
-        clpi=clpi[:,l]
-        clpi=clpi[[0,1,3],:]
+        pcli=hp.anafast(cl_map, lmax=max(l),pol=True) #TT, EE, BB, TE, EB, TB for polarized input map
+        pcli=pcli[:,l]
+        pcli=pcli[[0,1,3],:]
 #             for i in np.arange(6):
 
     else:
         cl_map*=window
         cl_map[mask]=hp.UNSEEN
-        clpi=hp.anafast(cl_map, lmax=max(l),pol=True)[l]
+        pcli=hp.anafast(cl_map, lmax=max(l),pol=True)[l]
         
     del cl_map
 
     if ndim>1:
-        clpi[0]-=(np.ones_like(clpi[0])*kappa_class.SN[corr_gg][:,0,0])@coupling_M[corr_gg]*use_shot_noise
-        clpi[1]-=(np.ones_like(clpi[1])*kappa_class.SN[corr_ll][:,0,0])@coupling_M[corr_ll]*use_shot_noise
-        clpi[1]-=(np.ones_like(clpi[1])*kappa_class.SN[corr_ll][:,0,0])@coupling_M['shear_B']*use_shot_noise #remove B-mode leakage
+        pcli[0]-=(np.ones_like(pcli[0])*kappa_class.SN[corr_gg][:,0,0])@coupling_M[corr_gg]*use_shot_noise
+        pcli[1]-=(np.ones_like(pcli[1])*kappa_class.SN[corr_ll][:,0,0])@coupling_M[corr_ll]*use_shot_noise
+        pcli[1]-=(np.ones_like(pcli[1])*kappa_class.SN[corr_ll][:,0,0])@coupling_M['shear_B']*use_shot_noise #remove B-mode leakage
 
-        clgi=[clpi[0]@coupling_M_inv[corr_gg],
-              clpi[1]@coupling_M_inv[corr_ll],
-              clpi[2]@coupling_M_inv[corr_ggl]]
+        cli=[pcli[0]@coupling_M_inv[corr_gg],
+              pcli[1]@coupling_M_inv[corr_ll],
+              pcli[2]@coupling_M_inv[corr_ggl]]
     else:
-        clpi-=(np.ones_like(clpi)*shot_noise)@coupling_M
-        clgi=clpi@coupling_M_inv
-    clgi=np.array(clgi)
-    return [clpi.T,clgi.T]
+        pcli-=(np.ones_like(pcli)*shot_noise)@coupling_M
+        cli=pcli@coupling_M_inv
+    cli=np.array(cli)
+    return [pcli.T,cli.T]
 
 
-def get_cljk(cl_map,lmax=np.int(l0.max()),pol=True,coupling_M={}):
-    clp_jk={}
+def get_xi_cljk(cl_map,lmax=np.int(l0.max()),pol=True,coupling_M={},xi_window_norm={}):
+    pcl_jk={}
+    xi_jk={}
+    if do_pseudo_cl:
+        pcl_jk['full']=hp.anafast(cl_map, lmax=max(l),pol=True) #TT, EE, BB, TE, EB, TB for polarized input map
+    if do_xi:
+        xi_jk['full']=get_xi(cl_map, window_norm=xi_window_norm['full'])
     for ijk in np.arange(njk):
         x=jkmap==ijk
         cl_map_i=copy.deepcopy(cl_map)
@@ -460,14 +519,16 @@ def get_cljk(cl_map,lmax=np.int(l0.max()),pol=True,coupling_M={}):
         else:
             cl_map_i[:,x]=hp.UNSEEN
 
-        clp_jk[ijk]=hp.anafast(cl_map_i,lmax=lmax,pol=pol)
+        if do_pseudo_cl:
+            pcl_jk[ijk]=hp.anafast(cl_map_i,lmax=lmax,pol=pol)
+        if do_xi:
+            xi_jk[ijk]=get_xi(cl_map_i, window_norm=xi_window_norm[ijk])
         del cl_map_i
-    return clp_jk
+    return pcl_jk,xi_jk
 
 def jk_mean(p={},njk=njk):
-#     if check_empty(p):
-#         print ('jk-mean: got empty dict')
-#         return p
+    if njk==0:
+        return p
     p2={}
     nn=np.arange(njk)
     for i in nn: #p.keys():
@@ -524,41 +585,39 @@ def calc_sim_stats(sim=[],sim_truth=[],PC=False):
     sim_stats['mean']=np.mean(sim,axis=0)
     sim_stats['median']=np.median(sim,axis=0)
     sim_stats['percentile']=np.percentile(sim,[16,84],axis=0)
-#     sim_stats['skew']=skew(sim,axis=0)
-#     sim_stats['kurt']=kurtosis(sim,axis=0)
     sim_stats['cov']=np.cov(sim,rowvar=0)
     
-#     if not PC:
-#         try:
-#             sim_stats['cov_ev'],sim_stats['cov_evec']=np.linalg.eig(sim_stats['cov'])
-#             sim_stats['PC']={}
-#             sim_stats['PC']['data']=(sim_stats['cov_evec'].T@sim.T).T
-#             sim_stats['PC']['stats']=calc_sim_stats(sim=sim_stats['PC']['data'],PC=True)
-#         except Exception as err:
-#             print(err)
-#             sim_stats['PC']=err
-#     else:
-#         sim_truth=sim_stats['mean']
-    
-    sim_stats['percetile_score']=np.zeros_like(sim_stats['std'])
+    sim_stats['percentile_score']=np.zeros_like(sim_stats['std'])
     if len(sim_stats['std'].shape)==1:
         for i in np.arange(len(sim_stats['std'])):
-            sim_stats['percetile_score'][i]=percentileofscore(sim[:,i],sim_truth[i])
+            sim_stats['percentile_score'][i]=percentileofscore(sim[:,i],sim_truth[i])
     elif len(sim_stats['std'].shape)==2:
         for i in np.arange(len(sim_stats['std'])):
             for i_dim in np.arange(2):
                 for j_dim in np.arange(2):
-                    sim_stats['percetile_score'][i][i_dim,j_dim]=percentileofscore(sim[:,i,i_dim,j_dim],
+                    sim_stats['percentile_score'][i][i_dim,j_dim]=percentileofscore(sim[:,i,i_dim,j_dim],
                                                                                    sim_truth[i,i_dim,j_dim])
     else:
-        sim_stats['percetile_score']='not implemented for ndim>2'
+        sim_stats['percentile_score']='not implemented for ndim>2'
     return sim_stats
     
 
-def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=None,use_shot_noise=True,
+def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=None,use_shot_noise=True,
              convolve_win=False,nside=nside,use_cosmo_power=True,lognormal=False,lognormal_scale=1,
              coupling_M=None,add_SSV=True,add_tidal_SSV=True,
               add_blending=False,blending_coeff=-2,fiber_coll_coeff=-1):
+    ndim=len(kappa_class.corrs)
+    xi_window_norm={}
+    coupling_M={}
+    sim_clb_shape=None
+    sim_xib_shape=None
+    if do_pseudo_cl:
+        coupling_M=get_coupling_matrices_jk(kappa_class=kappa_class)
+        sim_clb_shape=(nsim,Nl_bins*(ndim+1)) #shear-shear gives 2 corrs, EE and BB..    
+    if do_xi:
+        xi_window_norm=get_xi_window_norm_jk(kappa_class=kappa_class)
+        sim_xib_shape=(nsim,n_th_bins*(ndim+1)) #shear-shear gives 2 corrs, xi+ and xi-
+
     l=kappa_class.l
     shear_lcut=l>=2
     
@@ -576,15 +635,14 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
 #             print(coupling_M_inv.keys())
     outp={}
     win=0
-    clp_shear_B=None
+    pcl_shear_B=None
     if cl0 is None:
         cl0={}
-        clp0={}
+        pcl0={}
         clG0=kappa_class.cl_tomo() 
         for corr in kappa_class.corrs:
             cl0[corr]=clG0['cl'][corr][(0,0)].compute()
-            clp0[corr]=clG0['cl_b'][corr][(0,0)].compute()
-    clg0={}
+            pcl0[corr]=clG0['cl_b'][corr][(0,0)].compute()
     clN0={}
     for corr in kappa_class.corrs: #ordering: TT, EE, BB, TE if 4 cl as input.. use newbool=True
         shot_noise=kappa_class.SN[corr_gg][:,0,0]*0
@@ -592,36 +650,32 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
             shot_noise=kappa_class.SN[corr][:,0,0]
         shot_noise=shot_noise*use_shot_noise
         clN0[corr]=shot_noise
-        clg0[corr]=cl0[corr]*use_cosmo_power#+shot_noise
+        cl0[corr]=cl0[corr]*use_cosmo_power#+shot_noise
         if corr==corr_ll:
-            clg0['shear_B']=cl0[corr]*0
+            cl0['shear_B']=cl0[corr]*0
             clN0['shear_B']=shot_noise
-            #clp_shear_B=shot_noise@coupling_M[corr_ll]+(cl0[corr_ll]+shot_noise)@coupling_M['shear_B']
-#             clp_shear_B=cl0[corr_ll]@coupling_M['full']['coupling_M']['shear_B']
-    ndim=len(kappa_class.corrs)
+            #pcl_shear_B=shot_noise@coupling_M[corr_ll]+(cl0[corr_ll]+shot_noise)@coupling_M['shear_B']
+#             pcl_shear_B=cl0[corr_ll]@coupling_M['full']['coupling_M']['shear_B']
+    
     print('ndim:',ndim)
-    outp['clg0_0']=clg0.copy()
+    outp['cl0_0']=cl0.copy()
     outp['clN0_0']=clN0.copy()
     outp['ndim']=ndim
-    if ndim>1:
-        clg0=(clg0[corr_gg],clg0[corr_ll],clg0['shear_B'],clg0[corr_ggl])#ordering: TT, EE, BB, TE if 4 cl as input.. use newbool=True
-        clN0=(clN0[corr_gg],clN0[corr_ll],clN0['shear_B'],clN0[corr_ggl])#ordering: TT, EE, BB, TE if 4 cl as input.. use newbool=True
-    else:
-        clg0=clg0[corr_gg]
-        clN0=clN0[corr_gg]
     
     SN=kappa_class.SN
-    sim_cl_shape=(Rsize,len(kappa_class.l),ndim)
+    # sim_cl_shape=(nsim,len(kappa_class.l),ndim)
     
     jk_stat_keys=['jk_mean','jk_err','jk_cov']
-#     clp={'full':np.zeros(sim_cl_shape,dtype='float32')}
-#     clp.update({jks:{} for jks in jk_stat_keys})
-#     clg={'full':np.zeros(sim_cl_shape,dtype='float32')}
-#     clg.update({jks:{} for jks in jk_stat_keys})
-#     clpB={'full':np.zeros(sim_cl_shape,dtype='float32')}
-#     clpB.update({jks:{} for jks in jk_stat_keys})
-#     clgB={'full':np.zeros(sim_cl_shape,dtype='float32')}
-#     clgB.update({jks:{} for jks in jk_stat_keys})
+    if njk==0:
+        jk_stat_keys=[]
+#     pcl={'full':np.zeros(sim_cl_shape,dtype='float32')}
+#     pcl.update({jks:{} for jks in jk_stat_keys})
+#     cl={'full':np.zeros(sim_cl_shape,dtype='float32')}
+#     cl.update({jks:{} for jks in jk_stat_keys})
+#     pclB={'full':np.zeros(sim_cl_shape,dtype='float32')}
+#     pclB.update({jks:{} for jks in jk_stat_keys})
+#     clB={'full':np.zeros(sim_cl_shape,dtype='float32')}
+#     clB.update({jks:{} for jks in jk_stat_keys})
     cl_maps={}
     lmax=max(l)
     lmin=min(l)
@@ -645,34 +699,32 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
         SSV_sigma=kappa_class.cov_utils.sigma_win_calc(clz=kappa0.Ang_PS.clz,Win=kappa_class.Win.Win,tracers=corr_ll+corr_ll,zs_indx=(0,0,0,0)) #use of kappa0 is little dangerous
         SSV_cov=np.diag(SSV_sigma**2)
     
+    cl0_b={corr: kappa_class.binning.bin_1d(xi=cl0[corr],bin_utils=kappa_class.cl_bin_utils) for corr in kappa_class.corrs} 
+        
+    Master_algs=['iMaster'] #['unbinned','Master','nMaster','iMaster']
+
+    cl_b=None;pcl_b=None;xi_b=None
+    if do_pseudo_cl:    
+        cl_b={'full':np.zeros(sim_clb_shape,dtype='float32')}   #  {im:np.zeros(sim_clb_shape,dtype='float32') for im in Master_algs}}
+        cl_b.update({jks:{} for jks in jk_stat_keys})  #{im:{} for im in Master_algs} for jks in jk_stat_keys})
+        
+        pcl_b={'full':np.zeros(sim_clb_shape,dtype='float32')}
+        pcl_b.update({jks:{} for jks in jk_stat_keys})
+    if do_xi:    
+        xi_b={'full':np.zeros(sim_xib_shape,dtype='float32')}   #  {im:np.zeros(sim_clb_shape,dtype='float32') for im in Master_algs}}
+        xi_b.update({jks:{} for jks in jk_stat_keys})  #{im:{} for im in Master_algs} for jks in jk_stat_keys})
     
-    clg_b=None
-    clp_b=None
-    clpB_b=None
-    nu_b=None
-    if l_bins is not None:
-        clg0_b={corr: kappa_class.binning.bin_1d(xi=cl0[corr],bin_utils=kappa_class.cl_bin_utils) for corr in kappa_class.corrs} 
-        ll=kappa_class.cl_bin_utils['bin_center']
-        sim_clb_shape=(Rsize,len(ll),ndim)
-        nu_b=(2.*ll+1.)*fsky*(l_bins[1:]-l_bins[:-1])
-        Master_algs=['unbinned','Master','nMaster','iMaster']
-        clg_b={'full':{im:np.zeros(sim_clb_shape,dtype='float32') for im in Master_algs}}
-        clg_b.update({jks:{im:{} for im in Master_algs} for jks in jk_stat_keys})
-        clgB_b={'full':{'iMaster':np.zeros(sim_clb_shape,dtype='float32')}}
-        clgB_b.update({jks:{'iMaster':{}} for jks in jk_stat_keys})
-#                'nMaster':np.zeros(sim_clb_shape,dtype='float32'),
-#                'Master':np.zeros(sim_clb_shape,dtype='float32')}    
-        clp_b={'full':np.zeros(sim_clb_shape,dtype='float32')}
-        clp_b.update({jks:{} for jks in jk_stat_keys})
-        
-        clpB_b={'full':np.zeros(sim_clb_shape,dtype='float32')}
-        clpB_b.update({jks:{} for jks in jk_stat_keys})
-        
-        binning_func=kappa_class.binning.bin_1d
-        binning_utils=kappa_class.cl_bin_utils
-        
-#         clp_shear_B_b=binning_func(xi=clp_shear_B,bin_utils=binning_utils)
+    binning_func=kappa_class.binning.bin_1d
+    binning_utils=kappa_class.cl_bin_utils
     
+#         pcl_shear_B_b=binning_func(xi=pcl_shear_B,bin_utils=binning_utils)
+    
+    if ndim>1:
+        cl0=(cl0[corr_gg],cl0[corr_ll],cl0['shear_B'],cl0[corr_ggl])#ordering: TT, EE, BB, TE if 4 cl as input.. use newbool=True
+        clN0=(clN0[corr_gg],clN0[corr_ll],clN0['shear_B'],clN0[corr_ggl])#ordering: TT, EE, BB, TE if 4 cl as input.. use newbool=True
+    else:
+        cl0=cl0[corr_gg]
+        clN0=clN0[corr_gg]
     
     gamma_trans_factor=0
     if lognormal:
@@ -694,65 +746,67 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
         return g1_map,g2_map
     
     
-    def process_clpi(clpi,coupling_M={}):
+    def process_pcli(pcli,coupling_M={}):
         if ndim>1:
-            clpi_B=clpi[[2,4,5],:]
-            clpi=clpi[[0,1,3],:]
+            # pcli_B=pcli[[2,4,5],:]
+            pcli=pcli[[0,1,3,2],:] #2==BB
+            corr_ti=[corr_gg,corr_ll,corr_ggl,'shear_B']
             if use_shot_noise:
-                clpi[0]-=(np.ones_like(clpi[0])*SN[corr_gg][:,0,0])@coupling_M['coupling_M_N'][corr_gg]*use_shot_noise
-                clpi[1]-=(np.ones_like(clpi[1])*SN[corr_ll][:,0,0])@coupling_M['coupling_M_N'][corr_ll]*use_shot_noise
-                clpi[1]-= (np.ones_like(clpi[1])*SN[corr_ll][:,0,0])@coupling_M['coupling_M_N']['shear_B']*use_shot_noise #remove B-mode 
-                clpi_B[0]-=(np.ones_like(clpi[1])*SN[corr_ll][:,0,0])@coupling_M['coupling_M_N']['shear_B']*use_shot_noise #remove B-mode 
-                clpi_B[0]-=(np.ones_like(clpi[1])*SN[corr_ll][:,0,0])@coupling_M['coupling_M_N'][corr_ll]*use_shot_noise
-            
-            clgi=[clpi[0]@coupling_M['coupling_M_inv'][corr_gg],
-                  clpi[1]@coupling_M['coupling_M_inv'][corr_ll],
-                  clpi[2]@coupling_M['coupling_M_inv'][corr_ggl]]
-            clgBi=[clpi_B[0]@coupling_M['coupling_M_inv']['shear_B'],
-                  clpi[1]*0,
-                  clpi[2]*0]
+                pcli[0]-=(np.ones_like(pcli[0])*SN[corr_gg][:,0,0])@coupling_M['coupling_M_N'][corr_gg]*use_shot_noise
+                pcli[1]-=(np.ones_like(pcli[1])*SN[corr_ll][:,0,0])@coupling_M['coupling_M_N'][corr_ll]*use_shot_noise
+                pcli[1]-= (np.ones_like(pcli[1])*SN[corr_ll][:,0,0])@coupling_M['coupling_M_N']['shear_B']*use_shot_noise #remove B-mode 
+                pcli[3]-=(np.ones_like(pcli[1])*SN[corr_ll][:,0,0])@coupling_M['coupling_M_N']['shear_B']*use_shot_noise #remove B-mode 
+                pcli[3]-=(np.ones_like(pcli[1])*SN[corr_ll][:,0,0])@coupling_M['coupling_M_N'][corr_ll]*use_shot_noise
             
         else:
-            clpi-=(np.ones_like(clpi)*shot_noise)@coupling_M['coupling_M']
-            clgi=clpi@coupling_M['coupling_M_inv']
+            pcli-=(np.ones_like(pcli)*shot_noise)@coupling_M['coupling_M']
+            cli=pcli@coupling_M['coupling_M_inv']
         
-        clgi=np.array(clgi)
+        pcli=pcli[[3,1,2,0],:]#corr_t=['shear_B',corr_ll,corr_ggl,corr_gg] #FIXME: this should be dynamic, based on corr_t and corr_ti
+        
+        sim_clb_shape=(Nl_bins*(ndim+1))
+        pcl_b=np.zeros(sim_clb_shape,dtype='float32')
+        
+        cl_b=np.zeros(sim_clb_shape,dtype='float32')#{'unbinned':np.zeros(sim_clb_shape,dtype='float32'),
+                # 'iMaster':np.zeros(sim_clb_shape,dtype='float32')}                    
+        
+        pcl_b=np.zeros(sim_clb_shape,dtype='float32')
 
-        if l_bins is not None:
-            corr_t=[corr_gg,corr_ll,corr_ggl]
-            sim_clb_shape=(len(ll),ndim)
-            
-            clg_b=np.zeros(sim_clb_shape,dtype='float32')
-            
-            clg_b={'unbinned':np.zeros(sim_clb_shape,dtype='float32'),
-                    'Master':np.zeros(sim_clb_shape,dtype='float32'),
-                   'nMaster':np.zeros(sim_clb_shape,dtype='float32'),
-                   'iMaster':np.zeros(sim_clb_shape,dtype='float32')}    
-            clgB_b={'iMaster':np.zeros(sim_clb_shape,dtype='float32')}                
-            
-            clp_b=np.zeros(sim_clb_shape,dtype='float32')
-            clpB_b=np.zeros(sim_clb_shape,dtype='float32')
-            for ii in np.arange(ndim):
-                clg_b['unbinned'][:,ii]=binning_func(xi=clgi[ii],bin_utils=binning_utils)
-                clp_b[:,ii]=binning_func(xi=clpi[ii],bin_utils=binning_utils)
-                clpB_b[:,ii]=binning_func(xi=clpi_B[ii],bin_utils=binning_utils)
-                for k in coupling_M['coupling_M_binned_inv'].keys():
-                    clg_b[k][:,ii]=clp_b[:,ii]@coupling_M['coupling_M_binned_inv'][k][corr_t[ii]] #be careful with ordering as coupling matrix is not symmetric
-                if corr_t[ii]==corr_ll:
-                    clgB_b['iMaster'][:,ii]=clpB_b[:,ii]@coupling_M['coupling_M_binned_inv']['iMaster']['shear_B']
-#             return clpi.T,clgi.T,clp_b,clpi_B.T,clg_b,clpB_b,clgB_b
-            return clpi.T,clgi.T,clp_b,clpi_B.T,clg_b,clpB_b,clgB_b
-        else:
-            return clpi.T,clgi.T
+        li=0
+
+        for ii in np.arange(ndim)+1:
+            #cl_b['unbinned'][:,ii]=binning_func(xi=cli[ii],bin_utils=binning_utils)
+            pcl_b[li:li+Nl_bins]=binning_func(xi=pcli[ii],bin_utils=binning_utils)
+            # pclB_b[:,ii]=binning_func(xi=pcli_B[ii],bin_utils=binning_utils)
+            # for k in coupling_M['coupling_M_binned_inv'].keys():
+            k='iMaster'
+            cl_b[li:li+Nl_bins]=pcl_b[li:li+Nl_bins]@coupling_M['coupling_M_binned_inv'][k][corr_t[ii]] #be careful with ordering as coupling matrix is not symmetric
+            # if corr_t[ii]==corr_ll:
+            #     clB_b['iMaster'][:,ii]=pclB_b[:,ii]@coupling_M['coupling_M_binned_inv']['iMaster']['shear_B']
+#             return pcli.T,cli.T,pcl_b,pcli_B.T,cl_b,pclB_b,clB_b
+        return pcl_b,cl_b#,pclB_b,clB_b
     
-    corr_t=[corr_gg,corr_ll,corr_ggl] #order in which sim corrs are output.
+    # corr_t=[corr_gg,corr_ll,corr_ggl,'shear_B'] #order in which sim corrs are output.
+    corr_t=['shear_B',corr_ll,corr_ggl,corr_gg] #order in which sim corrs are output... some shuffling done in process_pcli
     seed=12334
     def get_clsim(i):
+        mapi=i*1.
         print('doing map: ',i)
         local_state = np.random.RandomState(seed+i)
-#         cl_map=hp.synfast(clg0,nside=nside,RNG=local_state,new=True,pol=True)
+        cl0i=copy.deepcopy(cl0)
+#         cl_map=hp.synfast(cl0,nside=nside,RNG=local_state,new=True,pol=True)
+        if add_SSV:
+            SSV_delta=np.random.multivariate_normal(mean=SSV_sigma*0,cov=SSV_cov,size=1)[0]
+            # print('adding SSV')
+            SSV_delta2=SSV_delta*kappa_class.Ang_PS.clz['dchi']
+#                 print('SSV delta shape',SSV_delta2.shape,SSV_response[corr_gg].shape)
+            tt=SSV_response[corr_gg]@SSV_delta2
+#                 print('SSV delta shape',SSV_delta2.shape,tt.shape)
+            cl0i[0]+=(SSV_response[corr_gg]@SSV_delta2)@coupling_M[corr_gg]
+            cl0i[1]+=(SSV_response[corr_ll]@SSV_delta2)@coupling_M[corr_ll]
+            cl0i[2]+=(SSV_response[corr_ggl]@SSV_delta2)@coupling_M[corr_ggl]
         if lognormal:
-            cl_map=hp.synfast(clg0,nside=nside,rng=local_state,new=True,pol=False)
+            cl_map=hp.synfast(cl0i,nside=nside,rng=local_state,new=True,pol=False)
             cl_map_min=np.absolute(cl_map.min(axis=1))
             lmin_match=10
             lmax_match=100
@@ -764,7 +818,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
             cl_map[1,:],cl_map[2,:]=kappa_to_shear_map(kappa_map=cl_map[1])#,nside=nside)
 
         else:
-            cl_map=hp.synfast(clg0,nside=nside,rng=local_state,new=True,pol=True)
+            cl_map=hp.synfast(cl0i,nside=nside,rng=local_state,new=True,pol=True)
     
         N_map=0
         if use_shot_noise:
@@ -802,95 +856,84 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                     N_map[i][mask[tracer]]=hp.UNSEEN
                 cl_map[i][mask[tracer]]=hp.UNSEEN
             del N_map    
-            clpi_jk=get_cljk(cl_map,lmax=max(l),pol=True)         
-            clpi_jk['full']=hp.anafast(cl_map, lmax=max(l),pol=True) #TT, EE, BB, TE, EB, TB for polarized input map
+            pcli_jk,xi_jk=get_xi_cljk(cl_map,lmax=max(l),pol=True,xi_window_norm=xi_window_norm)         
+            
             del cl_map   
         else:
             cl_map*=window
             cl_map[mask]=hp.UNSEEN
-            clpi_jk=get_cljk(cl_map,lmax=max(l),pol=True)
-            clpi_jk['full']=hp.anafast(cl_map, lmax=max(l),pol=True)[l]
+            pcli_jk=get_cljk(cl_map,lmax=max(l),pol=True)
+            pcli_jk['full']=hp.anafast(cl_map, lmax=max(l),pol=True)[l]        
 
-
-        if add_SSV:
-            SSV_delta=np.random.multivariate_normal(mean=SSV_sigma*0,cov=SSV_cov,size=1)[0]
-        
-        if ndim>1:        
-            if add_SSV:
-                # print('adding SSV')
-                SSV_delta2=SSV_delta*kappa_class.Ang_PS.clz['dchi']
-#                 print('SSV delta shape',SSV_delta2.shape,SSV_response[corr_gg].shape)
-                tt=SSV_response[corr_gg]@SSV_delta2
-#                 print('SSV delta shape',SSV_delta2.shape,tt.shape)
-                clpi[0]+=(SSV_response[corr_gg]@SSV_delta2)@coupling_M[corr_gg]
-                clpi[1]+=(SSV_response[corr_ll]@SSV_delta2)@coupling_M[corr_ll]
-                clpi[2]+=(SSV_response[corr_ggl]@SSV_delta2)@coupling_M[corr_ggl]
-
-        if l_bins is not None:
-            clgi_jk={};clp_b_jk={};clpi_B_jk={};clg_b_jk={};clpB_b_jk={};clgB_b_jk={}
-            clg_b_jk={'unbinned':{},'Master':{},'nMaster':{},'iMaster':{}}    
-            clgB_b_jk={'iMaster':{}}                
-            for ijk in clpi_jk.keys():
-                clpi_jk[ijk],clgi_jk[ijk],clp_b_jk[ijk],clpi_B_jk[ijk],clg_b_jk_i,clpB_b_jk[ijk],clgB_b_jk_i=process_clpi(clpi_jk[ijk],
-                                                                coupling_M=coupling_M[ijk])
-                for k in clg_b_jk_i.keys():
-                    clg_b_jk[k][ijk]=clg_b_jk_i[k]
-                clgB_b_jk['iMaster'][ijk]=clgB_b_jk_i['iMaster']
-            clpi_jk=jk_mean(clpi_jk,njk=njk)
-            clgi_jk=jk_mean(clgi_jk,njk=njk)
-            clp_b_jk=jk_mean(clp_b_jk,njk=njk)
-            clpi_B_jk=jk_mean(clpi_B_jk,njk=njk)
+        pcl_b_jk={};cl_b_jk={}
+        if do_pseudo_cl:
             
-            clpB_b_jk=jk_mean(clpB_b_jk,njk=njk)
-            clgB_b_jk['iMaster']=jk_mean(clgB_b_jk['iMaster'],njk=njk)
-            for k in clg_b_jk.keys():
-                clg_b_jk[k]=jk_mean(clg_b_jk[k],njk=njk)
-#             return clpi_jk,clgi_jk,clp_b_jk,clpi_B_jk,clg_b_jk,clpB_b_jk,clgB_b_jk
-            return clp_b_jk,clg_b_jk,clpB_b_jk,clgB_b_jk
-        else:
-            for ijk in clp_jk.keys():
-                clpi_jk[ijk],clgi_jk[ijk]=process_clpi(clpi_jk[ijk],coupling_M=coupling_M[ijk])
-            return clpi_jk,clgi_jk
+            # cl_b_jk={'iMaster':{}} #{'unbinned':{},'Master':{},'nMaster':{},'iMaster':{}}    
+                          
+            for ijk in pcli_jk.keys():
+                pcl_b_jk[ijk],cl_b_jk[ijk]=process_pcli(pcli_jk[ijk],coupling_M=coupling_M[ijk])
+                # for k in cl_b_jk_i.keys():
+                #     cl_b_jk[k][ijk]=cl_b_jk_i[k]
+                # clB_b_jk['iMaster'][ijk]=clB_b_jk_i['iMaster']
+            # pcli_jk=jk_mean(pcli_jk,njk=njk)
+            # cli_jk=jk_mean(cli_jk,njk=njk)
+            # pcli_B_jk=jk_mean(pcli_B_jk,njk=njk)
+            # if do_pseudo_cl:
+            pcl_b_jk=jk_mean(pcl_b_jk,njk=njk)
+            cl_b_jk=jk_mean(cl_b_jk,njk=njk)
+        if do_xi:
+            xi_jk=jk_mean(xi_jk,njk=njk)
+            # for k in cl_b_jk.keys():
+            #     cl_b_jk[k]=jk_mean(cl_b_jk[k],njk=njk)
+#             return pcli_jk,cli_jk,pcl_b_jk,pcli_B_jk,cl_b_jk,pclB_b_jk,clB_b_jk
+        print('done map ',mapi)
+        return pcl_b_jk,cl_b_jk,xi_jk
+        # else:
+        #     for ijk in pcl_jk.keys():
+        #         pcli_jk[ijk],cli_jk[ijk]=process_pcli(pcli_jk[ijk],coupling_M=coupling_M[ijk])
+        #     return pcli_jk,cli_jk
     
     def comb_maps(futures):
-        for i in np.arange(Rsize):
+        for i in np.arange(nsim):
             x=futures[i]#.compute()
-            clp[i,:,:]+=x[0]
-            clg[i,:,:]+=x[1]
-        return clp,clg 
+            pcl[i,:,:]+=x[0]
+            cl[i,:,:]+=x[1]
+        return pcl,cl 
     
     print('generating maps')
     if convolve_win:
         futures={}
-#         for i in np.arange(Rsize):
+#         for i in np.arange(nsim):
 #             futures[i]=dask.delayed(get_clsim)(i)  
 #         print(futures)
-#         clpg=dask.delayed(comb_maps)(futures)
-#         clpg.compute()
+#         pcl=dask.delayed(comb_maps)(futures)
+#         pcl.compute()
         i=0
         j=0
-        step= 1 #min(5,Rsize)
-        funct=partial(get_clsim2,clg0,window,mask,SN,coupling_M['full'],ndim)
-        while j<Rsize:
+        step= 1 #min(5,nsim)
+        # funct=partial(get_clsim2,cl0,window,mask,SN,coupling_M['full'],ndim)
+        while j<nsim:
             futures={}
             for ii in np.arange(step):
                 futures[ii]=delayed(get_clsim)(i+ii)  
-            futures=client.compute(futures)
+            futures=client.compute(futures).result()
             for ii in np.arange(step):
-                if l_bins is None:
-                    clp[i],clg[i]=futures.result()[ii]
-                else:
-#                     clp[i],clg[i],clp_b[i],clpB[i],clg_b[i],clpB_b[i],clgB_b[i]=futures.result()[ii]
-                    clp_b[i],clg_b[i],clpB_b[i],clgB_b[i]=futures.result()[ii]
-#                     clp[i,:],clg[i,:],clp_b[i,:],clpB[i,:],clg_b_i,clpB_b[i,:],clgB_b_i=futures.result()[ii]
-#                     for k in clg_b_i.keys():
-#                         clg_b[k][i,:]=clg_b_i[i][k]
-#                     clgB_b['iMaster'][i,:]=clgB_b_i['iMaster']
+#                     pcl[i],cl[i],pcl_b[i],pclB[i],cl_b[i],pclB_b[i],clB_b[i]=futures.result()[ii]
+                tt=futures[ii]
+                if do_pseudo_cl:
+                    pcl_b[i]=tt[0]
+                    cl_b[i]=tt[1]
+                if do_xi:
+                    xi_b[i]=tt[2]
+#                     pcl[i,:],cl[i,:],pcl_b[i,:],pclB[i,:],cl_b_i,pclB_b[i,:],clB_b_i=futures.result()[ii]
+#                     for k in cl_b_i.keys():
+#                         cl_b[k][i,:]=cl_b_i[i][k]
+#                     clB_b['iMaster'][i,:]=clB_b_i['iMaster']
                         
                 i+=1
             print('done map ',i)
             del futures
-            client.restart()
+            # client.restart() #this can sometimes fail... useful for clearing memory on cluster.
             j+=step
     print('done generating maps')
     
@@ -900,7 +943,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
             k=cljk['full'].keys()
         except:
             pass
-        for i in np.arange(Rsize):            
+        for i in np.arange(nsim):            
             if k is None:
                 cljk['full'][i,:]=cljk[i]['full']
                 for jks in jk_stat_keys:
@@ -912,85 +955,39 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                         cljk[jks][ki][i]=cljk[i][ki][jks]
         if k is None:
             for jks in jk_stat_keys:
-                cljk[jks]=sample_mean(cljk[jks],Rsize)
+                cljk[jks]=sample_mean(cljk[jks],nsim)
         else:
             for ki in k:
                 for jks in jk_stat_keys:
-                    cljk[jks][ki]=sample_mean(cljk[jks][ki],Rsize)
+                    cljk[jks][ki]=sample_mean(cljk[jks][ki],nsim)
         return cljk
     
-    clg_b=get_full_samp(clg_b)
-    clp_b=get_full_samp(clp_b)
-    clgB_b=get_full_samp(clgB_b)
-    clpB_b=get_full_samp(clpB_b)
-#     clg=get_full_samp(clg)
-#     clp=get_full_samp(clp)
-    outp['clg_b_stats']={}
-    outp['clgB_b_stats']={}
-    for k in clg_b['full'].keys():
-        outp['clg_b_stats'][k]=client.compute({corr_t[ii]: delayed(calc_sim_stats)(sim=clg_b['full'][k][:,:,ii],sim_truth=clg0_b[corr_t[ii]]) for ii in np.arange(ndim)})
-    k='iMaster'
-    outp['clgB_b_stats'][k]=client.compute({corr_t[ii]: delayed(calc_sim_stats)(sim=clgB_b['full'][k][:,:,ii],sim_truth=clg0_b[corr_t[ii]]) for ii in np.arange(ndim)})
-    outp['clp_b_stats']=client.compute({corr_t[ii]: delayed(calc_sim_stats)(sim=clp_b['full'][:,:,ii],sim_truth=clp_b['full'][:,:,ii].mean(axis=0)) for ii in np.arange(ndim)})
-    outp['clpB_b_stats']=client.compute({corr_t[ii]: delayed(calc_sim_stats)(sim=clpB_b['full'][:,:,ii],sim_truth=clpB_b['full'][:,:,ii].mean(axis=0)) for ii in np.arange(ndim)})
-    
-    for k in clg_b['full'].keys():
-        outp['clg_b_stats'][k]=outp['clg_b_stats'][k].result()
-    k='iMaster'
-    outp['clgB_b_stats'][k]=outp['clgB_b_stats'][k].result()
-    outp['clp_b_stats']=outp['clp_b_stats'].result()
-    outp['clpB_b_stats']=outp['clpB_b_stats'].result()
-        
-#         outp['clp_b_stats']=calc_sim_stats(sim=clp_b,sim_truth=clp_b.mean(axis=0))
-#     xiN=np.zeros((Rsize,len(xi)))
-#     xig=np.zeros((Rsize,len(xi)))
-#     xigB=np.zeros((Rsize,len(r_bins)-1))
-#     xiNB=np.zeros((Rsize,len(r_bins)-1))
-#     for i in np.arange(Rsize):
-#         r,xig[i,:]=HT.projected_correlation(k_pk=l,pk=clg[i,:],j_nu=0,taper=True,**taper_kw)
-#         rb,xigB[i,:]=HT.bin_mat(r=r,mat=xig[i,:],r_bins=r_bins)
-#         if do_clN:
-#             r,xiN[i,:]=HT.projected_correlation(k_pk=l,pk=clN[i,:],j_nu=0,taper=True,**taper_kw)
-#             rb,xiNB[i,:]=HT.bin_mat(r=r,mat=xiN[i,:],r_bins=r_bins)
-#     outp['xi_truth']=xi_truth
-#    outp['rb']=rb
+    if do_pseudo_cl:
+        cl_b=get_full_samp(cl_b)
+        pcl_b=get_full_samp(pcl_b)
 
-#     outp['clpB']=clpB
-    outp['clg_b']=clg_b
-    outp['clgB_b']=clg_b
-    outp['clp_b']=clp_b
-    outp['clpB_b']=clpB_b
-    outp['clg0']=clg0
+        cl0_b['shear_B']=cl0_b[corr_ll]*0
+        cl0_b=np.array([cl0_b[corr] for corr in corr_t]).flatten()
+        outp['cl_b_stats']=client.compute(delayed(calc_sim_stats)(sim=cl_b['full'],sim_truth=cl0_b))
+        outp['pcl_b_stats']=client.compute(delayed(calc_sim_stats)(sim=pcl_b['full'],sim_truth=pcl_b['full'].mean(axis=0)))
+    
+        outp['cl_b_stats']=outp['cl_b_stats'].result()
+        outp['pcl_b_stats']=outp['pcl_b_stats'].result()
+        
+        outp['cl_b']=cl_b
+        outp['pcl_b']=pcl_b
+    if do_xi:
+        xi_b=get_full_samp(xi_b)
+        outp['xi_b_stats']=client.compute(delayed(calc_sim_stats)(sim=xi_b['full'],sim_truth=xi_b['full'].mean(axis=0)))
+        outp['xi0']=xi_L0
+        outp['xiW0']=xiW_L
+    outp['cl0']=cl0
     outp['clN0']=clN0
     outp['cl0']=cl0
-    outp['clp0']=clp0
-#     outp['clp_shear_B_b']=clp_shear_B_b
-    outp['clp_shear_B']=clp_shear_B
-#     outp['clN']=clN
-#     outp['xig']=xig
-#     outp['xigB']=xigB
-#     outp['xiNB']=xiNB
-#     outp['xiN']=xiN
+    outp['pcl0']=pcl0
 
-#     outp['clg']=clg
-#     outp['clp']=clp
-#     clg0_2=np.array(clg0)[[0,1,3],:]
-#     outp['clg_stats']={corr_t[ii]: calc_sim_stats(sim=clg[:,:,ii],sim_truth=clg0_2[ii]) for ii in np.arange(ndim)}#calc_sim_stats(sim=clg,sim_truth=clg0)
-#     outp['clp_stats']={corr_t[ii]: calc_sim_stats(sim=clp[:,:,ii],sim_truth=clp[:,:,ii].mean(axis=0)) for ii in np.arange(ndim)}#     calc_sim_stats(sim=clp,sim_truth=clp.mean(axis=0))
-
-#     outp['xig_stats']=calc_sim_stats(sim=xig,sim_truth=xi)
-#     if convolve_win:
-#         outp['xig_stats0']=calc_sim_stats(sim=xig,sim_truth=xi0)
-#     rb,xiB=HT.bin_mat(r=r,mat=xi_truth,r_bins=r_bins)
-#     outp['xigB_stats']=calc_sim_stats(sim=xigB,sim_truth=xiB)
-#     if do_clN:
-#         outp['xiN_stats']=calc_sim_stats(sim=xiN,sim_truth=xi_truth)
-#         outp['xiNB_stats']=calc_sim_stats(sim=xiNB,sim_truth=xiB)
-
-    outp['size']=Rsize
+    outp['size']=nsim
     outp['fsky']=fsky
-    outp['nu']=nu
-    outp['nu_b']=nu_b
     outp['l_bins']=l_bins
     
     outp['coupling_M']=coupling_M
@@ -1000,7 +997,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
 
 
 #test_home=wig_home+'/tests/'
-test_home='/home/deep/repos/cosmic_shear/tests/'
+test_home='/home/deep/data/repos/SkyLens/tests/'
 fname=test_home+'/non_gaussian_likeli_jk_sims_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
 if lognormal:
     fname+='_lognormal'+str(lognormal_scale)
@@ -1020,13 +1017,12 @@ if smooth_window:
 fname+='.pkl'
 
 print(fname)
-coupling_M_kappa_win=get_coupling_matrices_jk(kappa_class=kappa_win)
-
+# dask.config.set(scheduler='single-threaded')
 #client.restart()
 #client.close()
-cl_sim_W=sim_cl_xi(Rsize=nsim,do_norm=False,#cl0=clG0['cl'][corrs[0]][(0,0)].compute(),
+cl_sim_W=sim_cl_xi(nsim=nsim,do_norm=False,#cl0=clG0['cl'][corrs[0]][(0,0)].compute(),
           kappa_class=kappa_win,fsky=f_sky,use_shot_noise=use_shot_noise,use_cosmo_power=use_cosmo_power,
-             convolve_win=True,nside=nside,coupling_M=coupling_M_kappa_win,
+             convolve_win=True,nside=nside,
              lognormal=lognormal,lognormal_scale=lognormal_scale,
              add_SSV=do_SSV_sim,add_tidal_SSV=do_SSV_sim,add_blending=do_blending)
 

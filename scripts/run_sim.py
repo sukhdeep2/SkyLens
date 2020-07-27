@@ -32,6 +32,8 @@ parser.add_argument("--ssv", "-ssv",type=int, help="use complicated window")
 parser.add_argument("--noise", "-sn",type=int, help="use complicated window")
 
 gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
+# Read arguments from the command line
+args = parser.parse_args()
 
 use_complicated_window=False if not args.cw else np.bool(args.cw)
 unit_window=False if not args.uw else np.bool(args.cw)
@@ -74,7 +76,7 @@ if test_run:
 wigner_files={}
 # wig_home='/global/cscratch1/sd/sukhdeep/dask_temp/'
 #wig_home='/Users/Deep/dask_temp/'
-wig_home='/home/deep/repos/cosmic_shear/temp/'
+wig_home='/home/deep/data/repos/SkyLens/temp/'
 wigner_files[0]= wig_home+'/dask_wig3j_l6500_w2100_0_reorder.zarr'
 wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 
@@ -89,8 +91,8 @@ worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_
 LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
                 local_dir=wig_home+'/NGL-worker/', **worker_kwargs,
                 #scheduler_port=12234,
-#                 dashboard_address=8801
-                diagnostics_port=8801,
+                dashboard_address=8801
+                # diagnostics_port=8801,
 #                memory_monitor_interval='2000ms')
                )
 client=Client(LC,)#diagnostics_port=8801,)
@@ -805,7 +807,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     #client.close()
     return outp
 #test_home=wig_home+'/tests/'
-test_home='/home/deep/repos/cosmic_shear/tests/'
+test_home='/media/deep/data/repos/cosmic_shear/tests/'
 fname=test_home+'/non_gaussian_likeli_sims_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
 if lognormal:
     fname+='_lognormal'+str(lognormal_scale)
