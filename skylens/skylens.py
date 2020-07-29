@@ -30,8 +30,9 @@ class Skylens():
                 z_PS=None,nz_PS=100,log_z_PS=True,
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
                 Tri_cov=False,
-                use_window=True,window_lmax=None,store_win=False,Win=None,
-                f_sky=None,l_bins=None,bin_cl=False,use_binned_l=False,
+                use_window=True,window_lmax=None,window_l=None,store_win=False,Win=None,
+                f_sky=None,
+                l_bins=None,bin_cl=False,use_binned_l=False,do_pseudo_cl=True,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 use_binned_theta=False, xi_win_approx=False,
                 corrs=None,corr_indxs=None,
@@ -57,7 +58,7 @@ class Skylens():
         self.set_corr_indxs(corr_indxs=corr_indxs)
         
         self.window_lmax=30 if window_lmax is None else window_lmax
-        self.window_l=np.arange(self.window_lmax+1)
+        self.window_l=np.arange(self.window_lmax+1) if window_l is None else window_l
 
         self.set_WT_spins()
         self.set_WT_binned()
@@ -82,15 +83,16 @@ class Skylens():
                         #FIXME: Need a dict for these args
 
         self.Win={}
-        # self.use_window=False
-        # self.bin_window=False
-        # self.do_cov=False #FIXME
+        
+        if self.do_xi and not self.xi_win_approx: #FIXME: Since the `aprrox' is actually the correct way, change the notation.
+            self.do_pseudo_cl=True #we will use pseudo_cl transform to get correlation functions.
+
         
         self.Win=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,s1_s2s=self.s1_s2s,\
                         use_window=use_window,do_cov=do_cov,cov_utils=self.cov_utils,
                         f_sky=f_sky,corr_indxs=self.corr_indxs,z_bins=self.z_bins,
                         window_lmax=self.window_lmax,Win=Win,WT=self.WT,do_xi=self.do_xi,
-                        xi_win_approx=self.xi_win_approx,
+                        xi_win_approx=self.xi_win_approx,do_pseudo_cl=self.do_pseudo_cl,
                         kappa_class0=self.kappa0,kappa_class_b=self.kappa_b,
                         xi_bin_utils=self.xi_bin_utils,store_win=store_win,wigner_files=wigner_files,
                         bin_window=self.use_binned_l)
@@ -314,13 +316,13 @@ class Skylens():
         cov['G']=None
         cov['G1324_B']=None;cov['G1423_B']=None
 
-        if self.use_window:
+        if self.use_window and self.do_pseudo_cl:
             cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_window(cls,
                                             self.SN,tracers,zs_indx,self.do_xi,Win['cov'][tracers][zs_indx],
                                             )#bin_window=self.bin_window,bin_utils=self.cl_bin_utils)
         else:
             fs=self.f_sky
-            if self.do_xi and self.xi_win_approx: #in this case we need to use a separate function directly from xi_cov
+            if self.do_xi and self.xi_win_approx and self.use_window : #in this case we need to use a separate function directly from xi_cov
                 cov['G1324']=0
                 cov['G1423']=0
             else:
@@ -359,7 +361,7 @@ class Skylens():
 #             cov['Tri']/=self.cov_utils.gaussian_cov_norm_2D**2 #Since there is no dirac delta, there should be 2 factor of (2l+1)dl... eq. A3 of https://arxiv.org/pdf/1601.05779.pdf
             cov['Tri']/=fs0 #(2l+1)f_sky.. we didnot normalize gaussian covariance in trispectrum computation.
 
-        if self.use_window and (self.SSV_cov or self.Tri_cov): #Check: This is from writing p-cl as M@cl... cov(p-cl)=M@cov(cl)@M.T ... separate  M when different p-cl
+        if self.use_window and (self.SSV_cov or self.Tri_cov) and self.do_pseudo_cl: #Check: This is from writing p-cl as M@cl... cov(p-cl)=M@cov(cl)@M.T ... separate  M when different p-cl
             M1=Win['cl'][(tracers[0],tracers[1])][(zs_indx[0],zs_indx[1])]['M'] #12
             M2=Win['cl'][(tracers[2],tracers[3])][(zs_indx[2],zs_indx[3])]['M'] #34
             if self.bin_window:
@@ -481,7 +483,7 @@ class Skylens():
                 # out[(i,j)]
                 cl[corr][(i,j)]=delayed(self.calc_cl)(zs1_indx=i,zs2_indx=j,corr=corr)
                 cl_b[corr][(i,j)]=delayed(self.bin_cl_func)(cl=cl[corr][(i,j)],cov=None)
-                if self.use_window:
+                if self.use_window and self.do_pseudo_cl:
                     if not self.bin_window:
                         pcl[corr][(i,j)]=delayed(self.calc_pseudo_cl)(cl[corr][(i,j)],Win=self.Win.Win,zs1_indx=i,
                                                 zs2_indx=j,corr=corr)
@@ -555,9 +557,12 @@ class Skylens():
         SN1324=0
         SN1423=0
 
-        if np.all(np.array(tracers)=='shear') and  s1_s2!=s1_s2_cross: #cross between xi+ and xi-
+        if np.all(np.array(tracers)=='shear') and  s1_s2!=s1_s2_cross and not self.xi_win_approx: #cross between xi+ and xi-
             if self.use_window:
                 G1324,G1423=self.cov_utils.gaussian_cov_window(cls,self.SN,tracers,z_indx,self.do_xi,Win['cov'][tracers][z_indx],Bmode_mf=-1)
+#             elif self.use_window and self.xi_win_approx:
+#                 bf=-1
+#                 G1324,G1423=self.cov_utils.xi_gaussian_cov_window_approx(cls,self.SN,tracers,z_indx,self.do_xi,Win['cov'][tracers][z_indx],self.WT,WT_kwargs,bf)
             else:
                 if not self.xi_win_approx:
                     G1324,G1423=self.cov_utils.gaussian_cov(cls,self.SN,tracers,z_indx,self.do_xi,self.f_sky,Bmode_mf=-1)
@@ -569,12 +574,16 @@ class Skylens():
             cov_cl_G=cov_cl['G1324']+cov_cl['G1423'] #FIXME: needs Bmode for shear
 
 
-        if not self.use_window and self.xi_win_approx: #This is an appproximation to account for window. Correct thing is pseudo cl covariance but it is expensive to very high l needed for proper wigner transforms.
+        if self.use_window and self.xi_win_approx: #This is an appproximation to account for window. Correct thing is pseudo cl covariance but it is expensive to very high l needed for proper wigner transforms.
             WT_kwargs={'l_cl':self.l,'s1_s2':s1_s2,'s1_s2_cross':s1_s2_cross}
             bf=1
             if np.all(np.array(tracers)=='shear') and not s1_s2==s1_s2_cross: #cross between xi+ and xi-
                 bf=-1
+#             try:
             cov_xi['G']=self.cov_utils.xi_gaussian_cov_window_approx(cls,self.SN,tracers,z_indx,self.do_xi,Win['cov'][tracers][z_indx],self.WT,WT_kwargs,bf)
+#             except Exception as err:
+#                 print('error', err, tracers, z_indx,Win['cov'][tracers].keys())
+#                 crash
         else:
             th0,cov_xi['G']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
                                                       s1_s2_cross=s1_s2_cross,
@@ -663,8 +672,10 @@ class Skylens():
                     xi[corr][s1_s2][indx]=delayed(self.get_xi)(cls=cl,corr=corr,indxs=indx,
                                                         s1_s2=s1_s2,Win=self.Win.Win)
         if self.do_cov:
-            for corr1 in corrs:
-                for corr2 in corrs:
+            for ic1 in np.arange(len(corrs)):
+                corr1=corrs[ic1]
+                for ic2 in np.arange(ic1,len(corrs)):
+                    corr2=corrs[ic2]
 
                     s1_s2s_1=self.s1_s2s[corr1]
                     indxs_1=self.corr_indxs[corr1]
