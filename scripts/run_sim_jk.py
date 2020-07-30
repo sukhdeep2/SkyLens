@@ -5,6 +5,8 @@ from thread_count import *
 debug=False
 if debug:
     import faulthandler; faulthandler.enable()
+    #in case getting some weird seg fault, run as python -Xfaulthandler run_sim_jk.py
+    # problem is likely to be in some package
 
 
 import pickle
@@ -25,9 +27,7 @@ from dask.distributed import Client  # we already had this above
 
 import argparse
 
-
-
-test_run=True
+test_run=False
 parser = argparse.ArgumentParser()
 parser.add_argument("--cw", "-cw",type=int, help="use complicated window")
 parser.add_argument("--uw", "-uw",type=int, help="use unit window")
@@ -35,13 +35,16 @@ parser.add_argument("--lognormal", "-l",type=int, help="use complicated window")
 parser.add_argument("--blending", "-b",type=int, help="use complicated window")
 parser.add_argument("--ssv", "-ssv",type=int, help="use complicated window")
 parser.add_argument("--noise", "-sn",type=int, help="use complicated window")
+parser.add_argument("--xi", "-xi",type=int, help="do_xi, i.e. compute correlation functions")
+parser.add_argument("--pseudo_cl", "-pcl",type=int, help="do_pseudo_cl, i.e. compute power spectra functions")
+parser.add_argument("--njk", "-njk",type=int, help="number of jackknife regions, default=0 (no jackknife)")
 
 
 # Read arguments from the command line
 args = parser.parse_args()
 
 gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
-
+gc.enable()
 
 use_complicated_window=False if not args.cw else np.bool(args.cw)
 unit_window=False if not args.uw else np.bool(args.cw)
@@ -49,14 +52,27 @@ lognormal=False if not args.lognormal else np.bool(args.lognormal)
 
 do_blending=False if not args.blending else np.bool(args.blending)
 do_SSV_sim=False if not args.ssv else np.bool(args.ssv)
-use_shot_noise=True if not args.noise else np.bool(args.noise)
+use_shot_noise=True if args.noise is None else np.bool(args.noise)
+
 print(use_complicated_window,unit_window,lognormal,do_blending,do_SSV_sim,use_shot_noise)
 
-nsim=10
+do_pseudo_cl=False if not args.pseudo_cl else np.bool(args.pseudo_cl)
+do_xi=True if args.xi is None else np.bool(args.xi)
 
-njk1=8
+# if args.noise is None: #because 0 and None both result in same bool
+#     use_shot_noise=True
+
+
+njk=0 if args.njk is None else args.njk
+
+njk1=njk
 njk2=njk1
 njk=njk1*njk2
+
+if njk>0:
+    nsim=10 #time / memory 
+else:
+    nsim=100
 
 subsample=False
 do_cov_jk=False #compute covariance coupling matrices
@@ -66,7 +82,12 @@ lognormal_scale=2
 
 nside=1024
 lmax_cl=1000#
-window_lmax=20 #0
+window_lmax=2000 #0
+
+if not do_pseudo_cl:
+    lmax_cl=np.int(3*nside-1)
+    window_lmax=np.int(lmax_cl*1.)
+
 Nl_bins=37 #40
 
 use_cosmo_power=True
@@ -125,6 +146,9 @@ l_bins=np.unique(np.int64(np.logspace(np.log10(lmin_cl_Bins),np.log10(lmax_cl_Bi
 lb=(l_bins[1:]+l_bins[:-1])*.5
 
 Nl_bins=len(lb)
+# if not do_pseudo_cl:
+#     Nl_bins=0
+#     l_bins=None
 
 l=l0 #np.unique(np.int64(np.logspace(np.log10(lmin_cl),np.log10(lmax_cl),Nl_bins*20))) #if we want to use fewer ell
 
@@ -134,9 +158,7 @@ bin_cl=True
 SSV_cov=False
 tidal_SSV_cov=False
 
-do_pseudo_cl=True
 
-do_xi=True
 xi_win_approx=True
 
     
@@ -309,6 +331,7 @@ def get_coupling_matrices(kappa_class=None):
     outp['coupling_M_binned']=coupling_M_binned
     outp['coupling_M_inv']=coupling_M_inv
     outp['coupling_M_binned_inv']=coupling_M_binned_inv
+    gc.collect()
     return outp
 
 
@@ -333,12 +356,15 @@ def get_xi_window_norm(window=None):
     for tracer in window.keys():
         # window[tracer]=kappa_class.z_bins[tracer][0]['window']
         mask[tracer]=window[tracer]==hp.UNSEEN
+        # window[tracer]=window[tracer][~mask[tracer]]
     tree_cat_args=get_treecorr_cat_args(window,masks=mask)
     tree_cat= {tracer: treecorr.Catalog(w=window[tracer][~mask[tracer]], **tree_cat_args[tracer]) for tracer in window.keys()}
+    del mask
     for corr in corrs:
         tree_corrs=treecorr.NNCorrelation(**corr_config)
         _=tree_corrs.process(tree_cat[corr[0]],tree_cat[corr[1]])
         window_norm[corr]=tree_corrs.weight*1.
+    del tree_cat,tree_corrs
     return window_norm
 
 def get_xi_window_norm_jk(kappa_class=None):
@@ -347,13 +373,17 @@ def get_xi_window_norm_jk(kappa_class=None):
     for tracer in kappa_class.z_bins.keys():
         window[tracer]=kappa_class.z_bins[tracer][0]['window']
     window_norm['full']=get_xi_window_norm(window=window)
-    window_i={}
+    
     for ijk in np.arange(njk):
+        window_i={}
         x=jkmap==ijk
         for tracer in window.keys():
             window_i[tracer]=window[tracer]*1.
             window_i[tracer][x]=hp.UNSEEN
         window_norm[ijk]=get_xi_window_norm(window=window_i)
+        del window_i,x
+        gc.collect()
+        print('window norm ',ijk,' done',window_norm[ijk][corr_ll].shape,window_norm[ijk].keys())
     return window_norm
 
 
@@ -369,6 +399,7 @@ def get_xi(map,window_norm,mask=None):
     tree_cat={}
     tree_cat['galaxy']=treecorr.Catalog(w=maps['galaxy'][~mask['galaxy']], **tree_cat_args['galaxy'])
     tree_cat['shear']=treecorr.Catalog(g1=maps['shear'][0][~mask['shear']],g2=maps['shear'][1][~mask['shear']], **tree_cat_args['shear'])
+    del mask
     ndim=3 #FIXME
     xi=np.zeros(n_th_bins*(ndim+1))
     th_i=0
@@ -391,6 +422,8 @@ def get_xi(map,window_norm,mask=None):
             tree_corrs[corr].process(tree_cat['galaxy'])
             xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/window_norm[corr]
             th_i+=n_th_bins
+    del tree_cat,tree_corrs
+    gc.collect()
     return xi
 
 
@@ -428,6 +461,7 @@ def get_coupling_matrices_jk(kappa_class=None):
         del kappa_win_JK
         del zs_binjk
         del zl_binjk
+        gc.collect()
         print('coupling M jk ',ijk,'done')
     return coupling_M
 
@@ -524,6 +558,7 @@ def get_xi_cljk(cl_map,lmax=np.int(l0.max()),pol=True,coupling_M={},xi_window_no
         if do_xi:
             xi_jk[ijk]=get_xi(cl_map_i, window_norm=xi_window_norm[ijk])
         del cl_map_i
+        gc.collect()
     return pcl_jk,xi_jk
 
 def jk_mean(p={},njk=njk):
@@ -806,7 +841,7 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
             cl0i[1]+=(SSV_response[corr_ll]@SSV_delta2)@coupling_M[corr_ll]
             cl0i[2]+=(SSV_response[corr_ggl]@SSV_delta2)@coupling_M[corr_ggl]
         if lognormal:
-            cl_map=hp.synfast(cl0i,nside=nside,rng=local_state,new=True,pol=False)
+            cl_map=hp.synfast(cl0i,nside=nside,rng=local_state,new=True,pol=False,verbose=False)
             cl_map_min=np.absolute(cl_map.min(axis=1))
             lmin_match=10
             lmax_match=100
@@ -818,11 +853,11 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
             cl_map[1,:],cl_map[2,:]=kappa_to_shear_map(kappa_map=cl_map[1])#,nside=nside)
 
         else:
-            cl_map=hp.synfast(cl0i,nside=nside,rng=local_state,new=True,pol=True)
+            cl_map=hp.synfast(cl0i,nside=nside,rng=local_state,new=True,pol=True,verbose=False)
     
         N_map=0
         if use_shot_noise:
-            N_map=hp.synfast(clN0,nside=nside,rng=local_state,new=True,pol=True)
+            N_map=hp.synfast(clN0,nside=nside,rng=local_state,new=True,pol=True,verbose=False)
         
         tracers=['galaxy','shear','shear']
         if ndim>1:
@@ -857,8 +892,7 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
                 cl_map[i][mask[tracer]]=hp.UNSEEN
             del N_map    
             pcli_jk,xi_jk=get_xi_cljk(cl_map,lmax=max(l),pol=True,xi_window_norm=xi_window_norm)         
-            
-            del cl_map   
+            del cl_map
         else:
             cl_map*=window
             cl_map[mask]=hp.UNSEEN
@@ -886,7 +920,7 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
             # for k in cl_b_jk.keys():
             #     cl_b_jk[k]=jk_mean(cl_b_jk[k],njk=njk)
 #             return pcli_jk,cli_jk,pcl_b_jk,pcli_B_jk,cl_b_jk,pclB_b_jk,clB_b_jk
-        print('done map ',mapi)
+        gc.collect()
         return pcl_b_jk,cl_b_jk,xi_jk
         # else:
         #     for ijk in pcl_jk.keys():
@@ -910,7 +944,9 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
 #         pcl.compute()
         i=0
         j=0
-        step= 1 #min(5,nsim)
+        step= 1 
+        # if njk==0:
+        #     step=min(3,nsim)
         # funct=partial(get_clsim2,cl0,window,mask,SN,coupling_M['full'],ndim)
         while j<nsim:
             futures={}
@@ -998,7 +1034,15 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
 
 #test_home=wig_home+'/tests/'
 test_home='/home/deep/data/repos/SkyLens/tests/'
-fname=test_home+'/non_gaussian_likeli_jk_sims_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
+
+f0='/sims'
+if do_pseudo_cl:
+    f0+='_cl'
+if do_xi:
+    f0+='_xi'
+if njk>0:
+    f0+='_jk'
+fname=test_home+f0+'_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
 if lognormal:
     fname+='_lognormal'+str(lognormal_scale)
 if not use_shot_noise:
@@ -1041,3 +1085,4 @@ print(fname)
 print('all done')
 
 LC.close()
+gc.collect()

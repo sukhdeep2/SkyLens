@@ -22,16 +22,18 @@ from dask.distributed import Client  # we already had this above
 import argparse
 
 
-test_run=True
+test_run=False
 parser = argparse.ArgumentParser()
 parser.add_argument("--cw", "-cw",type=int, help="use complicated window")
 parser.add_argument("--uw", "-uw",type=int, help="use unit window")
 parser.add_argument("--lognormal", "-l",type=int, help="use complicated window")
 parser.add_argument("--blending", "-b",type=int, help="use complicated window")
 parser.add_argument("--ssv", "-ssv",type=int, help="use complicated window")
-parser.add_argument("--noise", "-sn",type=int, help="use complicated window")
+parser.add_argument("--noise", "-sn",type=int, help="use shot noise")
 
 gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
+gc.enable()
+
 # Read arguments from the command line
 args = parser.parse_args()
 
@@ -41,8 +43,13 @@ lognormal=False if not args.lognormal else np.bool(args.lognormal)
 
 do_blending=False if not args.blending else np.bool(args.blending)
 do_SSV_sim=False if not args.ssv else np.bool(args.ssv)
-use_shot_noise=True if not args.noise else np.bool(args.noise)
-print(use_complicated_window,unit_window,lognormal,do_blending,do_SSV_sim,use_shot_noise)
+use_shot_noise=True if args.noise is None else np.bool(args.noise)
+
+# if args.noise is None: #because 0 and None both result in same bool
+#     use_shot_noise=True
+
+
+print(use_complicated_window,unit_window,lognormal,do_blending,do_SSV_sim,use_shot_noise,args.noise,np.bool(args.noise),not args.noise)
 
 nsim=1000
 
@@ -69,7 +76,7 @@ if test_run:
     window_lmax=50
 #    window_lmax=nside*3-1
     Nl_bins=7 #40
-    nsim=100
+    nsim=10
     print('this will be test run')
 
     
@@ -481,10 +488,10 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     SN=kappa_class.SN
     sim_cl_shape=(Rsize,len(kappa_class.l),ndim)
     
-    clp=np.zeros(sim_cl_shape,dtype='float32')
-    clg=np.zeros(sim_cl_shape,dtype='float32')
-    clpB=np.zeros(sim_cl_shape,dtype='float32')
-    clgB=np.zeros(sim_cl_shape,dtype='float32')
+    # clp=np.zeros(sim_cl_shape,dtype='float32')
+    # clg=np.zeros(sim_cl_shape,dtype='float32')
+    # clpB=np.zeros(sim_cl_shape,dtype='float32')
+    # clgB=np.zeros(sim_cl_shape,dtype='float32')
     lmax=max(l)
     lmin=min(l)
     
@@ -599,6 +606,8 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                 cl_map[i][mask[tracer]]=hp.UNSEEN
                 
             clpi=hp.anafast(cl_map, lmax=max(l),pol=True) #TT, EE, BB, TE, EB, TB for polarized input map
+            del cl_map,N_map
+            gc.collect()
             clpi=clpi[:,l]
             clpi_B=clpi[[2,4,5],:]
             clpi=clpi[[0,1,3],:]
@@ -675,8 +684,10 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
             # for line in stat.traceback.format():
             #     print(line)
             # print('got map ',i,thread_count())
+            del clpi,clgi,clpi_B
             gc.collect()
-            return clpi.T,clgi.T,clp_b,clpi_B.T,clg_b,clpB_b,clgB_b
+            # return clpi.T,clgi.T,clp_b,clpi_B.T,clg_b,clpB_b,clgB_b
+            return clp_b,clg_b,clpB_b,clgB_b
         else:
             return clpi.T,clgi.T
     
@@ -709,7 +720,8 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                 if l_bins is None:
                     clp[i,:],clg[i,:]=futures.result()[ii]
                 else:
-                    clp[i,:],clg[i,:],clp_b[i,:],clpB[i,:],clg_b_i,clpB_b[i,:],clgB_b_i=futures.result()[ii]
+                    # clp[i,:],clg[i,:],clp_b[i,:],clpB[i,:],clg_b_i,clpB_b[i,:],clgB_b_i=futures.result()[ii]
+                    clp_b[i,:],clg_b_i,clpB_b[i,:],clgB_b_i=futures.result()[ii]
                     for k in clg_b_i.keys():
                         clg_b[k][i,:]=clg_b_i[k]
                     clgB_b['iMaster'][i,:]=clgB_b_i['iMaster']
@@ -755,7 +767,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
 #     outp['xi_truth']=xi_truth
 #    outp['rb']=rb
 
-    outp['clpB']=clpB
+    # outp['clpB']=clpB
     outp['clg_b']=clg_b
     outp['clgB_b']=clg_b
     outp['clp_b']=clp_b
@@ -765,7 +777,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     outp['cl0']=cl0
     outp['clp0']=clp0
     outp['clp_shear_B_b']=clp_shear_B_b
-    outp['clp_shear_B']=clp_shear_B
+    # outp['clp_shear_B']=clp_shear_B
 #     outp['clN']=clN
 #     outp['xig']=xig
 #     outp['xigB']=xigB
@@ -773,7 +785,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
 #     outp['xiN']=xiN
 
 #     outp['clg']=clg
-    outp['clp']=clp
+    # outp['clp']=clp
 #     clg0_2=np.array(clg0)[[0,1,3],:]
 #     outp['clg_stats']={corr_t[ii]: calc_sim_stats(sim=clg[:,:,ii],sim_truth=clg0_2[ii]) for ii in np.arange(ndim)}#calc_sim_stats(sim=clg,sim_truth=clg0)
 #     outp['clp_stats']={corr_t[ii]: calc_sim_stats(sim=clp[:,:,ii],sim_truth=clp[:,:,ii].mean(axis=0)) for ii in np.arange(ndim)}#     calc_sim_stats(sim=clp,sim_truth=clp.mean(axis=0))
@@ -807,8 +819,8 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     #client.close()
     return outp
 #test_home=wig_home+'/tests/'
-test_home='/media/deep/data/repos/cosmic_shear/tests/'
-fname=test_home+'/non_gaussian_likeli_sims_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
+test_home='/home/deep/data/repos/SkyLens/tests/'
+fname=test_home+'/cl0_sims_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
 if lognormal:
     fname+='_lognormal'+str(lognormal_scale)
 if not use_shot_noise:

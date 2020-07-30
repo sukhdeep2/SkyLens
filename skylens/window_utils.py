@@ -48,10 +48,10 @@ class window_utils():
                 
         if self.Win is None and self.use_window and self.do_pseudo_cl:
             if self.do_xi:
-                print('Warning: window for xi is different from cl. Only one of xi or cl is supported. Hence cl window will be wrong.')
+                print('Warning: window for xi is different from cl.')
             self.set_wig3j()
             self.set_window(corrs=self.corrs,corr_indxs=self.corr_indxs)
-        elif self.do_xi and xi_win_approx:
+        elif self.do_xi and xi_win_approx:# and self.use_window:
             self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=None)
             self.Win=delayed(self.combine_coupling_xi_cov)(self.Win_cl,self.Win_cov,corrs)
             if self.store_win:
