@@ -1,6 +1,6 @@
 import sys
 #sys.path.insert(0,'../')
-from cov_3X2 import *
+from skylens import *
 
 # only for python3
 import importlib

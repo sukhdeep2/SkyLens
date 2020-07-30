@@ -299,7 +299,7 @@ class Power_Spectra():
             cosmo_params=self.cosmo_params
         scenario = pk_params['scenario']
 
-        out=self.class_pk(z,cosmo_params=cosmo_params,pk_params=pk_params,return_s8=return_s8)
+        out=self.camb_pk_too_many_z(z,cosmo_params=cosmo_params,pk_params=pk_params,return_s8=return_s8) #FIXME: pk_func should be use input.
         pk=out[0]
         kh=out[1]
 
