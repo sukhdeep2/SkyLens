@@ -409,7 +409,7 @@ def DESI_lens_bins(dataset='lrg',nbins=1,window_cl_fact=None,z_bins=None,
                        l=None,sigma_gamma=0,mag_fact=0,
                     **kwargs):
 
-    home='./desi/data/desi/'
+    home='../data/desi/data/desi/'
     fname=dataset+'_nz.dat'
     fname='nz_{d}.dat'.format(d=dataset)
 #     t=np.genfromtxt(home+fname,names=True,skip_header=3)
