@@ -118,6 +118,17 @@ class Tracer_utils():
 #         lm[x]=0        
         return b*np.outer(np.ones_like(z),lm)
 
+    def linear_bias_z(self,z=[],z_bin={},cosmo_h=None):
+        """
+        linear Galaxy bias, assumed to be constant in ell and specified at every z.
+        """
+        b=z_bin['b1_z']
+        lb_m=z_bin['lm']
+        lm=np.ones_like(self.l)
+#         x=self.l>lb_m  #if masking out modes based on kmax. lm is attribute of the z_bins, that is based on kmax.
+#         lm[x]=0        
+        return np.outer(b,lm)
+
     def linear_bias_powerlaw(self,z_bin={},cosmo_h=None):
         """
         Galaxy bias, assumed to be constant (ell independent). Varies as powerlaw with redshift. This is useful

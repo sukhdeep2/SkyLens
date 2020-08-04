@@ -67,7 +67,11 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None):
     p_zs=np.dot(dzp*p_zp,pdf)
 
     dzs=np.gradient(zs)
-    p_zs/=np.sum(p_zs*dzs)
+    # print(p_zs,dzp,p_zp,pdf,zp,bias)
+    if np.sum(p_zs*dzs)>0:
+        p_zs/=np.sum(p_zs*dzs)
+    else:
+        p_zs[:]=0
     return zs,p_zs
 
 def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False):
@@ -130,7 +134,8 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
 
     i=bin_indx
     x= p_zs>-1 #1.e-10
-
+    if x.sum()==0:
+        print('zbin_pz_norm cutting z',zs,p_zs)
     zs_bins[i]['z']=zs[x]
     zs_bins[i]['dz']=np.gradient(zs_bins[i]['z']) if len(zs_bins[i]['z'])>1 else 1
     zs_bins[i]['nz']=nz[x]
@@ -188,6 +193,8 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     zs_bins['SN']['shear']=np.zeros((len(l),nz_bins,nz_bins))
     zs_bins['SN']['kappa']=np.zeros((len(l),nz_bins,nz_bins))
 
+    pop_keys=[]
+
     for i in np.arange(nz_bins):
         zs_bins[i]={}
         indx=zp.searchsorted(z_bins[i:i+2])
@@ -200,7 +207,6 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
             nz=ns*p_zs*dzp[indx[0]:indx[1]]
             ns_i=nz.sum()
         else:
-
             ns_i=ns*np.sum(p_zp[indx[0]:indx[1]]*dzp[indx[0]:indx[1]])
             zs,p_zs=ztrue_func(zp=zp[indx[0]:indx[1]],p_zp=p_zp[indx[0]:indx[1]],
                             bias=zp_bias[indx[0]:indx[1]],
@@ -212,13 +218,33 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
         #zs_bins[i]['lens_kernel']=np.dot(zs_bins[i]['pzdz'],sc)
 
 #         print(zmax,zs_bins[i]['z'])
-        zmax=max([zmax,max(zs_bins[i]['z'])])
+        if zs_bins[i]['z'].size>0:
+            zmax=max([zmax,max(zs_bins[i]['z'])])
+        else:
+            pop_keys+=[i]
+        
+    if len(pop_keys)>0:
+        print('some bad bins', pop_keys)
+    #     ib=0
+    #     print('deleting bins', pop_keys)
+    #     for i in np.arange(nz_bins):
+    #         if i in pop_keys:
+    #             continue
+    #         zs_bins[ib]=copy.deepcopy(zs_bins[i])
+    #         ib+=1
+        
+    #     for i in np.arange(ib,nz_bins):
+    #         del zs_bins[i]
+    #     nz_bins-=len(pop_keys)
+
+    for i in np.arange(nz_bins):
         if use_shot_noise:
             zs_bins['SN']['galaxy'][:,i,i]=galaxy_shot_noise_calc(zg1=zs_bins[i],zg2=zs_bins[i])
             zs_bins['SN']['shear'][:,i,i]=shear_shape_noise_calc(zs1=zs_bins[i],zs2=zs_bins[i],
                                                                  sigma_gamma=sigma_gamma)
             zs_bins['SN']['kappa'][:,i,i]=shear_shape_noise_calc(zs1=zs_bins[i],zs2=zs_bins[i],
                                                                  sigma_gamma=sigma_gamma) #FIXME: This is almost certainly not correct
+
 
     zs_bins['n_bins']=nz_bins #easy to remember the counts
     zs_bins['z_lens_kernel']=zl_kernel
@@ -410,11 +436,17 @@ def DESI_lens_bins(dataset='lrg',nbins=1,window_cl_fact=None,z_bins=None,
                     **kwargs):
 
     home='../data/desi/data/desi/'
-    fname=dataset+'_nz.dat'
+    # fname=dataset+'_nz.dat'
     fname='nz_{d}.dat'.format(d=dataset)
 #     t=np.genfromtxt(home+fname,names=True,skip_header=3)
     t=np.genfromtxt(home+fname,names=('z_lo','z_hi','pz'))
+
+    x=t['pz']>0
+    t=t[x]
+
     t['pz']/=3600 #from /deg^2 to arcmin^2
+    ns=np.sum(t['pz'])
+    print('desi,',dataset,' n=',ns)
     z_m=0.5*(t['z_lo']+t['z_hi'])
     dz=t['z_hi']-t['z_lo']
     zmax=max(t['z_hi'])
@@ -427,7 +459,7 @@ def DESI_lens_bins(dataset='lrg',nbins=1,window_cl_fact=None,z_bins=None,
     if z_bins is None:
         z_bins=np.linspace(zmin, min(2,zmax), nbins+1)
     print(dataset,zmin,zmax,z_bins)
-    return source_tomo_bins(zp=z,p_zp=pz,ns=np.sum(pz),nz_bins=nbins,mag_fact=mag_fact,
+    return source_tomo_bins(zp=z,p_zp=pz,ns=ns,nz_bins=nbins,mag_fact=mag_fact,
                          ztrue_func=None,zp_bias=0,window_cl_fact=window_cl_fact,
                         zp_sigma=0,z_bins=z_bins,f_sky=f_sky,nside=nside,
                            use_window=use_window,mask_start_pix=mask_start_pix,bg1=bg1,

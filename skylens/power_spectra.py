@@ -305,7 +305,7 @@ class Power_Spectra():
 
         non_linear=pk_params['non_linear'] if pk_params.get('non_linear') is not None else 1
 
-        if scenario is None or scenario is 'dmo' or non_linear==0:
+        if scenario is None or  'dmo' in scenario or non_linear==0:
             if return_s8:
                 s8=out[2]
                 return pk,kh,s8

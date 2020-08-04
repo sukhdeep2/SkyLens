@@ -16,6 +16,10 @@ import numpy as np
 from scipy.interpolate import interp1d
 import warnings,logging
 import copy
+import sparse
+import gc
+gc.enable()
+
 
 d2r=np.pi/180.
 c=c.to(u.km/u.second)
@@ -29,7 +33,7 @@ class Skylens():
                 power_spectra_kwargs={},WT_kwargs=None,
                 z_PS=None,nz_PS=100,log_z_PS=True,
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
-                Tri_cov=False,
+                Tri_cov=False,sparse_cov=False,
                 use_window=True,window_lmax=None,window_l=None,store_win=False,Win=None,
                 f_sky=None,
                 l_bins=None,bin_cl=False,use_binned_l=False,do_pseudo_cl=True,
@@ -373,13 +377,22 @@ class Skylens():
 
         
         for k in ['final','G','SSC','Tri']:#no need to bin G1324 and G1423
-            if self.l_bins is not None and not self.bin_window:
+            if self.bin_cl: #self.l_bins is not None:# and not self.bin_window:
                 # cl_none,cov[k+'_b']=self.bin_cl_func(cov=cov[k])
                 cov[k+'_b']=self.bin_cl_func(cov=cov[k])
-            if self.bin_window:
+            # if self.bin_window:
+            else:
                 cov[k+'_b']=cov[k]
-            if not self.do_xi:
+            
+            if self.sparse_cov and cov[k+'_b'] is not None:
+                if k!='final':
+                    # print('deleting',k)
+                    cov[k+'_b']=None
+                    continue
+                cov[k+'_b']=sparse.COO(cov[k+'_b'])
+            if not self.do_xi and self.bin_cl:
                 del cov[k]
+        # gc.collect() #this can slow down the code.
         return cov
 
     def bin_cl_func(self,cl=None,cov=None):
@@ -462,6 +475,7 @@ class Skylens():
         self.Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
                                 cosmo_params=cosmo_params)
 
+        print('cl_tomo: Contructing cl dict')
         out={}
         cl={}
         pcl={} #pseudo_cl
@@ -504,16 +518,23 @@ class Skylens():
         #     if self.use_window:
         #         pcl_b[corr]=delayed(self.combine_cl_tomo)(pcl[corr],corr=corr,Win=self.Win.Win) #bin only pseudo-cl
     
-        print('cl dict done',cl_b.keys())
+        print('cl dict done')
         if self.do_cov:
+            # t1=time.time()
+            cii_t=0
+            gc.disable()
             start_j=0
+            Win=None
+            if self.use_window:
+                Win=self.Win.Win
             corrs_iter=[(corrs[i],corrs[j]) for i in np.arange(len(corrs)) for j in np.arange(i,len(corrs))]
+            
             for (corr1,corr2) in corrs_iter:
                 cov[corr1+corr2]={}
                 cov[corr2+corr1]={}
 
-                corr1_indxs=self.corr_indxs[(corr1[0],corr1[1])]
-                corr2_indxs=self.corr_indxs[(corr2[0],corr2[1])]
+                corr1_indxs=stack_corr_indxs[(corr1[0],corr1[1])]
+                corr2_indxs=stack_corr_indxs[(corr2[0],corr2[1])]
 
                 if corr1==corr2:
                     cov_indxs_iter=[ k for l in [[(i,j) for j in np.arange(i,
@@ -521,18 +542,26 @@ class Skylens():
                 else:
                     cov_indxs_iter=[ k for l in [[(i,j) for i in np.arange(
                                     len(corr1_indxs))] for j in np.arange(len(corr2_indxs))] for k in l]
-                Win=None
-                if self.use_window:
-                    Win=self.Win.Win
+                
                 for (i,j) in cov_indxs_iter:
                     indx=corr1_indxs[i]+corr2_indxs[j]
                     cov[corr1+corr2][indx]=delayed(self.cl_cov)(cls=cl, zs_indx=indx,Win=Win,
                                                                     tracers=corr1+corr2)
                     indx2=corr2_indxs[j]+corr1_indxs[i]
                     cov[corr2+corr1][indx2]=cov[corr1+corr2][indx]
+                    # cii_t+=1
+                    # print(corr1,corr2,len(corr1_indxs),len(corr2_indxs),i,j,cii_t,' done ') #, time.time()-t1)
+                    # if cii_t%10000==0:
+                    #     print('calling gc', cii_t)
+                    #     gc.enable()
+                    #     gc.collect()
+                    #     gc.disable()
+            gc.enable()
+            gc.collect()
 
         out_stack=delayed(self.stack_dat)({'cov':cov,'pcl_b':pcl_b,'est':'pcl_b'},corrs=corrs,
                                           corr_indxs=stack_corr_indxs)
+        # gc.collect()
         return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl,'pseudo_cl':pcl,'pseudo_cl_b':pcl_b}
 
     def xi_cov(self,cov_cl={},cls={},s1_s2=None,s1_s2_cross=None,clr=None,clrk=None,indxs_1=[],
@@ -713,7 +742,7 @@ class Skylens():
                                     indx=indxs_1[i1]+indxs_2[i2]
                                     cov_xi[corr][s1_s2+s1_s2_cross][indx]=delayed(self.xi_cov)(
                                                                     cov_cl=cov_cl[indx]#.compute()
-                                                                    , cls=cl
+                                                                    ,cls=cl
                                                                     ,s1_s2=s1_s2,
                                                                     s1_s2_cross=s1_s2_cross,clr=clr,
                                                                     Win=self.Win.Win,
@@ -747,7 +776,6 @@ class Skylens():
             len_bins=len(self.theta_bins)-1
         else:
             #est='cl_b'
-            n_s1_s2=1
             if self.l_bins is not None:
                 len_bins=len(self.l_bins)-1
             else:
@@ -755,12 +783,13 @@ class Skylens():
 
         n_bins=0
         for corr in corrs:
+            n_s1_s2=1
             if est=='xi':
                 n_s1_s2=len(self.s1_s2s[corr])
             n_bins+=len(corr_indxs[corr])*n_s1_s2 #np.int64(nbins*(nbins-1.)/2.+nbins)
 #         print(n_bins,len_bins,n_s1_s2)
         D_final=np.zeros(n_bins*len_bins)
-
+        print('stacking cl, size', len(D_final))
         i=0
         for corr in corrs:
             n_s1_s2=1
@@ -777,13 +806,17 @@ class Skylens():
                 for indx in corr_indxs[corr]:
                     D_final[i*len_bins:(i+1)*len_bins]=dat_c[indx]
                     i+=1
-
+        print('done stacking cl/xi')
         if not self.do_cov:
             out={'cov':None}
             out[est]=D_final
             return out
 
-        cov_final=np.zeros((len(D_final),len(D_final)))-999.#np.int(nD2*(nD2+1)/2)
+        
+        cov_final=np.zeros((len(D_final),len(D_final)))#-999.#np.int(nD2*(nD2+1)/2)
+        if self.sparse_cov:
+            # cov_final=sparse.zeros((len(D_final),len(D_final)))#(cov_final)
+            cov_final=sparse.DOK(cov_final)
 
         indx0_c1=0
         for ic1 in np.arange(len(corrs)):
@@ -829,6 +862,8 @@ class Skylens():
                                 else:
                                     cov_here=dat['cov'][corr][indx]['final_b']
 
+                                if self.sparse_cov:
+                                    cov_here=cov_here.todense()
                                 # if im1==im2:
                                 i=indx0_c1+indx0_1+indx0_m1
                                 j=indx0_c2+indx0_2+indx0_m2
@@ -846,6 +881,7 @@ class Skylens():
                                     j=indx0_c2+indx0_2+indx0_m1
                                     cov_final[i:i+len_bins,j:j+len_bins]=cov_here.T
                                     cov_final[j:j+len_bins,i:i+len_bins]=cov_here
+                                    gc.collect()
 
                 indx0_c2+=n_indx2*len_bins*n_s1_s2_2
             indx0_c1+=n_indx1*len_bins*n_s1_s2_1
