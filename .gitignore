@@ -7,7 +7,7 @@
 *.out
 *.synctex.gz
 
-*dask-worker-space/*
+*dask-worker-space*
 *mydask.png*
 *.dat
 *.pkl

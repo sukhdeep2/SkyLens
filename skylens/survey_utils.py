@@ -129,6 +129,7 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
     if np.sum(p_zs*dzs)!=0:
         p_zs=p_zs/np.sum(p_zs*dzs)
     else:
+        print('zbin_pz_norm empty bin',bin_indx)
         p_zs*=0
     nz=dzs*p_zs*ns
 
@@ -150,6 +151,7 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
     zs_bins[i]['mag_fact']=mag_fact
     zm=np.sum(zs_bins[i]['z']*zs_bins[i]['pzdz'])/zs_bins[i]['Norm']
     zs_bins[i]['lm']=k_max*cosmo_h.comoving_transverse_distance(zm).value
+    zs_bins[i]['k_max']=k_max
     return zs_bins
 
 
@@ -222,9 +224,13 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
             zmax=max([zmax,max(zs_bins[i]['z'])])
         else:
             pop_keys+=[i]
+        if zs_bins[i]['Norm']==0:
+            print('empty bin',i)
+            pop_keys+=[i]
         
     if len(pop_keys)>0:
         print('some bad bins', pop_keys)
+#         crash
     #     ib=0
     #     print('deleting bins', pop_keys)
     #     for i in np.arange(nz_bins):
@@ -250,6 +256,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     zs_bins['z_lens_kernel']=zl_kernel
     zs_bins['zmax']=zmax
     zs_bins['zp']=zp
+    zs_bins['zs']=zs
     zs_bins['pz']=p_zp
     zs_bins['z_bins']=z_bins
     zs_bins['zp_sigma']=zp_sigma

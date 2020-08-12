@@ -181,8 +181,8 @@ class Power_Spectra():
                             mnu=cosmo_params['mnu'],tau=cosmo_params['tau']
                             ) #    omk=cosmo_params['Omk'], )
 
-        if cosmo_params['w']!=-1:
-            pars.set_dark_energy(cosmo_params['w'])
+        if cosmo_params['w']!=-1 or cosmo_params['wa']!=0:
+            pars.set_dark_energy(w=cosmo_params['w'],wa=cosmo_params['wa'],dark_energy_model='ppf')
 
         #stdout=np.copy(sys.stdout)
         #sys.stdout = open(os.devnull, 'w')

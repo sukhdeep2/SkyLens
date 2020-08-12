@@ -405,24 +405,24 @@ class Skylens():
         """
         cl_b=None
         cov_b=None
-        if self.bin_cl:
-            if not cl is None:
-                if self.use_binned_l:
-                    cl_b=cl*1.
-                else:
-                    cl_b=self.binning.bin_1d(xi=cl,bin_utils=self.cl_bin_utils)
-                return cl_b
-            if not cov is None:
-                if self.use_binned_l:
-                    cov_b=cov*1.
-                else:
-                    cov_b=self.binning.bin_2d(cov=cov,bin_utils=self.cl_bin_utils)
-                return cov_b
+#         if self.bin_cl:
+        if not cl is None:
+            if self.use_binned_l or not self.bin_cl:
+                cl_b=cl*1.
+            else:
+                cl_b=self.binning.bin_1d(xi=cl,bin_utils=self.cl_bin_utils)
+            return cl_b
+        if not cov is None:
+            if self.use_binned_l or not self.bin_cl:
+                cov_b=cov*1.
+            else:
+                cov_b=self.binning.bin_2d(cov=cov,bin_utils=self.cl_bin_utils)
+            return cov_b
 
     def calc_pseudo_cl(self,cl,Win,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear')):
         return cl@Win['cl'][corr][(zs1_indx,zs2_indx)]['M'] 
 
-    def cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
+    def cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,
                 corrs=None,bias_kwargs={},bias_func=None,stack_corr_indxs=None):
         """
          Computes full tomographic power spectra and covariance, including shape noise. output is
@@ -472,10 +472,10 @@ class Skylens():
             self.tracer_utils.set_kernel(cosmo_h=cosmo_h,zl=self.Ang_PS.z,tracer='galaxy')
             self.SN[('galaxy','galaxy')]=self.tracer_utils.SN['galaxy']
 
-        self.Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_func=pk_func,
+        self.Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,
                                 cosmo_params=cosmo_params)
 
-        print('cl_tomo: Contructing cl dict')
+#         print('cl_tomo: Contructing cl dict')
         out={}
         cl={}
         pcl={} #pseudo_cl
@@ -518,7 +518,7 @@ class Skylens():
         #     if self.use_window:
         #         pcl_b[corr]=delayed(self.combine_cl_tomo)(pcl[corr],corr=corr,Win=self.Win.Win) #bin only pseudo-cl
     
-        print('cl dict done')
+#         print('cl dict done')
         if self.do_cov:
             # t1=time.time()
             cii_t=0
@@ -789,7 +789,7 @@ class Skylens():
             n_bins+=len(corr_indxs[corr])*n_s1_s2 #np.int64(nbins*(nbins-1.)/2.+nbins)
 #         print(n_bins,len_bins,n_s1_s2)
         D_final=np.zeros(n_bins*len_bins)
-        print('stacking cl, size', len(D_final))
+#         print('stacking cl, size', len(D_final))
         i=0
         for corr in corrs:
             n_s1_s2=1
@@ -802,11 +802,13 @@ class Skylens():
                     dat_c=dat[est][corr][s1_s2[im]]
                 else:
                     dat_c=dat[est][corr]#[corr] #cl_b gets keys twice. dask won't allow standard dict merge.. should be fixed
-
+                    
                 for indx in corr_indxs[corr]:
                     D_final[i*len_bins:(i+1)*len_bins]=dat_c[indx]
+#                     if not np.all(np.isfinite(dat_c[indx])):
+#                         print('Theory Not finite',dat_c[indx],indx,corr)#,self.z_bins['galaxy'][indx[0]])
                     i+=1
-        print('done stacking cl/xi')
+#         print('done stacking cl/xi')
         if not self.do_cov:
             out={'cov':None}
             out[est]=D_final

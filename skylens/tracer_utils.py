@@ -204,6 +204,8 @@ class Tracer_utils():
                                                         cosmo_h=cosmo_h)
             z_bins[i]['Gkernel_int']=np.dot(z_bins[i]['pzdz'],z_bins[i]['Gkernel'])
             z_bins[i]['Gkernel_int']/=z_bins[i]['Norm']
+            if z_bins[i]['Norm']==0:#FIXME
+                z_bins[i]['Gkernel_int'][:]=0
             z_bins[i]['Gkernel_int']=np.outer(spin_fact,z_bins[i]['Gkernel_int'])
 
     def set_galaxy_kernel(self,cosmo_h=None,zl=None,tracer=None):
@@ -243,10 +245,16 @@ class Tracer_utils():
                 pz_zl/=np.sum(pz_zl*dzl)
             else:
                 pz_zl=np.interp(zl,z_bins[i]['z'],z_bins[i]['pz'],left=0,right=0) #this is linear interpolation
-                pz_zl/=np.sum(pz_zl*dzl)
-            
+                if not np.sum(pz_zl*dzl)==0: #FIXME
+                    pz_zl/=np.sum(pz_zl*dzl)
+                else:
+                    print('Apparently empty bin',i,zl,z_bins[i]['z'],z_bins[i]['pz'])
+                  
             z_bins[i]['gkernel_int']=z_bins[i]['gkernel'].T*pz_zl #dzl multiplied later
             z_bins[i]['gkernel_int']/=np.sum(pz_zl*dzl)
+          
+            if np.sum(pz_zl*dzl)==0: #FIXME
+                z_bins[i]['gkernel_int'][:]=0
                 
     def reset_zs(self):
         """

@@ -58,15 +58,20 @@ class Angular_power_spectra():
         self.dz=np.gradient(self.z)
 
     def angular_power_z(self,z=None,pk_params=None,cosmo_h=None,
-                    cosmo_params=None,pk_func=None):
+                    cosmo_params=None):
         """
              This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts.
              The shape of the output is l,nz, where nz is the number of z bins.
         """
-
+        
+        if self.clz is not None:
+            if pk_params ==self.clz['pk_params'] and cosmo_params==self.clz['cosmo_params']:
+#                 print('angular_power_z: Pk same as before, not recomputing')
+                return # same as last calculation
+#         print('angular_power_z: computing Pk')
+        
         if cosmo_h is None:
             cosmo_h=self.PS.cosmo_h
-
         l=self.l
 
         z=self.z
@@ -107,7 +112,8 @@ class Angular_power_spectra():
 
 
             #cl*=2./np.pi #comparison with CAMB requires this.
-        self.clz={'cls':cls,'l':l,'cH':cH,'dchi':cH*self.dz,'chi':chi,'dz':self.dz}
+        self.clz={'cls':cls,'l':l,'cH':cH,'dchi':cH*self.dz,'chi':chi,'dz':self.dz,
+                 'cosmo_params':cosmo_params,'pk_params':pk_params}
         if self.SSV_cov:
 #             self.cov_utils.sigma_win_calc(cls_lin=cls_lin)
             self.clz.update({'clsR':cls*Rls,'clsRK':cls*RKls,'cls_lin':cls_lin})
