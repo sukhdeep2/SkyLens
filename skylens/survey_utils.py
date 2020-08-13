@@ -178,7 +178,8 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
         z_bins=np.linspace(min(zp)-0.0001,max(zp)+0.0001,nz_bins+1)
 
     if zs is None:
-        zs=np.linspace(0,max(z_bins)+1,n_zs)
+        sigma_max=max(np.atleast_1d(zp_sigma))*5
+        zs=np.linspace( max(0.05,min(zp)-sigma_max), max(zp)+sigma_max,n_zs)
     dzs=np.gradient(zs)
     dzp=np.gradient(zp) if len(zp)>1 else [1]
     zp=np.array(zp)
