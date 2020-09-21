@@ -1,3 +1,7 @@
+#FIXME: 
+# 1. need to save SN from kappa_class
+# 2. save window correlation from treecorr and theory
+
 import sys, os, gc, threading, subprocess
 sys.path.insert(0,'../skylens/')
 from thread_count import *
@@ -47,7 +51,7 @@ gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
 gc.enable()
 
 use_complicated_window=False if not args.cw else np.bool(args.cw)
-unit_window=False if not args.uw else np.bool(args.cw)
+unit_window=False if args.uw is None else np.bool(args.uw)
 lognormal=False if not args.lognormal else np.bool(args.lognormal)
 
 do_blending=False if not args.blending else np.bool(args.blending)
@@ -55,6 +59,7 @@ do_SSV_sim=False if not args.ssv else np.bool(args.ssv)
 use_shot_noise=True if args.noise is None else np.bool(args.noise)
 
 print(use_complicated_window,unit_window,lognormal,do_blending,do_SSV_sim,use_shot_noise)
+# print(args.cw,args.uw,lognormal,do_blending,do_SSV_sim,use_shot_noise)
 
 do_pseudo_cl=False if not args.pseudo_cl else np.bool(args.pseudo_cl)
 do_xi=True if args.xi is None else np.bool(args.xi)
@@ -80,7 +85,7 @@ do_cov_jk=False #compute covariance coupling matrices
 
 lognormal_scale=2
 
-nside=1024
+nside=512
 lmax_cl=1000#
 window_lmax=2000 #0
 
@@ -168,7 +173,7 @@ corr_ll=('shear','shear')
 corrs=[corr_ll,corr_ggl,corr_gg]
 
 
-th_min=1./60
+th_min=10./60
 th_max=600./60
 n_th_bins=20
 th_bins=np.logspace(np.log10(th_min),np.log10(th_max),n_th_bins+1)
@@ -176,7 +181,7 @@ th=np.logspace(np.log10(th_min*0.98),np.log10(1),n_th_bins*30)
 th2=np.linspace(1,th_max*1.02,n_th_bins*30)
 th=np.unique(np.sort(np.append(th,th2)))
 thb=np.sqrt(th_bins[1:]*th_bins[:-1])
-corr_config = {'min_sep':th_min*60, 'max_sep':th_max*60, 'nbins':n_th_bins, 'sep_units':'arcmin'}
+corr_config = {'min_sep':th_min*60, 'max_sep':th_max*60, 'nbins':n_th_bins, 'sep_units':'arcmin','metric':'Arc','bin_slop':False}#0.01}
 bin_xi=True
 
 l0_win=np.arange(lmax_cl)
@@ -363,7 +368,7 @@ def get_xi_window_norm(window=None):
     for corr in corrs:
         tree_corrs=treecorr.NNCorrelation(**corr_config)
         _=tree_corrs.process(tree_cat[corr[0]],tree_cat[corr[1]])
-        window_norm[corr]=tree_corrs.weight*1.
+        window_norm[corr]=tree_corrs.weight*1./tree_corrs.npairs
     del tree_cat,tree_corrs
     return window_norm
 
@@ -397,7 +402,7 @@ def get_xi(map,window_norm,mask=None):
         mask['shear']=maps['shear'][0]==hp.UNSEEN
     tree_cat_args=get_treecorr_cat_args(maps,masks=mask)
     tree_cat={}
-    tree_cat['galaxy']=treecorr.Catalog(w=maps['galaxy'][~mask['galaxy']], **tree_cat_args['galaxy'])
+    tree_cat['galaxy']=treecorr.Catalog(w=maps['galaxy'][~mask['galaxy']], **tree_cat_args['galaxy']) 
     tree_cat['shear']=treecorr.Catalog(g1=maps['shear'][0][~mask['shear']],g2=maps['shear'][1][~mask['shear']], **tree_cat_args['shear'])
     del mask
     ndim=3 #FIXME
@@ -408,19 +413,21 @@ def get_xi(map,window_norm,mask=None):
         if corr==corr_ggl:
             tree_corrs[corr]=treecorr.NGCorrelation(**corr_config)
             tree_corrs[corr].process(tree_cat['galaxy'],tree_cat['shear'])
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xi*(tree_corrs[corr].weight/window_norm[corr])
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xi*tree_corrs[corr].weight/tree_corrs[corr].npairs/window_norm[corr]*-1 #sign convention 
+                #
             th_i+=n_th_bins
         if corr==corr_ll:
             tree_corrs[corr]=treecorr.GGCorrelation(**corr_config)
             tree_corrs[corr].process(tree_cat['shear'])
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xip*(tree_corrs[corr].weight/window_norm[corr])
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xip/window_norm[corr] #*(tree_corrs[corr].weight
             th_i+=n_th_bins
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xim*(tree_corrs[corr].weight/window_norm[corr])
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xim/window_norm[corr]
             th_i+=n_th_bins
         if corr==corr_gg:
             tree_corrs[corr]=treecorr.NNCorrelation(**corr_config)
             tree_corrs[corr].process(tree_cat['galaxy'])
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/window_norm[corr]
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/tree_corrs[corr].npairs/window_norm[corr]  #
+#             xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/window_norm[corr]
             th_i+=n_th_bins
     del tree_cat,tree_corrs
     gc.collect()
@@ -1015,8 +1022,12 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
     if do_xi:
         xi_b=get_full_samp(xi_b)
         outp['xi_b_stats']=client.compute(delayed(calc_sim_stats)(sim=xi_b['full'],sim_truth=xi_b['full'].mean(axis=0)))
+        outp['xi_b_stats']=outp['xi_b_stats'].result()
         outp['xi0']=xi_L0
         outp['xiW0']=xiW_L
+        outp['xi_b']=xi_b
+        outp['xi_window_norm']=xi_window_norm
+
     outp['cl0']=cl0
     outp['clN0']=clN0
     outp['cl0']=cl0

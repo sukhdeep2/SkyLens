@@ -1,10 +1,10 @@
-use_complicated_windows=( 0 1 )
+use_complicated_windows=( 0 )
 unit_windows=( 0 1 ) #( 0 1 )
 
 lognormals=( 0 )  #( 0 1 )
 do_blendings=( 0 ) #( 0 1 ) 
 do_SSV_sims=( 0 )
-use_shot_noises=( 0 1 )
+use_shot_noises=( 1 )
 
 echo 'doing'
 for use_complicated_window in "${use_complicated_windows[@]}"
@@ -44,12 +44,12 @@ do
                         #     exit 
                         # fi
 
-                        # if [ "$do_SSV_sim" -eq "1" ] && [ "$use_shot_noise" -eq "0" ]
-                        # then 
-                        #     #echo $do_blending $do_SSV_sim
-                        #     #continue
-                        #     exit 
-                        # fi
+                        if [ "$use_complicated_window" -eq "1" ] && [ "$unit_window" -eq "1" ]
+                        then 
+                            #echo $do_blending $do_SSV_sim
+                            #continue
+                            exit 
+                        fi
 
                         log_file='../temp/log/run_sim'$use_complicated_window$unit_window$lognormal$do_blending$do_SSV_sim$use_shot_noise".log"
 
@@ -58,8 +58,8 @@ do
                         echo 'logfile' $log_file
                         echo '=============================================================='>>$log_file
                         echo 'begining::' $(date)>>$log_file 
-                        # python run_sim.py $use_complicated_window $unit_window $lognormal $do_blending $do_SSV_sim $use_shot_noise |cat>>$log_file
-                        python3 run_sim.py  --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise |cat>>$log_file
+                        
+#                         python3 run_sim.py  --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise |cat>>$log_file
                         
                         #---------------------------------------------------
                         echo '=========================================================================================='|cat>>$log_file

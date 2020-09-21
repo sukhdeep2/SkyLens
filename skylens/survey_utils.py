@@ -72,6 +72,7 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None):
         p_zs/=np.sum(p_zs*dzs)
     else:
         p_zs[:]=0
+    
     return zs,p_zs
 
 def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False):
@@ -126,6 +127,9 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
                  AI_z=0,mag_fact=0,k_max=0.3):
     dzs=np.gradient(zs) if len(zs)>1 else 1
 
+    x=np.absolute(p_zs)<1.e-10 #to avoid some numerical errors
+    p_zs[x]=0
+    
     if np.sum(p_zs*dzs)!=0:
         p_zs=p_zs/np.sum(p_zs*dzs)
     else:
@@ -146,6 +150,7 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
     zs_bins[i]['pzdz']=zs_bins[i]['pz']*zs_bins[i]['dz']
     zs_bins[i]['Norm']=np.sum(zs_bins[i]['pzdz'])
     zs_bins[i]['b1']=bg1
+    zs_bins[i]['bz1']=bg1*np.ones_like(zs_bins[i]['pz'])
     zs_bins[i]['AI']=AI
     zs_bins[i]['AI_z']=AI_z
     zs_bins[i]['mag_fact']=mag_fact
@@ -262,6 +267,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     zs_bins['z_bins']=z_bins
     zs_bins['zp_sigma']=zp_sigma
     zs_bins['zp_bias']=zp_bias
+    zs_bins['bias_func']='constant_bias'
     if use_window:
         zs_bins=set_window(zs_bins=zs_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
                            window_cl_fact=window_cl_fact,unit_win=unit_win)

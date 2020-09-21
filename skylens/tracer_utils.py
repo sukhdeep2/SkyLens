@@ -122,7 +122,9 @@ class Tracer_utils():
         """
         linear Galaxy bias, assumed to be constant in ell and specified at every z.
         """
-        b=z_bin['b1_z']
+#         b=z_bin['bz1']
+        b=np.interp(z,z_bin['z'],z_bin['bz1'],left=0,right=0) #this is linear interpolation
+        
         lb_m=z_bin['lm']
         lm=np.ones_like(self.l)
 #         x=self.l>lb_m  #if masking out modes based on kmax. lm is attribute of the z_bins, that is based on kmax.
@@ -215,11 +217,14 @@ class Tracer_utils():
         """
         IA_const=0.0134*cosmo_h.Om0
         b_const=1
+        z_bins=self.get_z_bins(tracer=tracer)
         if tracer=='shear' or tracer=='kappa': # kappa maps can have AI. For CMB, set AI=0 in the z_bin properties.
             bias_func=self.NLA_amp_z
             b_const=IA_const
         if tracer=='galaxy':
-            bias_func=self.constant_bias #FIXME: Make it flexible to get other bias functions
+            bias_func_t=z_bins.get('bias_func')
+            bias_func=self.constant_bias if bias_func_t is None else getattr(self,bias_func_t)
+#             bias_func=self.constant_bias #FIXME: Make it flexible to get other bias functions
         
         spin_fact=self.spin_factor(tracer=tracer)
         
@@ -227,7 +232,6 @@ class Tracer_utils():
         cH=c/(cosmo_h.efunc(zl)*cosmo_h.H0)
         cH=cH.value
         
-        z_bins=self.get_z_bins(tracer=tracer)
         n_bins=z_bins['n_bins']
         for i in np.arange(n_bins):
             z_bins[i]['gkernel']=b_const*bias_func(z=zl,z_bin=z_bins[i],cosmo_h=cosmo_h)

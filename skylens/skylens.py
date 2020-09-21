@@ -651,14 +651,14 @@ class Skylens():
         if self.use_binned_l or self.use_binned_theta:
             wig_m=self.WT_binned[corr][s1_s2][indxs]
         th,xi=self.WT.projected_correlation(l_cl=self.l,s1_s2=s1_s2,cl=cl,wig_d=wig_m)
-        if not self.use_window and self.xi_win_approx: 
+        if self.use_window and self.xi_win_approx: 
             xi=xi*Win['cl'][corr][indxs]['xi']
 
         xi_b=xi
         if self.bin_xi and not self.use_binned_theta:
             xi_b=self.binning.bin_1d(xi=xi,bin_utils=self.xi_bin_utils[s1_s2])
         
-        if self.use_window or self.xi_win_approx:
+        if self.use_window:# or self.xi_win_approx:
             xi_b/=(Win['cl'][corr][indxs]['xi_b'])
         return xi_b
 
@@ -682,8 +682,7 @@ class Skylens():
 
         #Donot use delayed here. Leads to error/repeated calculations
         cls_tomo_nu=self.cl_tomo(cosmo_h=cosmo_h,cosmo_params=cosmo_params,
-                            pk_params=pk_params,pk_func=pk_func,
-                            corrs=corrs)
+                            pk_params=pk_params,corrs=corrs)
 
         cl=cls_tomo_nu['pseudo_cl'] #Note that if window is turned off, pseudo_cl=cl
         cov_xi={}
