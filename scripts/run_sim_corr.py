@@ -75,15 +75,18 @@ if test_run:
     
 wigner_files={}
 # wig_home='/global/cscratch1/sd/sukhdeep/dask_temp/'
-#wig_home='/Users/Deep/dask_temp/'
-wig_home='/media/deep/repos/Skylens/temp/'
+wig_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
+# wig_home='/media/deep/repos/Skylens/temp/'
 wigner_files[0]= wig_home+'/dask_wig3j_l6500_w2100_0_reorder.zarr'
 wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 
 l0w=np.arange(3*nside-1)
 
 memory='55gb'#'120gb'
-ncpu=12 #4
+import multiprocessing
+
+ncpu=multiprocessing.cpu_count() - 2
+#ncpu=28 #4
 if test_run:
     memory='20gb'
     ncpu=4
@@ -596,7 +599,8 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     #client.close()
     return outp
 #test_home=wig_home+'/tests/'
-test_home='/media/deep/data/repos/cosmic_shear/tests/'
+# test_home='/media/deep/data/repos/cosmic_shear/tests/'
+test_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/'
 fname=test_home+'/corr_sims_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
 if lognormal:
     fname+='_lognormal'+str(lognormal_scale)

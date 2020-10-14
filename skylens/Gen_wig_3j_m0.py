@@ -10,7 +10,9 @@ m3=0
 lmax=np.int(lmax)
 wlmax=np.int(wlmax)
 
-fname='temp/dask_wig3j_l{lmax}_w{wlmax}_{i}_reorder.zarr'  #path to save the files
+home='./'
+home='/physics2/sukhdees/skylens/'
+fname=home+'temp/dask_wig3j_l{lmax}_w{wlmax}_{i}_reorder.zarr'  #path to save the files
 fname=fname.format(i=m2,lmax=lmax,wlmax=wlmax)
 print('will save to ',fname)
 

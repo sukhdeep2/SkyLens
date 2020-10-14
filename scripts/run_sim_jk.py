@@ -85,7 +85,7 @@ do_cov_jk=False #compute covariance coupling matrices
 
 lognormal_scale=2
 
-nside=512
+nside=1024
 lmax_cl=1000#
 window_lmax=2000 #0
 
@@ -119,14 +119,20 @@ if test_run:
 wigner_files={}
 # wig_home='/global/cscratch1/sd/sukhdeep/dask_temp/'
 #wig_home='/Users/Deep/dask_temp/'
-wig_home='/home/deep/data/repos/SkyLens/temp/'
+#wig_home='/home/deep/data/repos/SkyLens/temp/'
+#home='/physics2/sukhdees/skylens/'
+home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/'
+wig_home=home+'temp/'
 wigner_files[0]= wig_home+'/dask_wig3j_l6500_w2100_0_reorder.zarr'
 wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 
 l0w=np.arange(3*nside-1)
 
-memory='55gb'#'120gb'
-ncpu=12 #4
+memory='240gb'#'120gb'
+import multiprocessing
+
+ncpu=multiprocessing.cpu_count() - 2
+# ncpu=20 #4
 if test_run:
     memory='20gb'
     ncpu=4
@@ -1043,8 +1049,8 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
     return outp
 
 
-#test_home=wig_home+'/tests/'
-test_home='/home/deep/data/repos/SkyLens/tests/'
+test_home=home+'/tests/'
+#test_home='/home/deep/data/repos/SkyLens/tests/'
 
 f0='/sims'
 if do_pseudo_cl:
