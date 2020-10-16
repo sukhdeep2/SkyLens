@@ -33,9 +33,9 @@ from survey_utils import *
 wigner_files={}
 # wigner_files[0]= '/Users/Deep/dask_temp/dask_wig3j_l3500_w2100_0_reorder.zarr'
 # wigner_files[2]= '/Users/Deep/dask_temp/dask_wig3j_l3500_w2100_2_reorder.zarr'
-
-wigner_files[0]= '/home/deep/data/repos/SkyLens/temp/dask_wig3j_l6500_w2100_0_reorder.zarr'
-wigner_files[2]= '/home/deep/data/repos/SkyLens/temp/dask_wig3j_l3500_w2100_2_reorder.zarr'
+wig_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
+wigner_files[0]= wig_home+'dask_wig3j_l3500_w2100_0_reorder.zarr'
+wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 
 
 #setup parameters
@@ -64,7 +64,7 @@ theta_bins=np.logspace(np.log10(1./60),1,20)
 store_win=True
 window_lmax=200
 
-use_window=False
+use_window=True
 do_cov=True
 
 nside=128
@@ -72,12 +72,12 @@ nside=128
 z0=1 #1087
 zs_bin1=source_tomo_bins(zp=[z0],p_zp=np.array([1]),ns=30,use_window=use_window,nside=nside)
 
-print('got z bin')
+print('got z bin',l0.shape,l_bins.shape)
 
-use_binned_l=True
+use_binned_l=False
 store_win=True
 SSV_cov=False
-bin_cl=False
+bin_cl=True
 do_cov=True
 Tri_cov=False
 
