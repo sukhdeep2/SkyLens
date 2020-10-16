@@ -51,7 +51,8 @@ CONTROLFILE=$CSCRATCH/${SLURM_JOB_ID}/${SLURM_JOB_ID}.control
 MEM=$(($MEMORYLIMIT / $NPROCS))MB
 
 NPROCS=1
-NTHREADS=$(($SLURM_CPUS_ON_NODE))
+NCPU=$SLURM_CPUS_ON_NODE
+NTHREADS=$(($SLURM_CPUS_ON_NODE*2))
 NWORKER=$(($SLURM_NNODES ))
 
 MEMORYLIMIT=`free -t -m| awk '/^Total/ {print $2}'`
@@ -147,7 +148,7 @@ while ! [ -f $SCHEFILE ]; do
 done
 echo 'Scheduler booted, launching worker and client' $NWORKER'  '$NTHREADS'  '$NPROCS '  ' $SCHEFILE>>$log_file
 
-srun -x `hostname` --cpu-bind=none -l -N $NWORKER -n $NWORKER \
+srun -x `hostname` --cpu-bind=none -l -N $SLURM_NNODES -n $NWORKER -c $NCPU \
  --output=$WORKSPACE/worker-%t.log \
  python `which dask-worker` \
  --nthreads=$NTHREADS \

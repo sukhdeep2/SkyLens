@@ -115,7 +115,7 @@ do
                             echo -n .>>$log_file
                         done
 			sleep 10
-			python3 run_sim_jk.py --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise --scheduler=$SCHEFILE |cat>>$log_file
+			python run_sim_jk.py --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise --scheduler=$SCHEFILE |cat>>$log_file
 			
 			#cmd="python3 run_sim_jk.py --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise"
 			#echo $cmd

@@ -31,7 +31,7 @@ from dask.distributed import Client  # we already had this above
 
 import argparse
 
-test_run=True
+test_run=False
 parser = argparse.ArgumentParser()
 parser.add_argument("--cw", "-cw",type=int, help="use complicated window")
 parser.add_argument("--uw", "-uw",type=int, help="use unit window")
@@ -142,7 +142,7 @@ if test_run:
 
 if Scheduler_file is None:
     worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
-    LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
+    LC=LocalCluster(n_workers=2,processes=False,memory_limit=memory,threads_per_worker=ncpu,
                 local_dir=wig_home+'/NGL-worker/', **worker_kwargs,
                 #scheduler_port=12234,
 #                 dashboard_address=8801
@@ -243,11 +243,11 @@ kappa_win=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0
 )
 
 clG_win=kappa_win.cl_tomo(corrs=corrs)
-cl0_win=clG_win['stack'].compute()
-
+cl0_win=client.compute(clG_win['stack']).result()#.compute()
+client.restart()
 if do_xi:
     xiWG_L=kappa_win.xi_tomo()
-    xiW_L=xiWG_L['stack'].compute()
+    xiW_L=client.compute(xiWG_L['stack']).result() #.compute()  #####mem crash
 
 kappa0=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
             use_window=False,store_win=store_win,corrs=corrs,window_lmax=window_lmax,
@@ -255,12 +255,12 @@ kappa0=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, z
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi)
 
 clG0=kappa0.cl_tomo(corrs=corrs) 
-cl0=clG0['stack'].compute()
+cl0=client.compute(clG0['stack']).result()#.compute()
 
 
 if do_xi:
      xiG_L0=kappa0.xi_tomo()
-     xi_L0=xiG_L0['stack'].compute()
+     xi_L0=client.compute(xiG_L0['stack']).result() #.compute()
 
 bi=(0,0)
 cl0={'cl_b':{},'cov':{},'cl':{}}

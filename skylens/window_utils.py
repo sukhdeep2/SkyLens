@@ -33,7 +33,7 @@ class window_utils():
             self.step=min(self.step,nl+1)
             
         self.lms=np.int32(np.arange(nwl,step=self.step))
-        print('Win gen: step size',self.step,self.do_pseudo_cl)#,self.window_l,self.lms)
+        print('Win gen: step size',self.step,self.do_pseudo_cl,xi_win_approx)#,self.window_l,self.lms)
 
         if bin_window:
             self.binnings=binning()
