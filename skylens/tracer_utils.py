@@ -4,10 +4,11 @@ Class with utility functions for defining tracer properties, e.g. redshift kerne
 
 import os,sys
 import copy
-from power_spectra import *
-from angular_power_spectra import *
-from hankel_transform import *
-from binning import *
+from skylens import *
+#from skylens.power_spectra import *
+#from angular_power_spectra import *
+#from hankel_transform import *
+#from binning import *
 from astropy.constants import c,G
 from astropy import units as u
 import numpy as np
@@ -37,7 +38,9 @@ class Tracer_utils():
         self.set_zbins(z_bins=zg_bins,tracer='galaxy')
         self.set_zbins(z_bins=zk_bins,tracer='kappa')
         self.tracers=list(self.z_bins.keys())
-        self.set_z_PS_max()
+        
+        if not self.tracers==[]:
+            self.set_z_PS_max()
         
         
     def set_z_PS_max(self):

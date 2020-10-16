@@ -1,14 +1,15 @@
 import os,sys
+sys.path.append('/verafs/scratch/phy200040p/sukhdeep/project/skylens/skylens/')
 import dask
 from dask import delayed
-from power_spectra import *
+from skylens.power_spectra import *
 from angular_power_spectra import *
 from hankel_transform import *
 from wigner_transform import *
 from binning import *
 from cov_utils import *
 from tracer_utils import *
-from window_utils import *
+from skylens.window_utils import *
 from cov_tri import *
 from astropy.constants import c,G
 from astropy import units as u
@@ -18,6 +19,7 @@ import warnings,logging
 import copy
 import sparse
 import gc
+
 gc.enable()
 
 

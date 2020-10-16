@@ -6,11 +6,12 @@ Functions for LSST, DESI, DES, KiDS and CMB surveys.
 from scipy.stats import norm as gaussian
 import copy
 import numpy as np
-from lensing_utils import *
+#from lensing_utils import *
+from skylens.tracer_utils import *
 from astropy.cosmology import Planck15 as cosmo
 from astropy.table import Table
 cosmo_h_PL=cosmo.clone(H0=100)
-from skylens import *
+from skylens.cl_cov import *
 import healpy as hp
 import sys
 sys.path.append('./ForQuE/')
@@ -79,12 +80,14 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
     w_lmax=3*nside-1
     l0=np.arange(3*nside-1,dtype='int')
     corr=('galaxy','galaxy')
+    
     kappa0=Skylens(zg_bins=zs_bins,do_cov=False,bin_cl=False,l_bins=None,l=l0, zs_bins=None,use_window=False,
                    corrs=[corr],f_sky=f_sky)
+    cl0G=kappa0.cl_tomo()
+    
     npix0=hp.nside2npix(nside)
 
     npix=np.int(npix0*f_sky)
-    cl0G=kappa0.cl_tomo()
     mask=np.zeros(npix0,dtype='bool')
 #     mask[int(npix):]=0
     mask[mask_start_pix:mask_start_pix+int(npix)]=1
@@ -102,6 +105,7 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
         else:
 
             cl_i=cl0G['cl'][corr][(i,i)].compute()
+            
             cl_i+=zs_bins['SN']['galaxy'][:,i,i]
 #             alms_i=hp.sphtfunc.synalm(cl_i,lmax=w_lmax,)
             if window_cl_fact is not None:
@@ -183,14 +187,16 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
         z_bins=np.linspace(min(zp)-0.0001,max(zp)+0.0001,nz_bins+1)
 
     if zs is None:
-        sigma_max=max(np.atleast_1d(zp_sigma))*5
+        sigma_max=0
+        if zp_sigma is not None:
+            sigma_max=max(np.atleast_1d(zp_sigma))*5
         zs=np.linspace( max(0.05,min(zp)-sigma_max), max(zp)+sigma_max,n_zs)
     dzs=np.gradient(zs)
     dzp=np.gradient(zp) if len(zp)>1 else [1]
     zp=np.array(zp)
 
     zl_kernel=np.linspace(0,max(zs),50)
-    lu=Lensing_utils()
+    lu=Tracer_utils()
     cosmo_h=cosmo_h_PL
 
     zmax=max(z_bins)
