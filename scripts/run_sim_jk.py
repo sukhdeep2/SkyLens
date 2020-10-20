@@ -3,7 +3,7 @@
 # 2. save window correlation from treecorr and theory
 
 import sys, os, gc, threading, subprocess
-sys.path.insert(0,'../skylens/')
+sys.path.insert(0,'/verafs/scratch/phy200040p/sukhdeep/project/skylens/skylens/')
 from thread_count import *
 
 debug=False
@@ -12,11 +12,11 @@ if debug:
     #in case getting some weird seg fault, run as python -Xfaulthandler run_sim_jk.py
     # problem is likely to be in some package
 
-
+import skylens
 import pickle
 import treecorr
 from skylens import *
-from survey_utils import *
+#from survey_utils import *
 from jk_utils import *
 from binning import *
 
@@ -31,7 +31,7 @@ from dask.distributed import Client  # we already had this above
 
 import argparse
 
-test_run=False
+test_run=True
 parser = argparse.ArgumentParser()
 parser.add_argument("--cw", "-cw",type=int, help="use complicated window")
 parser.add_argument("--uw", "-uw",type=int, help="use unit window")
@@ -42,6 +42,7 @@ parser.add_argument("--noise", "-sn",type=int, help="use complicated window")
 parser.add_argument("--xi", "-xi",type=int, help="do_xi, i.e. compute correlation functions")
 parser.add_argument("--pseudo_cl", "-pcl",type=int, help="do_pseudo_cl, i.e. compute power spectra functions")
 parser.add_argument("--njk", "-njk",type=int, help="number of jackknife regions, default=0 (no jackknife)")
+parser.add_argument("--scheduler", "-s", help="Scheduler file")
 
 
 # Read arguments from the command line
@@ -57,8 +58,10 @@ lognormal=False if not args.lognormal else np.bool(args.lognormal)
 do_blending=False if not args.blending else np.bool(args.blending)
 do_SSV_sim=False if not args.ssv else np.bool(args.ssv)
 use_shot_noise=True if args.noise is None else np.bool(args.noise)
+Scheduler_file=args.scheduler
 
 print(use_complicated_window,unit_window,lognormal,do_blending,do_SSV_sim,use_shot_noise)
+print('scheduler: ',Scheduler_file)
 # print(args.cw,args.uw,lognormal,do_blending,do_SSV_sim,use_shot_noise)
 
 do_pseudo_cl=False if not args.pseudo_cl else np.bool(args.pseudo_cl)
@@ -85,7 +88,7 @@ do_cov_jk=False #compute covariance coupling matrices
 
 lognormal_scale=2
 
-nside=512
+nside=1024
 lmax_cl=1000#
 window_lmax=2000 #0
 
@@ -119,26 +122,37 @@ if test_run:
 wigner_files={}
 # wig_home='/global/cscratch1/sd/sukhdeep/dask_temp/'
 #wig_home='/Users/Deep/dask_temp/'
-wig_home='/home/deep/data/repos/SkyLens/temp/'
+#wig_home='/home/deep/data/repos/SkyLens/temp/'
+#home='/physics2/sukhdees/skylens/'
+home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/'
+wig_home=home+'temp/'
 wigner_files[0]= wig_home+'/dask_wig3j_l6500_w2100_0_reorder.zarr'
 wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 
 l0w=np.arange(3*nside-1)
 
-memory='55gb'#'120gb'
-ncpu=12 #4
+memory='240gb'#'120gb'
+import multiprocessing
+
+ncpu=multiprocessing.cpu_count() - 2
+# ncpu=20 #4
 if test_run:
     memory='20gb'
     ncpu=4
-worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
-LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
+
+if Scheduler_file is None:
+    worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
+    LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
                 local_dir=wig_home+'/NGL-worker/', **worker_kwargs,
                 #scheduler_port=12234,
 #                 dashboard_address=8801
                 diagnostics_port=8801,
 #                memory_monitor_interval='2000ms')
                )
-client=Client(LC,)#diagnostics_port=8801,)
+    client=Client(LC,)#diagnostics_port=8801,)
+else:
+    client=Client(scheduler_file=Scheduler_file)
+#    client.restart()
 print(client)
 
 #setup parameters
@@ -951,7 +965,7 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
 #         pcl.compute()
         i=0
         j=0
-        step= 1 
+        step= len(client.scheduler_info()['workers'])
         # if njk==0:
         #     step=min(3,nsim)
         # funct=partial(get_clsim2,cl0,window,mask,SN,coupling_M['full'],ndim)
@@ -1043,8 +1057,8 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
     return outp
 
 
-#test_home=wig_home+'/tests/'
-test_home='/home/deep/data/repos/SkyLens/tests/'
+test_home=home+'/tests/'
+#test_home='/home/deep/data/repos/SkyLens/tests/'
 
 f0='/sims'
 if do_pseudo_cl:
@@ -1095,5 +1109,6 @@ written=True
 print(fname)
 print('all done')
 
-LC.close()
+if Scheduler_file is None:
+    LC.close()
 gc.collect()

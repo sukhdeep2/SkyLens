@@ -29,7 +29,8 @@ test=False
 
 fig_home='./figures/'
 fig_format='pdf'
-file_home='../tests/fisher/'
+#file_home='../tests/fisher/'
+file_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/fisher/'
 
 z_min=0.1 # 0, 0.3
 z_max=3.5 #2,3
@@ -51,6 +52,11 @@ bary_nQ=0   #[0,2,1,3,5]
 
 Nl_bins=12
 
+import multiprocessing
+
+ncpu=multiprocessing.cpu_count()-2
+#ncpu=20
+
 if bary_nQ>0:
     pk_func='baryon_pk'
 else:
@@ -64,7 +70,7 @@ if SSV_cov:
 from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
 #http://distributed.readthedocs.io/en/latest/_modules/distributed/worker.html
-LC=LocalCluster(n_workers=1,processes=False,memory_limit='60gb',threads_per_worker=8,memory_spill_fraction=.99,
+LC=LocalCluster(n_workers=1,processes=False,memory_limit='120gb',threads_per_worker=ncpu,memory_spill_fraction=.99,
                memory_monitor_interval='2000ms')
 client=Client(LC)
 
