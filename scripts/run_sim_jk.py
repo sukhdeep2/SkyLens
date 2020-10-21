@@ -243,11 +243,11 @@ kappa_win=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0
 )
 
 clG_win=kappa_win.cl_tomo(corrs=corrs)
-cl0_win=client.compute(clG_win['stack']).result()#.compute()
-client.restart()
+cl0_win=client.compute(clG_win['stack'])#.result()#.compute()
+#client.restart()
 if do_xi:
     xiWG_L=kappa_win.xi_tomo()
-    xiW_L=client.compute(xiWG_L['stack']).result() #.compute()  #####mem crash
+    xiW_L=client.compute(xiWG_L['stack'])#.result() #.compute()  #####mem crash
 
 kappa0=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
             use_window=False,store_win=store_win,corrs=corrs,window_lmax=window_lmax,
@@ -255,12 +255,12 @@ kappa0=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, z
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi)
 
 clG0=kappa0.cl_tomo(corrs=corrs) 
-cl0=client.compute(clG0['stack']).result()#.compute()
+cl0=client.compute(clG0['stack'])#.result()#.compute()
 
 
 if do_xi:
      xiG_L0=kappa0.xi_tomo()
-     xi_L0=client.compute(xiG_L0['stack']).result() #.compute()
+     xi_L0=client.compute(xiG_L0['stack'])#.result() #.compute()
 
 bi=(0,0)
 cl0={'cl_b':{},'cov':{},'cl':{}}

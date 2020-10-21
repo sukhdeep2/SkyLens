@@ -53,7 +53,8 @@ class window_utils():
             self.set_window(corrs=self.corrs,corr_indxs=self.corr_indxs)
         elif self.do_xi and xi_win_approx:# and self.use_window:
             self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=None)
-            self.Win=delayed(self.combine_coupling_xi_cov)(self.Win_cl,self.Win_cov,corrs)
+            self.Win=delayed(self.combine_coupling_xi_cov)(self.Win_cl,self.Win_cov)
+            print('Got xi win graph')
             if self.store_win:
                 client=get_client()
                 self.Win=client.compute(self.Win).result()
@@ -81,12 +82,19 @@ class window_utils():
         out=out.transpose(1,2,0)
         return out
 
-    def set_wig3j_step_multiplied(self,wig1,wig2):
+    def set_wig3j_step_multiplied(self,lm=None):
         """
         product of two partial migner matrices
         """
-        out=wig1*wig2.astype('float64') #numpy dot appears to run faster with 64bit ... ????
-        return out
+        wig_3j_2={}
+        wig_3j_1={m1: self.wig3j_step_read(m=m1,lm=lm) for m1 in self.m_s}
+        mi=0
+        for m1 in self.m_s:
+            for m2 in self.m_s[mi:]:
+                wig_3j_2[str(m1)+str(m2)]=wig_3j_1[m1]*wig_3j_1[m2].astype('float64') #numpy dot appears to run faster with 64bit ... ????
+            mi+=1
+        del wig_3j_1
+        return wig_3j_2
 
     def set_wig3j_step_spin(self,wig2,mf_pm,W_pm):
         """
@@ -145,16 +153,10 @@ class window_utils():
         self.mf_pm={}
         client=get_client()
         for lm in self.lms:
-            self.wig_3j_2[lm]={}
-            self.wig_3j_1[lm]={m1: delayed(self.wig3j_step_read)(m=m1,lm=lm) for m1 in self.m_s}
+            self.wig_3j_2[lm]=delayed(self.set_wig3j_step_multiplied)(lm=lm)
+            #self.wig_3j_1[lm]={m1: delayed(self.wig3j_step_read)(m=m1,lm=lm) for m1 in self.m_s}
             self.mf_pm[lm]=delayed(self.set_window_pm_step)(lm=lm)
-            mi=0
-            for m1 in self.m_s:
-                for m2 in self.m_s[mi:]:
-                    self.wig_3j_2[lm][str(m1)+str(m2)]={}
-                    self.wig_3j_2[lm][str(m1)+str(m2)][0]=delayed(self.set_wig3j_step_multiplied)(self.wig_3j_1[lm][m1],self.wig_3j_1[lm][m2])
-                mi+=1
-
+            
         self.wig_s1s2s={}
         for corr in self.corrs:
             mi=np.sort(np.absolute(self.s1_s2s[corr]).flatten())
@@ -175,7 +177,7 @@ class window_utils():
         multiplicative factors. Also do the binning if called for. 
         This function supports on partial matrices.
         """
-        wig=wig_3j_2[0] #[W_pm]
+        wig=wig_3j_2 #[W_pm]
         if W_pm!=0:
             if W_pm==2: #W_+
                 wig=wig*mf_pm['mf_p']#.astype('float64') #https://stackoverflow.com/questions/45479363/numpy-multiplying-large-arrays-with-dtype-int8-is-slow
@@ -280,6 +282,7 @@ class window_utils():
         win2={}
         for k in self.cl_keys:
             corr=(k[0],k[1])
+            
             wig_3j_2=wig_3j_2_lm[self.wig_s1s2s[corr]]
             win=win0[k]
             win2[k]={'M':{},'M_noise':None,'M_B':None,'M_B_noise':None,'binning_util':win['binning_util']}
@@ -371,11 +374,11 @@ class window_utils():
     
     def combine_coupling_xi(self,result):
         dic={}
-        for corr in corrs:
-            dic[corr]={}
-            dic[corr[::-1]]={}
+        #for corr in corrs:
+         #   dic[corr]={}
+          #  dic[corr[::-1]]={}
 
-        for ii in list(result.keys()):
+        for ii in self.cl_keys: #list(result.keys()):
             result_ii=result[ii]
             corr=result_ii['corr']
             indxs=result_ii['indxs']
@@ -533,7 +536,7 @@ class window_utils():
                             ) #based on 4.34 of https://arxiv.org/pdf/1711.07467.pdf
         win['Om_w12']=win['f_sky12']*4*np.pi
         win['Om_w34']=win['f_sky34']*4*np.pi
-
+        del mask12,mask34
         win['M']={1324:{},1423:{}}
 
         for k in win[1324].keys():
@@ -603,7 +606,7 @@ class window_utils():
     def combine_coupling_cov_xi(self,result):
         dic={}
         
-        for ii in list(result.keys()):#np.arange(len(result)):
+        for ii in self.cov_keys: #list(result.keys()):#np.arange(len(result)):
             result0=result[ii]
             corr1=result0['corr1']
             corr2=result0['corr2']
@@ -707,7 +710,7 @@ class window_utils():
         print('setting windows',client)
 
         self.Win_cl={corr+indx: delayed(self.get_window_power_cl)(corr,indx) for corr in corrs for indx in corr_indxs[corr]}
-#         self.Win_cl={corr+indx: self.get_window_power_cl(corr,indx) for corr in corrs for indx in corr_indxs[corr]}
+
         self.cl_keys=list(self.Win_cl.keys())
         if self.do_cov:
             self.Win_cov={}
@@ -741,6 +744,7 @@ class window_utils():
                                 self.win_cov_tuple.append((corr1,corr2,indx1,indx2))
 
             self.cov_keys=list(self.Win_cov.keys())
+    #### DONOT delete
         #if self.store_win:
          #   self.Win_cl=client.compute(self.Win_cl)
           #  if self.do_cov:
@@ -783,21 +787,18 @@ class window_utils():
                 t1=time.time()
                 self.Win_cl_lm[lm]={}
                 self.Win_lm[lm]={}
-                #for k in self.cl_keys:
-                 #   corr=(k[0],k[1])
+                
                 self.Win_cl_lm[lm]=delayed(self.get_cl_coupling_lm)(self.Win_cl,lm,
                                                                 self.wig_3j_2[lm],self.mf_pm[lm])
                 self.Win_lm[lm]['cl']=self.Win_cl_lm[lm]
-                # if self.store_win:
-                #     self.Win_cl_lm[lm]=client.compute(self.Win_cl_lm[lm])#.result()
-
+                
                 if self.do_cov:
                     self.Win_cov_lm[lm]=delayed(self.get_cov_coupling_lm)(self.Win_cov,lm,
                                                                           self.wig_3j_2[lm],self.mf_pm[lm] )
 
                     self.Win_lm[lm]['cov']=self.Win_cov_lm[lm]
 
-
+#### Donot delete
                 #if self.store_win:  #### Donot delete
                  #   self.Win_lm[lm]=client.compute(self.Win_lm[lm]).result()
 

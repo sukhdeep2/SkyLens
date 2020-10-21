@@ -248,8 +248,9 @@ class Tracer_utils():
                 bb=np.digitize(z_bins[i]['z'],zl)
                 
                 pz_zl=np.zeros_like(zl)
-                pz_zl[bb]=z_bins[i]['pz']  #assign to nearest zl
-                pz_zl/=np.sum(pz_zl*dzl)
+                if bb<len(pz_zl):
+                    pz_zl[bb]=z_bins[i]['pz']  #assign to nearest zl
+                    pz_zl/=np.sum(pz_zl*dzl)
             else:
                 pz_zl=np.interp(zl,z_bins[i]['z'],z_bins[i]['pz'],left=0,right=0) #this is linear interpolation
                 if not np.sum(pz_zl*dzl)==0: #FIXME
