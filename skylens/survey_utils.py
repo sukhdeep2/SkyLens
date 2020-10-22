@@ -114,7 +114,10 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
             cl_map=hp.ma(1+hp.synfast(cl_i,nside=nside))
 #             cl_map=hp.alm2map(alms_i,nside=nside)
         cl_map[cl_map<0]=0
-        cl_map/=cl_map[mask].mean()
+        cl_map[~mask]=hp.UNSEEN
+        cl_t=hp.anafast(cl_map)
+#         cl_map/=cl_map[mask].mean()
+        cl_map/=cl_t[0] #this is important for shear map normalization in correlation functions.
         cl_map_noise=np.sqrt(cl_map)
         cl_map[~mask]=hp.UNSEEN
         cl_map_noise[~mask]=hp.UNSEEN

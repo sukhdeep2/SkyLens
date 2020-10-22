@@ -101,20 +101,20 @@ do
                         echo '=========================================================================================='|cat>>$log_file
                         echo 'begining - jk ::' $(date)>>$log_file
 
-			./dask-vera.sh &
+			#./dask-vera.sh &
 			CSCRATCH='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
 			SCHEFILE=$CSCRATCH/${SLURM_JOB_ID}/${SLURM_JOB_ID}.dasksche.json
 			worker_log=$CSCRATCH/${SLURM_JOB_ID}/dask-local/worker-0.log
-			echo $worker_log
-			while ! [ -f $SCHEFILE ]; do #redundant
-			    sleep 3
-			    echo -n .>>$log_file
-			done
-			while ! [ -f $worker_log ]; do
-                            sleep 3
-                            echo -n .>>$log_file
-                        done
-			sleep 10
+			#echo $worker_log
+			#while ! [ -f $SCHEFILE ]; do #redundant
+			 #   sleep 3
+			  #  echo -n .>>$log_file
+			#done
+			#while ! [ -f $worker_log ]; do
+                         #   sleep 3
+                          #  echo -n .>>$log_file
+                       # done
+			#sleep 10
 			python run_sim_jk.py --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise --scheduler=$SCHEFILE |cat>>$log_file
 			
 			#cmd="python3 run_sim_jk.py --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise"

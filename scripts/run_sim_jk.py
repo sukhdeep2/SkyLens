@@ -60,6 +60,8 @@ do_SSV_sim=False if not args.ssv else np.bool(args.ssv)
 use_shot_noise=True if args.noise is None else np.bool(args.noise)
 Scheduler_file=args.scheduler
 
+Scheduler_file=None
+
 print(use_complicated_window,unit_window,lognormal,do_blending,do_SSV_sim,use_shot_noise)
 print('scheduler: ',Scheduler_file)
 # print(args.cw,args.uw,lognormal,do_blending,do_SSV_sim,use_shot_noise)
@@ -80,7 +82,7 @@ njk=njk1*njk2
 if njk>0:
     nsim=10 #time / memory 
 else:
-    nsim=100
+    nsim=10
 
 subsample=False
 do_cov_jk=False #compute covariance coupling matrices
@@ -134,7 +136,7 @@ l0w=np.arange(3*nside-1)
 memory='240gb'#'120gb'
 import multiprocessing
 
-ncpu=multiprocessing.cpu_count() - 2
+ncpu=multiprocessing.cpu_count() - 1
 # ncpu=20 #4
 if test_run:
     memory='20gb'
@@ -243,11 +245,11 @@ kappa_win=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0
 )
 
 clG_win=kappa_win.cl_tomo(corrs=corrs)
-cl0_win=client.compute(clG_win['stack'])#.result()#.compute()
+cl0_win=client.compute(clG_win['stack']).result()#.compute()
 #client.restart()
 if do_xi:
     xiWG_L=kappa_win.xi_tomo()
-    xiW_L=client.compute(xiWG_L['stack'])#.result() #.compute()  #####mem crash
+    xiW_L=client.compute(xiWG_L['stack']).result() #.compute()  #####mem crash
 
 kappa0=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
             use_window=False,store_win=store_win,corrs=corrs,window_lmax=window_lmax,
@@ -255,12 +257,12 @@ kappa0=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, z
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi)
 
 clG0=kappa0.cl_tomo(corrs=corrs) 
-cl0=client.compute(clG0['stack'])#.result()#.compute()
+cl0=client.compute(clG0['stack']).result()#.compute()
 
 
 if do_xi:
      xiG_L0=kappa0.xi_tomo()
-     xi_L0=client.compute(xiG_L0['stack'])#.result() #.compute()
+     xi_L0=client.compute(xiG_L0['stack']).result() #.compute()
 
 bi=(0,0)
 cl0={'cl_b':{},'cov':{},'cl':{}}
@@ -965,7 +967,7 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
 #         pcl.compute()
         i=0
         j=0
-        step= len(client.scheduler_info()['workers'])
+        step= min(nsim,len(client.scheduler_info()['workers']))
         # if njk==0:
         #     step=min(3,nsim)
         # funct=partial(get_clsim2,cl0,window,mask,SN,coupling_M['full'],ndim)
