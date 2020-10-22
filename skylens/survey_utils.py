@@ -300,7 +300,7 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
     z_bins=np.linspace(min(zp),max(zp)*0.9,nz_bins) if z_bins is None else z_bins
 
     zs_bins0=source_tomo_bins(zp=zp,p_zp=p_zp,zp_bias=zp_bias,zp_sigma=zp_sigma,ns=ns,nz_bins=1)
-    lu=Lensing_utils()
+    lu=tracer_utils()
 
     if cosmo_h is None:
         cosmo_h=cosmo_h_PL
@@ -364,7 +364,7 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
     zp=np.array(zp)
 
     zl_kernel=np.linspace(0,2,50)
-    lu=Lensing_utils()
+    lu=tracer_utils()
     cosmo_h=cosmo_h_PL
 
     for i in np.arange(nz_bins):

@@ -52,6 +52,15 @@ bary_nQ=0   #[0,2,1,3,5]
 
 Nl_bins=12
 
+area_train=150
+n_source_train=1
+
+
+train_sample_missed=0
+n_source_missed=6
+
+n_source-=n_source_missed*train_sample_missed
+
 import multiprocessing
 
 ncpu=multiprocessing.cpu_count()-2
@@ -578,6 +587,8 @@ sigma_gamma=0.26
 area=15000
 f_sky=area*d2r**2/4/np.pi
 
+f_sky_train=area_train*d2r**2/4/np.pi
+
 nz_PS=100
 
 z_PS=np.logspace(np.log10(z_min),np.log10(z_max),50)
@@ -622,6 +633,17 @@ def get_z_bins(zmin,zmax,ns_bins,n_lens_bins,n_lensD_bins=None,nsource=n_source,
     zs_bins=lsst_source_tomo_bins(zmin=zmin,zmax=zmax,n_zs=n_zs,nside=nside,ns0=nsource,nbins=ns_bins,f_sky=f_sky,
                                   z_sigma_power=1,z_sigma=z_source_sigma,ztrue_func=ztrue_given_pz_Gaussian,
                                   use_window=use_window,AI=AI,AI_z=AI_z)
+    zs_bins_missed=None
+    if train_sample_missed!=0:
+        zs_bins_missed=lsst_source_tomo_bins(zmin=zmin,zmax=zmax,n_zs=n_zs,nside=nside,ns0=n_source_missed,nbins=train_sample_missed,f_sky=f_sky,
+                                  z_sigma_power=1,z_sigma=z_source_sigma*3,ztrue_func=ztrue_given_pz_Gaussian,
+                                  use_window=use_window,AI=AI,AI_z=AI_z)
+        zs_bins=combine_zbins(z_bins1=zs_bins,z_bins2=zs_bins_missed)
+    zs_bins_train=None
+    if area_train>0:
+        zs_bins_train=lsst_source_tomo_bins(zmin=zmin,zmax=zmax,n_zs=n_zs,nside=nside,ns0=n_source_train,nbins=ns_bins,f_sky=f_sky_train,
+                                  z_sigma_power=1,z_sigma=0,ztrue_func=None,
+                                  use_window=use_window,AI=AI,AI_z=AI_z)
     
     zl_bins=lsst_source_tomo_bins(zmin=zmin,zmax=z_max_lens,n_zs=n_zl,ns0=nlens,nbins=n_lens_bins,nside=nside,f_sky=f_sky,
                          ztrue_func=ztrue_given_pz_Gaussian,use_window=use_window,mag_fact=mag_fact,
@@ -650,7 +672,16 @@ def get_z_bins(zmin,zmax,ns_bins,n_lens_bins,n_lensD_bins=None,nsource=n_source,
             zlD_bins['n_binsF1']=zlD_bins2['n_bins']
             zlD_bins['n_binsF2']=zlD_bins3['n_bins']
             zlD_bins['n_binsF']=zlD_bins3['n_bins']+zlD_bins2['n_bins']
-    return zs_bins,zl_bins,zlD_bins
+    return zs_bins,zs_bins_train,zs_bins_missed,zl_bins,zlD_bins
+
+def combine_z_bins_all(z_bins_kwargs={}):
+    n_lensD_bins2=0
+    if n_lensD_bins is not None:
+        zl_bins_comb=combine_zbins(z_bins1=zl_bins,z_bins2=zlD_bins)
+        n_lensD_bins2=zlD_bins['n_bins']
+    else:
+        zl_bins_comb=zl_bins
+    zl_bins_comb=combine_zbins(z_bins1=zs_bins,z_bins2=zl_bins_comb)
 
 def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,
               pk_func=pk_func,n_source=n_source,n_source_bins=nbins,f_sky=0.3,
@@ -674,11 +705,13 @@ def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,
     ell_bin_kwargs={'lmax_cl':l_max,'lmin_cl':l_min,'Nl_bins':Nl_bins}
     
     
-    zs_bins,zl_bins,zlD_bins=get_z_bins(**z_bins_kwargs)
+    zs_bins,zs_bins_train,zs_bins_missed,zl_bins,zlD_bins=get_z_bins(**z_bins_kwargs)
     
     z_bins_kwargs['zs_bins']=zs_bins
     z_bins_kwargs['zl_bins']=zl_bins
     z_bins_kwargs['zlD_bins']=zlD_bins
+    z_bins_kwargs['zs_bins_train']=zs_bins_train
+    z_bins_kwargs['zs_bins_missed']=zs_bins_missed
     
     n_lensD_bins2=0
     if n_lensD_bins is not None:
@@ -693,7 +726,7 @@ def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,
     ii_lens=np.arange(n_source_bins,n_source_bins+n_lens_bins+n_lensD_bins2)
     ii_s=np.arange(n_source_bins)
     z_bins_kwargs['gg_indxs']=[(i,j) for i in ii_s for j in ii_lens]+[(i,i) for i in ii_lens]
-    z_bins_kwargs['gg_indxs']+=[(i,j) for i in ii_s for j in np.arange(i,n_source_bins)]
+    z_bins_kwargs['gg_indxs']+=[(i,j) for i in ii_s for j in np.arange(i,n_source_bins)] #only auto corr for lens bins, auto+cross for source bins.
     print('init fish, gg indxs:',z_bins_kwargs['gg_indxs'])
 #     for i in np.arange(zl_bins_comb['n_bins']):
 #         zl_bins_comb[i]['b1']=1
