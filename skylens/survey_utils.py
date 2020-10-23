@@ -99,13 +99,11 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
     zs_bins['window0_alm']=hp.map2alm(cl_map0)
 
     for i in np.arange(zs_bins['n_bins']):
+        cl_i=cl0G['cl'][corr][(i,i)].compute()
         if unit_win:
             cl_map=hp.ma(np.ones(12*nside*nside))
-            cl_i=1
-        else:
-
-            cl_i=cl0G['cl'][corr][(i,i)].compute()
-            
+#             cl_i=1
+        else:            
             cl_i+=zs_bins['SN']['galaxy'][:,i,i]
 #             alms_i=hp.sphtfunc.synalm(cl_i,lmax=w_lmax,)
             if window_cl_fact is not None:
@@ -117,11 +115,12 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
         cl_map[~mask]=hp.UNSEEN
         cl_t=hp.anafast(cl_map)
 #         cl_map/=cl_map[mask].mean()
-        cl_map/=cl_t[0] #this is important for shear map normalization in correlation functions.
+        cl_map/=np.sqrt(cl_t[0]) #this is important for shear map normalization in correlation functions.
         cl_map_noise=np.sqrt(cl_map)
         cl_map[~mask]=hp.UNSEEN
         cl_map_noise[~mask]=hp.UNSEEN
         # cl_map.mask=mask
+        zs_bins[i]['window_cl0']=cl_i
         zs_bins[i]['window']=cl_map
         zs_bins[i]['window_alm']=hp.map2alm(cl_map)
         zs_bins[i]['window_alm_noise']=hp.map2alm(cl_map_noise)

@@ -82,7 +82,7 @@ njk=njk1*njk2
 if njk>0:
     nsim=10 #time / memory 
 else:
-    nsim=10
+    nsim=30
 
 subsample=False
 do_cov_jk=False #compute covariance coupling matrices
@@ -378,13 +378,22 @@ def get_xi_window_norm(window=None):
         # window[tracer]=kappa_class.z_bins[tracer][0]['window']
         mask[tracer]=window[tracer]==hp.UNSEEN
         # window[tracer]=window[tracer][~mask[tracer]]
+    fsky=mask[tracer].mean()
+    cat0={'fullsky':np.ones_like(mask)}
+    tree_cat_args0=get_treecorr_cat_args(window,masks=None)
+    tree_cat0=treecorr.Catalog(**tree_cat_args0['fullsky'])
+    tree_corrs0=treecorr.NNCorrelation(**corr_config)
+    _=tree_corrs0.process(tree_cat0,tree_cat0)
+    napirs0=tree_corrs0.npairs*fsky
+    del cat0,tree_cat0,tree_corrs0
+    
     tree_cat_args=get_treecorr_cat_args(window,masks=mask)
     tree_cat= {tracer: treecorr.Catalog(w=window[tracer][~mask[tracer]], **tree_cat_args[tracer]) for tracer in window.keys()}
     del mask
     for corr in corrs:
         tree_corrs=treecorr.NNCorrelation(**corr_config)
         _=tree_corrs.process(tree_cat[corr[0]],tree_cat[corr[1]])
-        window_norm[corr]=tree_corrs.weight*1./tree_corrs.npairs
+        window_norm[corr]=tree_corrs.weight*1./tree_corrs.npairs #npairs0
     del tree_cat,tree_corrs
     return window_norm
 
