@@ -31,7 +31,7 @@ from dask.distributed import Client  # we already had this above
 
 import argparse
 
-test_run=False
+test_run=True
 parser = argparse.ArgumentParser()
 parser.add_argument("--cw", "-cw",type=int, help="use complicated window")
 parser.add_argument("--uw", "-uw",type=int, help="use unit window")
@@ -128,7 +128,7 @@ wigner_files={}
 #home='/physics2/sukhdees/skylens/'
 home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/'
 wig_home=home+'temp/'
-wigner_files[0]= wig_home+'/dask_wig3j_l6500_w2100_0_reorder.zarr'
+wigner_files[0]= wig_home+'/dask_wig3j_l3500_w2100_0_reorder.zarr'
 wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 
 l0w=np.arange(3*nside-1)
@@ -272,10 +272,10 @@ for corr in corrs:
     cl0['cl'][corr]=clG0['cl'][corr][bi].compute()
 
     cl0['cl_b'][corr]=clG0['pseudo_cl_b'][corr][bi].compute()
-    cl0['cov'][corr]=clG0['cov'][corr+corr][bi+bi].compute()
+#     cl0['cov'][corr]=clG0['cov'][corr+corr][bi+bi].compute()
 
     cl0_win['cl_b'][corr]=clG_win['pseudo_cl_b'][corr][bi].compute()
-    cl0_win['cov'][corr]=clG_win['cov'][corr+corr][bi+bi].compute()['final_b']
+#     cl0_win['cov'][corr]=clG_win['cov'][corr+corr][bi+bi].compute()['final_b']
 
 print('Skylens done, binning coupling matrices')
 
@@ -380,7 +380,8 @@ def get_xi_window_norm(window=None):
         # window[tracer]=window[tracer][~mask[tracer]]
     fsky=mask[tracer].mean()
     cat0={'fullsky':np.ones_like(mask)}
-    tree_cat_args0=get_treecorr_cat_args(window,masks=None)
+    tree_cat_args0=get_treecorr_cat_args(cat0,masks=None)
+
     tree_cat0=treecorr.Catalog(**tree_cat_args0['fullsky'])
     tree_corrs0=treecorr.NNCorrelation(**corr_config)
     _=tree_corrs0.process(tree_cat0,tree_cat0)

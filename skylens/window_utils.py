@@ -20,7 +20,7 @@ class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,corrs=None,s1_s2s=None,use_window=None,f_sky=None,
                 do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,WT=None,xi_bin_utils=None,do_xi=False,
                 store_win=False,Win=None,wigner_files=None,step=None,xi_win_approx=False,
-                 cov_indxs=None
+                 cov_indxs=None,
                 kappa_class0=None,kappa_class_b=None,bin_window=True,do_pseudo_cl=True):
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.binning=binning()
@@ -219,7 +219,7 @@ class window_utils():
         fsky=(~x).mean()
         return fsky,W.astype('int16')
 
-    def get_window_power_cl(self,corr={},indxs={}):
+    def get_window_power_cl(self,corr_indxs):#corr={},indxs={}):
         """
         Get the cross power spectra of windows given two tracers.
         Note that noise and signal have different windows and power spectra for both 
@@ -227,6 +227,8 @@ class window_utils():
         Spin factors and binning weights if needed are also set here.
         """
 #         print('cl window doing',corr,indxs)
+        corr=(corr_indxs[0],corr_indxs[1])
+        indxs=(corr_indxs[2],corr_indxs[3])
         win={}
         win['corr']=corr
         win['indxs']=indxs
@@ -282,11 +284,13 @@ class window_utils():
         Note that it get the matrices for both signal and noise as well as for E/B modes if applicable.
         """
         win2={}
+        i=0
         for k in self.cl_keys:
             corr=(k[0],k[1])
             
             wig_3j_2=wig_3j_2_lm[self.wig_s1s2s[corr]]
-            win=win0[k]
+            win=win0[i]#[k]
+            assert win['corr']==corr
             win2[k]={'M':{},'M_noise':None,'M_B':None,'M_B_noise':None,'binning_util':win['binning_util']}
             if lm==0:
                 win2[k]=win
@@ -303,6 +307,7 @@ class window_utils():
                                                 lm=lm)
                 win2[k]['M_B_noise']={lm: win_M['N']}
                 win2[k]['M_B']={lm: win_M['cl']}
+            i+=1
         return win2
 
     def combine_coupling_cl(self,result):
@@ -404,7 +409,7 @@ class window_utils():
         else:
             return 0
 
-    def get_window_power_cov(self,corr1=None,corr2=None,indxs1=None,indxs2=None):
+    def get_window_power_cov(self,corr_indxs):#corr1=None,corr2=None,indxs1=None,indxs2=None):
         """
         Compute window power spectra what will be used in the covariance calculations. 
         For covariances, we have four windows. Pairs of them are first multiplied together and
@@ -413,6 +418,10 @@ class window_utils():
         are further split into different combinations of noise and signal (signal-signal, noise-noise) 
         and noise-signal.
         """
+        corr1=(corr_indxs[0],corr_indxs[1])
+        corr2=(corr_indxs[2],corr_indxs[3])
+        indxs1=(corr_indxs[4],corr_indxs[5])
+        indxs2=(corr_indxs[6],corr_indxs[7])
         win={}
         corr=corr1+corr2
         indxs=indxs1+indxs2
@@ -567,8 +576,10 @@ class window_utils():
         elements of covariance. Here by different elements we mean two parts of covariance, 13-24 and 14-23, which
         are further split buy different combinations of noise and signal power spectra.
         """
+        i=0
+        win_all={}
         for k0 in self.cov_keys:
-            win=win0[k0]
+            win=win0[i] #[k0]
             bin_wt=None
 
             corr=(k0[0],k0[1],k0[2],k0[3])
@@ -602,8 +613,9 @@ class window_utils():
                     for k in win[corr_i].keys():
                         win['M'][corr_i][k][wp][lm]=win_t[k]
 #                     win['M'][corr_i][k][wp][lm]=self.coupling_matrix_large(win[corr_i][k], win['s1s2'][corr_i],lm=lm,wig_3j_2=wig_3j_2_1324,mf_pm=mf_pm,W_pm=wp)
-            win0[k0]=win
-        return win0
+            win_all[k0]=win
+            i+=1
+        return win_all
 
     def combine_coupling_cov_xi(self,result):
         dic={}
@@ -710,42 +722,48 @@ class window_utils():
             client=get_client()
 
         print('setting windows',client)
+        
+        
+        self.cl_keys=[corr+indx for corr in corrs for indx in corr_indxs[corr]]
+        self.Win_cl=dask.bag.from_sequence(self.cl_keys).map(self.get_window_power_cl)
+#         self.Win_cl={corr+indx: delayed(self.get_window_power_cl)(corr,indx) for corr in corrs for indx in corr_indxs[corr]}
 
-        self.Win_cl={corr+indx: delayed(self.get_window_power_cl)(corr,indx) for corr in corrs for indx in corr_indxs[corr]}
-
-        self.cl_keys=list(self.Win_cl.keys())
         if self.do_cov:
-            self.Win_cov={}
-            self.win_cov_tuple=None
-            for ic1 in np.arange(len(corrs)):
-                corr1=corrs[ic1]
-                indxs_1=corr_indxs[corr1]
-                n_indx1=len(indxs_1)
+            self.cov_keys=[]
+            for corr in self.cov_indxs.keys():
+                self.cov_keys+=[corr+indx for indx in self.cov_indxs[corr]]
+            self.Win_cov=dask.bag.from_sequence(self.cov_keys).map(self.get_window_power_cov)
+#             self.Win_cov={}
+#             self.win_cov_tuple=None
+#             for ic1 in np.arange(len(corrs)):
+#                 corr1=corrs[ic1]
+#                 indxs_1=corr_indxs[corr1]
+#                 n_indx1=len(indxs_1)
 
-                for ic2 in np.arange(ic1,len(corrs)):
-                    corr2=corrs[ic2]
-                    indxs_2=corr_indxs[corr2]
-                    n_indx2=len(indxs_2)
+#                 for ic2 in np.arange(ic1,len(corrs)):
+#                     corr2=corrs[ic2]
+#                     indxs_2=corr_indxs[corr2]
+#                     n_indx2=len(indxs_2)
 
-                    corr=corr1+corr2
+#                     corr=corr1+corr2
 
-                    for i1 in np.arange(n_indx1):
-                        start2=0
-                        indx1=indxs_1[i1]
-                        if corr1==corr2:
-                            start2=i1
-                        for i2 in np.arange(start2,n_indx2):
-                            indx2=indxs_2[i2]
-                            indxs=indx1+indx2
+#                     for i1 in np.arange(n_indx1):
+#                         start2=0
+#                         indx1=indxs_1[i1]
+#                         if corr1==corr2:
+#                             start2=i1
+#                         for i2 in np.arange(start2,n_indx2):
+#                             indx2=indxs_2[i2]
+#                             indxs=indx1+indx2
 
-                            self.Win_cov.update({corr+indxs: delayed(self.get_window_power_cov)(corr1,corr2,indx1,indx2)})
+#                             self.Win_cov.update({corr+indxs: delayed(self.get_window_power_cov)(corr1,corr2,indx1,indx2)})
 
-                            if self.win_cov_tuple is None:
-                                self.win_cov_tuple=[(corr1,corr2,indx1,indx2)]
-                            else:
-                                self.win_cov_tuple.append((corr1,corr2,indx1,indx2))
+#                             if self.win_cov_tuple is None:
+#                                 self.win_cov_tuple=[(corr1,corr2,indx1,indx2)]
+#                             else:
+#                                 self.win_cov_tuple.append((corr1,corr2,indx1,indx2))
 
-            self.cov_keys=list(self.Win_cov.keys())
+#             self.cov_keys=list(self.Win_cov.keys())
     #### DONOT delete
         #if self.store_win:
          #   self.Win_cl=client.compute(self.Win_cl)
@@ -777,7 +795,7 @@ class window_utils():
         self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
         if self.store_win and client is None:
             client=get_client()
-        print('got window cls, now to coupling matrices.')
+        print('got window cls, now to coupling matrices.',len(self.cl_keys),len(self.cov_keys) )
         self.Win={'cl':{}}
 
         if self.do_pseudo_cl: #this is probably redundant due to if statement in init.

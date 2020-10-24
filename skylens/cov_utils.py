@@ -65,7 +65,7 @@ class Covariance_utils():
         self.Win0=win_i(self.l)
         return 0
 
-    def sigma_win_calc(self,clz,Win=None,tracers=None,zs_indx=[]):#cls_lin, Win_cl=None,Om_w12=None,Om_w34=None):
+    def sigma_win_calc(self,clz,Win=None):#,tracers=None,zs_indx=[]):#cls_lin, Win_cl=None,Om_w12=None,Om_w34=None):
         """
         compute mass variance on the scale of the survey window.
         """
@@ -75,9 +75,9 @@ class Covariance_utils():
             Om_w12=self.Om_W
             Om_w34=self.Om_W
         else:
-            Win_cl=Win['cov'][tracers][zs_indx]['mask_comb_cl']
-            Om_w12=Win['cov'][tracers][zs_indx]['Om_w12']
-            Om_w34=Win['cov'][tracers][zs_indx]['Om_w34']
+            Win_cl=Win['mask_comb_cl']  #['cov'][tracers][zs_indx]
+            Om_w12=Win['Om_w12'] #[tracers][zs_indx]
+            Om_w34=Win['Om_w34'] #[tracers][zs_indx]
             
         sigma_win=np.dot(Win_cl*np.gradient(self.window_l)*(2*self.window_l+1),cls_lin.T)
         sigma_win/=Om_w12*Om_w34

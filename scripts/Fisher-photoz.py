@@ -25,7 +25,7 @@ if debug:
     # problem is likely to be in some package
 
 
-test=False
+test=True
 
 fig_home='./figures/'
 fig_format='pdf'
@@ -79,7 +79,7 @@ if SSV_cov:
 from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
 #http://distributed.readthedocs.io/en/latest/_modules/distributed/worker.html
-LC=LocalCluster(n_workers=1,processes=False,memory_limit='220gb',threads_per_worker=ncpu,memory_spill_fraction=.99,
+LC=LocalCluster(n_workers=1,processes=False,memory_limit='220gb',threads_per_worker=ncpu*2,memory_spill_fraction=.99,
                memory_monitor_interval='2000ms')
 client=Client(LC)
 
@@ -428,13 +428,13 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
 #     cl_t=client.submit(cl0G['stack'])
     cl0=clS['pcl_b']
     t2=time.time()
-    print(cl0G['cov'],t2-t1)
-    cl_shear=delayed(kappa_class.stack_dat)(dat={'cov':cl0G['cov'],'pcl_b':cl0G['pseudo_cl_b'],'est':'pcl_b'},corrs=[corr_ll],
-                                           corr_indxs=z_bins_kwargs['corr_indxs'])
-    cl_shear=cl_shear.compute()
-#     cl_t=client.submit(cl0G['stack'])
-    t3=time.time()
-    print('shear',t3-t1)
+    print('fisher_calc cl0G done',cl0G['cov'],t2-t1)
+#     cl_shear=delayed(kappa_class.stack_dat)(dat={'cov':cl0G['cov'],'pcl_b':cl0G['pseudo_cl_b'],'est':'pcl_b'},corrs=[corr_ll],
+#                                            corr_indxs=z_bins_kwargs['corr_indxs'])
+#     cl_shear=cl_shear.compute()
+# #     cl_t=client.submit(cl0G['stack'])
+#     t3=time.time()
+#     print('shear stack',t3-t1)
     
     cosmo_fid=copy.deepcopy(kappa_class.Ang_PS.PS.cosmo_params)#.copy()
     cosmo_h=kappa_class.Ang_PS.PS.cosmo_h.clone()
@@ -646,7 +646,8 @@ sparse_cov=True
 bin_cl=False #True
 tidal_SSV=SSV_cov
 do_sample_variance=True
-use_window=False
+use_window=True
+store_win=True
 
 window_lmax=30
 nside=32
@@ -757,9 +758,9 @@ def combine_z_bins_all(z_bins_kwargs={}):
     
     return zs_bins_comb,zl_bins_comb
 
-def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,
+def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,do_cov=do_cov,
               pk_func=pk_func,n_source=n_source,n_source_bins=nbins,f_sky=0.3,
-              l_max=lmax_cl,l_min=50,Nl_bins=Nl_bins,Win=None,store_win=True,mag_fact=0,
+              l_max=lmax_cl,l_min=50,Nl_bins=Nl_bins,Win=None,store_win=store_win,mag_fact=0,
              n_lens_bins=3,n_lensD_bins=None,nlens0=n_lens):
     
     pk_params2=copy.deepcopy(pk_params)
@@ -768,7 +769,7 @@ def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,
     
     Skylens_kwargs={'do_cov':do_cov,'bin_cl':bin_cl, #'l':l0,'l_bins':l_bins,
             'SSV_cov':SSV,'tidal_SSV_cov':SSV,'do_xi':False,'use_window':use_window,'window_lmax':window_lmax,
-            'f_sky':f_sky,'corrs':corrs,'store_win':store_win,'Win':Win, #'sigma_gamma':sigma_gamma
+            'f_sky':f_sky,'corrs':corrs,'store_win':store_win,'Win':Win, 'wigner_files':wigner_files, #'sigma_gamma':sigma_gamma
             'do_sample_variance':do_sample_variance,'power_spectra_kwargs':power_spectra_kwargs2,'f_sky':f_sky,
             'bin_xi':bin_xi,'sparse_cov':sparse_cov,'nz_PS':nz_PS,'z_PS':z_PS}
     
@@ -812,7 +813,7 @@ def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,
     l0,l_bins,l=get_cl_ells(**ell_bin_kwargs)
 #     print('running Skylens',l0.max(),zl_bins_comb['n_bins'],Skylens_kwargs.keys())
     kappa_class=Skylens(l=l0,l_bins=l_bins,stack_indxs=z_bins_kwargs['corr_indxs'],**Skylens_kwargs)
-    
+#     print('kappa fsky: ',kappa_class.f_sky)
 #     if not use_window:
 #         for kk in kappa_class.corr_indxs.keys():
 #             indxs=kappa_class.corr_indxs[kk]
@@ -848,50 +849,59 @@ def DESI_z_bins(datasets=['elg','lrg','BG','qso']
 corrs=[corr_ggl,corr_gg,corr_ll]
 
 
-WIN=None
-store_win=False
+WIN={'full':None,'lsst':None}
 
 proc = psutil.Process()
 print(format_bytes(proc.memory_info().rss))
 
-
-fname='temp/win_D_{ns}{nl}{nlD}.pkl'.format(ns=nbins,nl=n_lens_bins,nlD=n_lensD_bins)
-if store_win:
-    try:
-        with open(fname,'rb') as of:
-            WIN=pickle.load(of)
-    except:
-        print('window not found. Will compute')
-
-
 Fmost=False
-
 zlD_bins=lsst_source_tomo_bins(ns0=10,nbins=25,nside=256,f_sky=f_sky,
-    ztrue_func=ztrue_given_pz_Gaussian,use_window=use_window,
+    ztrue_func=ztrue_given_pz_Gaussian,use_window=False,
     z_sigma=0.001,mask_start_pix=0)
-
-
-kappa_class,z_bins_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=n_lensD_bins,corrs=corrs,
-                                          Win=WIN,store_win=store_win)
-# cl0=cl0G['stack'].compute()
-
-kappa_class_lsst,z_bins_lsst_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=None,corrs=corrs,
-                                          Win=WIN,store_win=store_win)
-
 nlD_tot=np.int(np.sum(list(n_lensD_bins.values())))
-
+zlD_bins=None
 
 fname_out=fname_out.format(ns=nbins,nsm=train_sample_missed,nl=n_lens_bins,nlD=nlD_tot,nlb=Nl_bins,lmax=lmax_cl,bary_nQ=bary_nQ,
                            zmin=z_min,zmax=z_max,zlmax=z_max_lens,at=area_train)
-fname_cl=file_home+'/cl_cov_'+fname_out
+fname_win=file_home+'/win_'+fname_out
 
+wig_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/'
+wig_home=wig_home+'temp/'
+wigner_files={}
+wigner_files[0]= wig_home+'/dask_wig3j_l3500_w2100_0_reorder.zarr'
+wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
+
+save_win=False
+# fname='temp/win_D_{ns}{nl}{nlD}.pkl'.format(ns=nbins,nl=n_lens_bins,nlD=n_lensD_bins)
+if use_window and store_win:
+    fname_out='win_'+fname_out
+    try:
+        with open(fname_win,'rb') as of:
+            WIN=pickle.load(of)
+    except:
+        save_win=True
+        print('window not found. Will compute')
+
+kappa_class,z_bins_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=n_lensD_bins,corrs=corrs,
+                                          Win=WIN['full'],store_win=store_win,)
+# cl0=cl0G['stack'].compute()
+
+kappa_class_lsst,z_bins_lsst_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=None,corrs=corrs,
+                                          Win=WIN['lsst'],store_win=store_win)
+
+if save_win:
+    win_all={'full':kappa_class.Win.Win,'lsst':kappa_class_lsst.Win.Win}
+    with open(fname_win,'wb') as of:
+        pickle.dump(win_all,of)
+
+        
+fname_cl=file_home+'/cl_cov_'+fname_out
 try:
+#     crash
     with open(fname_cl,'rb') as of:
         cl_all=pickle.load(of)
     cl_L=cl_all['cl_L']
     cl_L_lsst=cl_all['cl_L_lsst']
-    kappa_class.do_cov=False
-    kappa_class_lsst.do_cov=False
     print('read cl / cov from file: ',fname_cl)
 except:
     print('cl not found. Will compute',fname_cl)
@@ -933,6 +943,15 @@ priors['Ase9']=np.inf
 priors['Om']=np.inf
 priors['w']=np.inf
 priors['wa']=np.inf
+
+del kappa_class, kappa_class_lsst
+do_cov=False
+kappa_class,z_bins_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=n_lensD_bins,corrs=corrs,
+                                          Win=WIN['full'],store_win=store_win,do_cov=do_cov)#reset after cl,cov calcs
+# cl0=cl0G['stack'].compute()
+
+kappa_class_lsst,z_bins_lsst_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=None,corrs=corrs,
+                                          Win=WIN['lsst'],store_win=store_win,do_cov=do_cov)#reset after cl,cov calcs
 
 
 # sigma_68=-0.1*(1+z) + 0.12*(1+z)**2 #https://arxiv.org/pdf/1708.01532.pdf
@@ -1045,6 +1064,7 @@ galaxy_params=[]
 #                 kappa_class=kappa_class,clS=cl_L,z_bins_kwargs=z_bins_kwargs,priors=priors,baryon_params=baryon_params)
 
 gc.collect()
+print('Priors done')
 print('zs bins:',z_bins_kwargs['zs_bins']['n_bins'])
 pz_params=['pz_b_s_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['zs_bins']['n_bins'])]
 pz_params+=['pz_b_sm_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['zs_bins_missed']['n_bins'])]
