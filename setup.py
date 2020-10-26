@@ -25,6 +25,6 @@ setup(
     ],
     packages=['skylens'],
     package_dir = {'skylens': 'skylens'},
-    install_requires=['scipy', 'numpy', 'Jinja2', 'pyyaml', 'zarr', 'sympy', 'sparse', 'dask'],
+    install_requires=['scipy', 'numpy', 'camb', 'zarr<=2.3.1', 'sympy', 'sparse', 'dask','distributed'],
     python_requires='>=3.6',
 )
