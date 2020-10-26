@@ -1,7 +1,7 @@
 from scipy.special import jn, jn_zeros,jv
 from scipy.interpolate import interp1d,interp2d,RectBivariateSpline
 from scipy.optimize import fsolve
-from wigner_functions import *
+from skylens.wigner_functions import *
 import numpy as np
 import itertools
 

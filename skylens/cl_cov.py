@@ -13,15 +13,15 @@ import dask.bag
 from dask import delayed
 
 from skylens.power_spectra import *
-from angular_power_spectra import *
-from hankel_transform import *
-from wigner_transform import *
-from binning import *
-from cov_utils import *
-from tracer_utils import *
+from skylens.angular_power_spectra import *
+from skylens.hankel_transform import *
+from skylens.wigner_transform import *
+from skylens.binning import *
+from skylens.cov_utils import *
+from skylens.tracer_utils import *
 from skylens.window_utils import *
-from cov_tri import *
-from thread_count import *
+from skylens.cov_tri import *
+from skylens.thread_count import *
 
 gc.enable()
 
