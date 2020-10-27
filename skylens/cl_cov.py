@@ -760,76 +760,47 @@ class Skylens():
                     xi[corr][s1_s2][indx]=delayed(self.get_xi)(cls=cl,corr=corr,indxs=indx,
                                                         s1_s2=s1_s2,Win=self.Win.Win)
         if self.do_cov:
-            for ic1 in np.arange(len(corrs)):
-                corr1=corrs[ic1]
-                for ic2 in np.arange(ic1,len(corrs)):
-                    corr2=corrs[ic2]
+            corrs_iter=[(corrs[i],corrs[j]) for i in np.arange(len(corrs)) for j in np.arange(i,len(corrs))]
+            cov_indxs={}
+            for (corr1,corr2) in corrs_iter:
+                s1_s2s_1=self.s1_s2s[corr1]
+#                     indxs_1=self.corr_indxs[corr1]
+                s1_s2s_2=self.s1_s2s[corr2]
+#                     indxs_2=self.corr_indxs[corr2]
 
-                    s1_s2s_1=self.s1_s2s[corr1]
-                    indxs_1=self.corr_indxs[corr1]
-                    s1_s2s_2=self.s1_s2s[corr2]
-                    indxs_2=self.corr_indxs[corr2]
+                corr=corr1+corr2
+                cov_xi[corr]={}
+                cov_xi['cov_indxs']=cls_tomo_nu['cov']['cov_indxs']
 
-                    corr=corr1+corr2
-                    cov_xi[corr]={}
-                    cov_xi['cov_indxs']=cls_tomo_nu['cov']['cov_indxs']
-                    
-                    Win_cov=None
-                    Win_cl=None
-                    for im1 in np.arange(len(s1_s2s_1)):
-                        s1_s2=s1_s2s_1[im1]
-                        # l_cut=self.l_cut_jnu[s1_s2]
-                        cov_cl=cls_tomo_nu['cov'][corr]#.compute()
-                        cov_iter=cls_tomo_nu['cov']['cov_indxs'][corr]
-#                         clr=None
-#                         if self.SSV_cov:
-#                             clr=self.Ang_PS.clz['clsR']#[:,l_cut]#this is mainly for Hankel transform.
-#                                                                 # Which doesnot work for cross correlations
-#                                                                 # Does not impact Wigner.
+                cov_cl=cls_tomo_nu['cov'][corr]#.compute()
+                cov_iter=cls_tomo_nu['cov']['cov_indxs'][corr]
 
-#                             if self.tidal_SSV_cov:
-#                                 clr+=self.Ang_PS.clz['clsRK']/6#[:,l_cut].
-
-                        start2=0
-                        if corr1==corr2:
-                            start2=im1
-                        for im2 in np.arange(start2,len(s1_s2s_2)):
-                            s1_s2_cross=s1_s2s_2[im2]
-                            if self.use_window or self.xi_win_approx:
-                                if not self.store_win:
-                                    Win_cov=self.Win.Win['cov'][corr]
-                                Win_cl=self.Win.Win['cl']
+                Win_cov=None
+                Win_cl=None
+                if self.use_window or self.xi_win_approx:
+                    if not self.store_win:
+                        Win_cov=self.Win.Win['cov'][corr]
+                    Win_cl=self.Win.Win['cl']
+                for im1 in np.arange(len(s1_s2s_1)):
+                    s1_s2=s1_s2s_1[im1]
+                    start2=0
+                    if corr1==corr2:
+                        start2=im1
+                    for im2 in np.arange(start2,len(s1_s2s_2)):
+                        s1_s2_cross=s1_s2s_2[im2]
 #                             print('Win_cl:',Win_cl)
-                            cov_xi[corr][s1_s2+s1_s2_cross]=dask.bag.from_sequence(cov_cl).map(self.xi_cov,
+                        cov_xi[corr][s1_s2+s1_s2_cross]=dask.bag.from_sequence(cov_cl).map(self.xi_cov,
 #                                                                                                cov_cl0=cov_cl,#.compute()
-                                                                                            cls=cl
-                                                                                            ,s1_s2=s1_s2,
-                                                                                            s1_s2_cross=s1_s2_cross,#clr=clr,
-                                                                                            Win_cov=Win_cov,
-                                                                                            Win_cl=Win_cl,
-    #                                                                                                     indxs_1=indxs_1[i1],
-    #                                                                                                     indxs_2=indxs_2[i2],
-                                                                                            corr1=corr1,corr2=corr2
-                                                                                            )
+                                                                                        cls=cl
+                                                                                        ,s1_s2=s1_s2,
+                                                                                        s1_s2_cross=s1_s2_cross,#clr=clr,
+                                                                                        Win_cov=Win_cov,
+                                                                                        Win_cl=Win_cl,
+#                                                                                                     indxs_1=indxs_1[i1],
+#                                                                                                     indxs_2=indxs_2[i2],
+                                                                                        corr1=corr1,corr2=corr2
+                                                                                        )
 
-                            
-#                             cov_xi[corr][s1_s2+s1_s2_cross]={}
-#                             for i1 in np.arange(len(indxs_1)):
-#                                 start2=0
-#                                 if corr1==corr2:# and s1_s2==s1_s2_cross:
-#                                     start2=i1
-#                                 for i2 in np.arange(start2,len(indxs_2)):
-#                                     indx=indxs_1[i1]+indxs_2[i2]
-#                                     cov_xi[corr][s1_s2+s1_s2_cross][indx]=delayed(self.xi_cov)(
-#                                                                     cov_cl=cov_cl[indx]#.compute()
-#                                                                     ,cls=cl
-#                                                                     ,s1_s2=s1_s2,
-#                                                                     s1_s2_cross=s1_s2_cross,clr=clr,
-#                                                                     Win=self.Win.Win,
-#                                                                     indxs_1=indxs_1[i1],
-#                                                                     indxs_2=indxs_2[i2],
-#                                                                     corr1=corr1,corr2=corr2
-#                                                                     )
         out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi,'est':'xi'},corrs=corrs)
         out['xi']=xi
         out['cov']=cov_xi
