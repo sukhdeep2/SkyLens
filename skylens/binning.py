@@ -72,6 +72,7 @@ class binning():
             wt_b=bin_utils['wt_b']
         if wt0 is None:
             wt0=bin_utils['wt0']
+
         if len(wt0.shape)==1:
             binning_mat2=wt0[:,None]*binning_mat*wt_b
         else:

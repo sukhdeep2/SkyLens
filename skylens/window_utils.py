@@ -36,6 +36,8 @@ class window_utils():
         self.lms=np.int32(np.arange(nwl,step=self.step))
         print('Win gen: step size',self.step,self.do_pseudo_cl,xi_win_approx)#,self.window_l,self.lms)
 
+        self.c_ell0=None
+        self.c_ell_b=None
         if bin_window:
             self.binnings=binning()
             self.kappa_class0=kappa_class0
@@ -194,6 +196,8 @@ class window_utils():
             if self.bin_window:# and bin_wt is not None:
                 M[k]=self.binnings.bin_2d_coupling(cov=M[k],bin_utils=self.kappa_class0.cl_bin_utils,
                     partial_bin_side=2,lm=lm,lm_step=self.step,wt0=bin_wt['wt0'],wt_b=bin_wt['wt_b'])
+                if np.any(~np.isfinite(M[k])):
+                    print('M[k] not finite',k, win[k],bin_wt['wt0'],bin_wt['wt_b'])
         if W_pm!=0:
             del wig
         return M
@@ -213,13 +217,14 @@ class window_utils():
         Useful for some covariance calculations, specially SSC, where we assume a uniform window.
         """
         W=win1*win2
-        W/=W  #mask = 0,1
+#         W/=W  #mask = 0,1
         x=np.logical_or(win1==hp.UNSEEN, win2==hp.UNSEEN)
         W[x]=hp.UNSEEN
+        W[~x]=1. #mask = 0,1
         fsky=(~x).mean()
-        return fsky,W.astype('int16')
+        return fsky,W#.astype('int16')
 
-    def get_window_power_cl(self,corr_indxs):#corr={},indxs={}):
+    def get_window_power_cl(self,corr_indxs,c_ell0=None,c_ell_b=None):#corr={},indxs={}):
         """
         Get the cross power spectra of windows given two tracers.
         Note that noise and signal have different windows and power spectra for both 
@@ -263,9 +268,12 @@ class window_utils():
         win['binning_util']=None
         win['bin_wt']=None
         if self.bin_window:
-            cl0=self.c_ell0[corr][indxs]
-            cl_b=self.c_ell_b[corr][indxs]
+            cl0=c_ell0[corr][indxs]
+            cl_b=c_ell_b[corr][indxs]
             win['bin_wt']={'wt_b':1./cl_b,'wt0':cl0}
+            if np.all(cl_b==0):#avoid nan
+                print('get_window_power_cl: ',corr_indxs, 'zero cl')
+                win['bin_wt']={'wt_b':cl_b,'wt0':cl0}
             
         win['W_pm']=W_pm
         win['s1s2']=s1s2
@@ -384,9 +392,9 @@ class window_utils():
         #for corr in corrs:
          #   dic[corr]={}
           #  dic[corr[::-1]]={}
-
+        i=0
         for ii in self.cl_keys: #list(result.keys()):
-            result_ii=result[ii]
+            result_ii=result[i]
             corr=result_ii['corr']
             indxs=result_ii['indxs']
             corr21=corr[::-1]
@@ -396,6 +404,7 @@ class window_utils():
                 dic[corr21]={}
             dic[corr][indxs]=result_ii
             dic[corr[::-1]][indxs[::-1]]=result_ii
+            i+=1
         return dic
     
     def cov_s1s2s(self,corr): 
@@ -409,7 +418,7 @@ class window_utils():
         else:
             return 0
 
-    def get_window_power_cov(self,corr_indxs):#corr1=None,corr2=None,indxs1=None,indxs2=None):
+    def get_window_power_cov(self,corr_indxs,c_ell0=None,c_ell_b=None):#corr1=None,corr2=None,indxs1=None,indxs2=None):
         """
         Compute window power spectra what will be used in the covariance calculations. 
         For covariances, we have four windows. Pairs of them are first multiplied together and
@@ -526,15 +535,15 @@ class window_utils():
         win['bin_wt']=None
         if self.bin_window:  #FIXME: this will be used to get an approximation, because we donot save unbinned covariance
             win['bin_wt']={}
-            win['bin_wt']['cl13']=self.c_ell0[(corr[0],corr[2])][(indxs[0],indxs[2])]
-            win['bin_wt']['cl24']=self.c_ell0[(corr[1],corr[3])][(indxs[1],indxs[3])] 
-            win['bin_wt']['cl14']=self.c_ell0[(corr[0],corr[3])][(indxs[0],indxs[3])]
-            win['bin_wt']['cl23']=self.c_ell0[(corr[1],corr[2])][(indxs[1],indxs[2])] 
+            win['bin_wt']['cl13']=c_ell0[(corr[0],corr[2])][(indxs[0],indxs[2])]
+            win['bin_wt']['cl24']=c_ell0[(corr[1],corr[3])][(indxs[1],indxs[3])] 
+            win['bin_wt']['cl14']=c_ell0[(corr[0],corr[3])][(indxs[0],indxs[3])]
+            win['bin_wt']['cl23']=c_ell0[(corr[1],corr[2])][(indxs[1],indxs[2])] 
 
-            win['bin_wt']['cl_b13']=self.c_ell_b[(corr[0],corr[2])][(indxs[0],indxs[2])]
-            win['bin_wt']['cl_b24']=self.c_ell_b[(corr[1],corr[3])][(indxs[1],indxs[3])] 
-            win['bin_wt']['cl_b14']=self.c_ell_b[(corr[0],corr[3])][(indxs[0],indxs[3])]
-            win['bin_wt']['cl_b23']=self.c_ell_b[(corr[1],corr[2])][(indxs[1],indxs[2])] 
+            win['bin_wt']['cl_b13']=c_ell_b[(corr[0],corr[2])][(indxs[0],indxs[2])]
+            win['bin_wt']['cl_b24']=c_ell_b[(corr[1],corr[3])][(indxs[1],indxs[3])] 
+            win['bin_wt']['cl_b14']=c_ell_b[(corr[0],corr[3])][(indxs[0],indxs[3])]
+            win['bin_wt']['cl_b23']=c_ell_b[(corr[1],corr[2])][(indxs[1],indxs[2])] 
             
         win['f_sky12'],mask12=self.mask_comb(z_bin1['window'],z_bin2['window'],
                                      )#For SSC
@@ -600,12 +609,16 @@ class window_utils():
                     wig_i=wig_3j_2_1423
                     if self.bin_window:
                         bin_wt={'wt0':np.outer(win['bin_wt']['cl14'],win['bin_wt']['cl23'])} #FIXME: this is an approximation because we donot save unbinned covariance
-                        bin_wt['wt_b']=1./np.outer(win['bin_wt']['cl_b14'],win['bin_wt']['cl_b23'])
+                        bin_wt['wt_b']=np.outer(win['bin_wt']['cl_b14'],win['bin_wt']['cl_b23'])
+                        if not np.all(bin_wt['wt_b']==0): #avoid NAN
+                            bin_wt['wt_b']=1./bin_wt['wt_b']
                 else:
                     wig_i=wig_3j_2_1324
                     if self.bin_window:
                         bin_wt={'wt0':np.outer(win['bin_wt']['cl13'],win['bin_wt']['cl24'])} #FIXME: this is an approximation because we donot save unbinned covariance
-                        bin_wt['wt_b']=1./np.outer(win['bin_wt']['cl_b13'],win['bin_wt']['cl_b24'])
+                        bin_wt['wt_b']=np.outer(win['bin_wt']['cl_b13'],win['bin_wt']['cl_b24'])
+                        if not np.all(bin_wt['wt_b']==0):#avoid NAN
+                            bin_wt['wt_b']=1./bin_wt['wt_b']
                 for wp in win['W_pm'][corr_i]:
                     win_t=self.coupling_matrix_large(win[corr_i], wig_3j_2=wig_i,mf_pm=mf_pm,W_pm=wp,
                                                 bin_wt=bin_wt,lm=lm)
@@ -619,9 +632,9 @@ class window_utils():
 
     def combine_coupling_cov_xi(self,result):
         dic={}
-        
+        i=0
         for ii in self.cov_keys: #list(result.keys()):#np.arange(len(result)):
-            result0=result[ii]
+            result0=result[i]
             corr1=result0['corr1']
             corr2=result0['corr2']
             indx1=result0['indxs1']
@@ -641,6 +654,7 @@ class window_utils():
             dic[corr][indxs2]=result0
             dic[corr21][indxs2]=result0
             dic[corr21][indxs]=result0
+            i+=1
         return dic
     
     def combine_coupling_cov(self,result):
@@ -725,14 +739,14 @@ class window_utils():
         
         
         self.cl_keys=[corr+indx for corr in corrs for indx in corr_indxs[corr]]
-        self.Win_cl=dask.bag.from_sequence(self.cl_keys).map(self.get_window_power_cl)
+        self.Win_cl=dask.bag.from_sequence(self.cl_keys).map(self.get_window_power_cl,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)
 #         self.Win_cl={corr+indx: delayed(self.get_window_power_cl)(corr,indx) for corr in corrs for indx in corr_indxs[corr]}
 
+        self.cov_keys=[]
         if self.do_cov:
-            self.cov_keys=[]
             for corr in self.cov_indxs.keys():
                 self.cov_keys+=[corr+indx for indx in self.cov_indxs[corr]]
-            self.Win_cov=dask.bag.from_sequence(self.cov_keys).map(self.get_window_power_cov)
+            self.Win_cov=dask.bag.from_sequence(self.cov_keys).map(self.get_window_power_cov,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)
 #             self.Win_cov={}
 #             self.win_cov_tuple=None
 #             for ic1 in np.arange(len(corrs)):
@@ -765,10 +779,10 @@ class window_utils():
 
 #             self.cov_keys=list(self.Win_cov.keys())
     #### DONOT delete
-        #if self.store_win:
-         #   self.Win_cl=client.compute(self.Win_cl)
-          #  if self.do_cov:
-           #     self.Win_cov=client.compute(self.Win_cov)
+        if self.store_win:
+           self.Win_cl=client.persist(self.Win_cl)
+           if self.do_cov:
+               self.Win_cov=client.persist(self.Win_cov)
             #    self.Win_cov=self.Win_cov.result()
             #self.Win_cl=self.Win_cl.result()
 

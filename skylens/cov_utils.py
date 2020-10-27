@@ -33,13 +33,24 @@ class Covariance_utils():
         self.gaussian_cov_norm_2D=np.outer(np.sqrt(self.gaussian_cov_norm),np.sqrt(self.gaussian_cov_norm))
 
     def set_window_params(self):
-        self.Om_W=4*np.pi*self.f_sky
-        self.window_func()
+        if isinstance(self.f_sky,float):
+            self.Om_W=4*np.pi*self.f_sky
+            self.Win,self.Win0=self.window_func()
+        else:
+            self.Om_W={k1:{}for k1 in self.f_sky.keys()}
+            self.Win={k1:{}for k1 in self.f_sky.keys()}
+            self.Win0={k1:{}for k1 in self.f_sky.keys()}
+            for k1 in self.f_sky.keys():
+                for k2 in self.f_sky[k1].keys():
+                    self.Om_W[k1][k2]=4*np.pi*self.f_sky[k1][k2]
+                    self.Win[k1][k2],self.Win0[k1][k2]=self.window_func(self.Om_W[k1][k2])
 
-    def window_func(self):
+    def window_func(self,Om_W=None):
         """
         Set a default unit window used in some calculations (when survey window is not supplied.)
         """
+        if Om_W is None:
+            Om_W=self.Om_W
         if self.window_file is not None:
             W=np.genfromtxt(self.window_file,names=('l','cl'))
             window_l=W['l']
@@ -53,7 +64,7 @@ class Covariance_utils():
             self.window_l=np.arange(100)
 
         l=self.window_l
-        theta_win=np.sqrt(self.Om_W/np.pi)
+        theta_win=np.sqrt(Om_W/np.pi)
         l_th=l*theta_win
         Win0=2*jn(1,l_th)/l_th
         Win0=np.nan_to_num(Win0)
@@ -61,19 +72,24 @@ class Covariance_utils():
 #         Win0*=self.f_sky  #FIXME???? Missing 4pi? Using Om_w doesnot match healpix calculation.
         
         win_i=interp1d(l,Win0,bounds_error=False,fill_value=0)
-        self.Win=win_i(self.window_l) #this will be useful for SSV
-        self.Win0=win_i(self.l)
-        return 0
+        Win=win_i(self.window_l) #this will be useful for SSV
+        Win0=win_i(self.l)
+        return Win,Win0
 
-    def sigma_win_calc(self,clz,Win=None):#,tracers=None,zs_indx=[]):#cls_lin, Win_cl=None,Om_w12=None,Om_w34=None):
+    def sigma_win_calc(self,clz,Win=None,tracers=None,zs_indx=[]):#cls_lin, Win_cl=None,Om_w12=None,Om_w34=None):
         """
         compute mass variance on the scale of the survey window.
         """
         cls_lin=clz['cls_lin']
         if Win is None: #use defaulr f_sky window
-            Win_cl=self.Win
-            Om_w12=self.Om_W
-            Om_w34=self.Om_W
+            if isinstance(self.f_sky,float):
+                Win_cl=self.Win
+                Om_w12=self.Om_W
+                Om_w34=self.Om_W
+            else:
+                Win_cl=self.Win[tracers][zs_indx]#FIXME: Need 4 window term here
+                Om_w12=self.Om_W[(tracers[0],tracers[1])][(zs_indx[0],zs_indx[1])]
+                Om_w34=self.Om_W[(tracers[2],tracers[3])][(zs_indx[2],zs_indx[3])]
         else:
             Win_cl=Win['mask_comb_cl']  #['cov'][tracers][zs_indx]
             Om_w12=Win['Om_w12'] #[tracers][zs_indx]

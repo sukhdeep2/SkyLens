@@ -100,7 +100,7 @@ class Skylens():
         self.Win=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,s1_s2s=self.s1_s2s,
                         cov_indxs=self.cov_indxs,
                         use_window=use_window,do_cov=do_cov,cov_utils=self.cov_utils,
-                        f_sky=f_sky,corr_indxs=self.corr_indxs,z_bins=self.z_bins,
+                        f_sky=f_sky,corr_indxs=self.stack_indxs,z_bins=self.z_bins,
                         window_lmax=self.window_lmax,Win=Win,WT=self.WT,do_xi=self.do_xi,
                         xi_win_approx=self.xi_win_approx,do_pseudo_cl=self.do_pseudo_cl,
                         kappa_class0=self.kappa0,kappa_class_b=self.kappa_b,
@@ -130,6 +130,9 @@ class Skylens():
             inp_args['do_cov']=False 
             inp_args['bin_xi']=False
             inp_args['name']='S0'
+            if self.do_cov:
+                inp_args['corr_indxs']=None
+                inp_args['stack_indxs']=None
             del inp_args['self']
             inp_args2=copy.deepcopy(inp_args)
             self.kappa0=Skylens(**inp_args)  #to get unbinned c_ell and xi
@@ -194,8 +197,8 @@ class Skylens():
             self.corr_indxs[(tracer,tracer)]=[j for j in itertools.combinations_with_replacement(
                                                     np.arange(self.tracer_utils.n_bins[tracer]),2)]
 
-            if tracer=='galaxy' and not self.do_cov:
-                self.corr_indxs[(tracer,tracer)]=[(i,i) for i in np.arange(self.tracer_utils.n_bins[tracer])] 
+#             if tracer=='galaxy' and not self.do_cov:
+#                 self.corr_indxs[(tracer,tracer)]=[(i,i) for i in np.arange(self.tracer_utils.n_bins[tracer])] 
                 #by default, assume no cross correlations between galaxy bins
 
         for tracer1 in self.tracer_utils.tracers:#zbin-indexs for cross correlations
@@ -381,7 +384,7 @@ class Skylens():
 
         if self.SSV_cov :
             clz=self.Ang_PS.clz
-            sigma_win=self.cov_utils.sigma_win_calc(clz=clz,Win=Win)#,tracers=tracers,zs_indx=zs_indx)
+            sigma_win=self.cov_utils.sigma_win_calc(clz=clz,Win=Win,tracers=tracers,zs_indx=zs_indx)
 
             clr=self.Ang_PS.clz['clsR']
             if self.tidal_SSV_cov:
@@ -454,7 +457,10 @@ class Skylens():
             return cov_b
 
     def calc_pseudo_cl(self,cl,Win,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear')):
-        return cl@Win['M'] 
+        pcl=cl@Win['M']
+        if np.any(~np.isfinite(pcl)):
+            print('pseudo cl not finite:', corr,zs1_indx,zs2_indx, cl,Win['M'])
+        return  pcl
 
     def cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,
                 corrs=None,bias_kwargs={},bias_func=None,stack_corr_indxs=None):
@@ -531,7 +537,7 @@ class Skylens():
                 # out[(i,j)]
                 cl[corr][(i,j)]=delayed(self.calc_cl)(zs1_indx=i,zs2_indx=j,corr=corr) 
                 cl_b[corr][(i,j)]=delayed(self.bin_cl_func)(cl=cl[corr][(i,j)],cov=None)
-                if self.use_window and self.do_pseudo_cl:
+                if self.use_window and self.do_pseudo_cl and (i,j) in self.stack_indxs[corr]:
                     if not self.bin_window:
                         pcl[corr][(i,j)]=delayed(self.calc_pseudo_cl)(cl[corr][(i,j)],Win=self.Win.Win['cl'][corr][(i,j)],zs1_indx=i,
                                                 zs2_indx=j,corr=corr)
@@ -739,7 +745,7 @@ class Skylens():
         cls_tomo_nu=self.cl_tomo(cosmo_h=cosmo_h,cosmo_params=cosmo_params,
                             pk_params=pk_params,corrs=corrs)
 
-        cl=cls_tomo_nu['pseudo_cl'] #Note that if window is turned off, pseudo_cl=cl
+        cl=cls_tomo_nu['cl'] #Note that if window is turned off, pseudo_cl=cl
         cov_xi={}
         xi={}
         out={}

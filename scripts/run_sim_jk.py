@@ -139,12 +139,12 @@ import multiprocessing
 ncpu=multiprocessing.cpu_count() - 1
 # ncpu=20 #4
 if test_run:
-    memory='20gb'
-    ncpu=4
+    memory='50gb'
+    ncpu=8
 
 if Scheduler_file is None:
     worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
-    LC=LocalCluster(n_workers=2,processes=False,memory_limit=memory,threads_per_worker=ncpu,
+    LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
                 local_dir=wig_home+'/NGL-worker/', **worker_kwargs,
                 #scheduler_port=12234,
 #                 dashboard_address=8801
@@ -153,7 +153,7 @@ if Scheduler_file is None:
                )
     client=Client(LC,)#diagnostics_port=8801,)
 else:
-    client=Client(scheduler_file=Scheduler_file)
+    client=Client(scheduler_file=Scheduler_file,processes=True)
 #    client.restart()
 print(client)
 

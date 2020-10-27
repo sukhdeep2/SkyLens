@@ -25,7 +25,7 @@ if debug:
     # problem is likely to be in some package
 
 
-test=True
+test=False
 
 fig_home='./figures/'
 fig_format='pdf'
@@ -51,10 +51,11 @@ lmax_cl=1000   #[1000,2000,5000]
 bary_nQ=0   #[0,2,1,3,5]
 
 Nl_bins=12
+bin_cl=True #False
+use_binned_l=True
 
 area_train=150
 n_source_train=1
-
 
 train_sample_missed=1
 n_source_missed=6
@@ -63,7 +64,7 @@ n_source-=n_source_missed*train_sample_missed
 
 import multiprocessing
 
-ncpu=multiprocessing.cpu_count()-2
+ncpu=multiprocessing.cpu_count()
 #ncpu=20
 
 if bary_nQ>0:
@@ -73,13 +74,15 @@ else:
 
 
 fname_out='{ns}_{nsm}_{nl}_{nlD}_nlb{nlb}_lmax{lmax}_z{zmin}-{zmax}_zlmax{zlmax}_bary{bary_nQ}_AT{at}.pkl'
+if bin_cl:
+    fname_out='binned_'+fname_out
 if SSV_cov:
     fname_out='SSV_'+fname_out
 
 from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
 #http://distributed.readthedocs.io/en/latest/_modules/distributed/worker.html
-LC=LocalCluster(n_workers=1,processes=False,memory_limit='220gb',threads_per_worker=ncpu*2,memory_spill_fraction=.99,
+LC=LocalCluster(n_workers=1,processes=False,memory_limit='220gb',threads_per_worker=ncpu,memory_spill_fraction=.99,
                memory_monitor_interval='2000ms')
 client=Client(LC)
 
@@ -152,7 +155,8 @@ def fish_cosmo_model(p='As',Nx=2,dx_max=0.01,do_log=False,kappa_class=None,do_co
         models[i]=cl_t['pcl_b']
         covs[i]=cl_t['cov']
         if not np.all(np.isfinite(models[i])):
-            print(p,models[i],models[i][~np.isfinite(models[i])],x_vars,cosmo_t,)
+            print('nan crash',p,x_vars,cosmo_t,)
+            print(models[i],models[i][~np.isfinite(models[i])],np.where(~np.isfinite(models[i])))
             crash
 #         kappa_class.Ang_PS.reset()
     return models,covs,x_vars,x_grad
@@ -507,7 +511,9 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
         model_derivs[p]/=x_grads[p]
         model_derivs[p]=model_derivs[p][:,np.int(Nx/2)]
         if 'bz' in p and np.all(model_derivs[p]==0):
-            print('mode derivs zero ',p, np.all(model_derivs[p]==0))
+            print('model derivs zero ',p, np.all(model_derivs[p]==0))
+            print('model0:', models[p][0],models[p][0]-models[p][1])
+            print('z:',kappa_class.Ang_PS.z,z_bins_kwargs['zl_bins'][0]['z'])
         
         if do_cov:
             cov_derivs[p]=np.gradient(np.array([covs[p][i] for i in np.arange(Nx)]),axis=0).T
@@ -643,7 +649,6 @@ gc.enable()
 
 do_cov=True
 sparse_cov=True
-bin_cl=False #True
 tidal_SSV=SSV_cov
 do_sample_variance=True
 use_window=True
@@ -660,8 +665,8 @@ f_sky_train=area_train*d2r**2/4/np.pi
 nz_PS=100
 
 z_PS=np.logspace(np.log10(z_min),np.log10(z_max),50)
-z_PS2=np.linspace(z_min,z_max,np.int((z_max-z_min)/.1 ))
-z_PS=np.sort(np.unique(np.around(np.append(z_PS,z_PS2),decimals=2)))
+z_PS2=np.linspace(z_min,z_max,np.int((z_max-z_min)/.05 ))
+z_PS=np.sort(np.unique(np.around(np.append(z_PS,z_PS2),decimals=3)))
 
 nz_PS=len(z_PS)
 
@@ -689,7 +694,7 @@ if test:
     n_lensD_bins['lrg']=1
     n_lensD_bins['BG']=1
     n_lensD_bins['qso']=1
-    n_zs=5
+    n_zs=5 #this can lead to some model_deriv=0 errors due to very coarse sampling.
     n_zl=5
 
 
@@ -710,8 +715,8 @@ def get_z_bins(zmin,zmax,ns_bins,n_lens_bins,n_lensD_bins=None,nsource=n_source,
     zs_bins_train={'n_bins':0}
     if area_train>0:
         zs_bins_train=lsst_source_tomo_bins(zmin=zmin,zmax=zmax,n_zs=n_zs,nside=nside,ns0=n_source_train,nbins=ns_bins,f_sky=f_sky_train,
-                                  z_sigma_power=1,z_sigma=0,ztrue_func=None,
-                                  use_window=use_window,AI=AI,AI_z=AI_z)
+                                  z_sigma_power=1,z_sigma=z_source_sigma,ztrue_func=ztrue_given_pz_Gaussian,
+                                  use_window=use_window,AI=AI,AI_z=AI_z)#exactly same config as zs_bins, including z_source_sigma as we want same p(zs)
     
     zl_bins=lsst_source_tomo_bins(zmin=zmin,zmax=z_max_lens,n_zs=n_zl,ns0=nlens,nbins=n_lens_bins,nside=nside,f_sky=f_sky,
                          ztrue_func=ztrue_given_pz_Gaussian,use_window=use_window,mag_fact=mag_fact,
@@ -761,72 +766,111 @@ def combine_z_bins_all(z_bins_kwargs={}):
 def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,do_cov=do_cov,
               pk_func=pk_func,n_source=n_source,n_source_bins=nbins,f_sky=0.3,
               l_max=lmax_cl,l_min=50,Nl_bins=Nl_bins,Win=None,store_win=store_win,mag_fact=0,
-             n_lens_bins=3,n_lensD_bins=None,nlens0=n_lens):
+             n_lens_bins=3,n_lensD_bins=None,nlens0=n_lens,z_bins_kwargs=None):
     
     pk_params2=copy.deepcopy(pk_params)
     pk_params2['pk_func']=pk_func
     power_spectra_kwargs2={'pk_params':pk_params2}
     
-    Skylens_kwargs={'do_cov':do_cov,'bin_cl':bin_cl, #'l':l0,'l_bins':l_bins,
+    Skylens_kwargs={'do_cov':do_cov,'bin_cl':bin_cl,'use_binned_l':use_binned_l, #'l':l0,'l_bins':l_bins,
             'SSV_cov':SSV,'tidal_SSV_cov':SSV,'do_xi':False,'use_window':use_window,'window_lmax':window_lmax,
             'f_sky':f_sky,'corrs':corrs,'store_win':store_win,'Win':Win, 'wigner_files':wigner_files, #'sigma_gamma':sigma_gamma
             'do_sample_variance':do_sample_variance,'power_spectra_kwargs':power_spectra_kwargs2,'f_sky':f_sky,
-            'bin_xi':bin_xi,'sparse_cov':sparse_cov,'nz_PS':nz_PS,'z_PS':z_PS}
-    
-    z_bins_kwargs={'zmin':z_min,'zmax':z_max,'nsource':n_source,'ns_bins':nbins,'nside':nside,'n_lens_bins':n_lens_bins,'n_lensD_bins':n_lensD_bins,
-                    'use_window':use_window,'nlens':nlens0,'nDlens':nlens0/2.,'area_overlap':0.2, 'f_sky':f_sky,'z_lens_sigma':0.01,
-                   'mag_fact':mag_fact,
-                   'z_source_sigma':0.05}
+            'bin_xi':bin_xi,'sparse_cov':sparse_cov,'nz_PS':nz_PS,'z_PS':z_PS
+}
     ell_bin_kwargs={'lmax_cl':l_max,'lmin_cl':l_min,'Nl_bins':Nl_bins}
-    
-    
-    zs_bins,zs_bins_train,zs_bins_missed,zl_bins,zlD_bins=get_z_bins(**z_bins_kwargs)
-    
-    z_bins_kwargs['zs_bins']=zs_bins
-    z_bins_kwargs['zl_bins']=zl_bins
-    z_bins_kwargs['zlD_bins']=zlD_bins
-    z_bins_kwargs['zs_bins_train']=zs_bins_train
-    z_bins_kwargs['zs_bins_missed']=zs_bins_missed
-    
-    zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)
-
-    print('nbins',zs_bins['n_bins'],zl_bins['n_bins'],zlD_bins['n_bins'],zl_bins_comb['n_bins'],zs_bins_comb['n_bins'])
-    
-    ii_lens=np.arange(zs_bins_comb['n_bins'],zl_bins_comb['n_bins'])
-    ii_lens2=np.arange(zs_bins_comb['n_bins']+zs_bins_train['n_bins'],zl_bins_comb['n_bins'])
-    ii_s=np.arange(zs_bins_comb['n_bins'])
-    
-    z_bins_kwargs['corr_indxs']={corr_gg:{},corr_ll:{},corr_ggl:{}}
-    z_bins_kwargs['corr_indxs'][corr_gg]=[(i,j) for i in ii_s for j in ii_lens]+[(i,i) for i in ii_lens]
-    z_bins_kwargs['corr_indxs'][corr_gg]+=[(i,j) for i in ii_s for j in np.arange(i,zs_bins_comb['n_bins'] )] #only auto corr for lens bins, auto+cross for source bins.
-    
-    z_bins_kwargs['corr_indxs'][corr_ll]=[(i,j) for i in ii_s for j in np.arange(i,zs_bins_comb['n_bins'] )]
-    
-    z_bins_kwargs['corr_indxs'][corr_ggl]=[(j,i) for i in ii_s for j in ii_lens2 ] #we ignore lensing around training sample
-    z_bins_kwargs['corr_indxs'][corr_ggl]+=[(j,i) for i in ii_s for j in np.arange(i,zs_bins_comb['n_bins'])]
-        
-#     print('init fish, indxs:',z_bins_kwargs['corr_indxs'])
-        
-    Skylens_kwargs['zg_bins']=zl_bins_comb 
-    Skylens_kwargs['zs_bins']=zs_bins_comb 
-    
     l0,l_bins,l=get_cl_ells(**ell_bin_kwargs)
-#     print('running Skylens',l0.max(),zl_bins_comb['n_bins'],Skylens_kwargs.keys())
-    kappa_class=Skylens(l=l0,l_bins=l_bins,stack_indxs=z_bins_kwargs['corr_indxs'],**Skylens_kwargs)
-#     print('kappa fsky: ',kappa_class.f_sky)
-#     if not use_window:
-#         for kk in kappa_class.corr_indxs.keys():
-#             indxs=kappa_class.corr_indxs[kk]
-
-#             for (i,j) in indxs:
-#                 if i<(n_source_bins+n_lens_bins) and j<(n_source_bins+n_lens_bins):
-#                     continue
-#                 if i>(n_source_bins+n_lens_bins) and j>(n_source_bins+n_lens_bins):
-#                     continue
-                    
-#                 kappa_class.f_sky[kk][(i,j)]=z_bins_kwargs['f_sky']*z_bins_kwargs['area_overlap']
-#                 kappa_class.f_sky[kk[::-1]][(j,i)]=z_bins_kwargs['f_sky']*z_bins_kwargs['area_overlap']
     
+    if z_bins_kwargs is None:
+        z_bins_kwargs={'zmin':z_min,'zmax':z_max,'nsource':n_source,'ns_bins':nbins,'nside':nside,'n_lens_bins':n_lens_bins,'n_lensD_bins':n_lensD_bins,
+                        'use_window':True,'nlens':nlens0,'nDlens':nlens0/2.,'area_overlap':0.2, 'f_sky':f_sky,'z_lens_sigma':0.01,
+                       'mag_fact':mag_fact,
+                       'z_source_sigma':0.05}
+        
+
+
+        zs_bins,zs_bins_train,zs_bins_missed,zl_bins,zlD_bins=get_z_bins(**z_bins_kwargs)
+
+        z_bins_kwargs['zs_bins']=zs_bins
+        z_bins_kwargs['zl_bins']=zl_bins
+        z_bins_kwargs['zlD_bins']=zlD_bins
+        z_bins_kwargs['zs_bins_train']=zs_bins_train
+        z_bins_kwargs['zs_bins_missed']=zs_bins_missed
+    
+        zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)
+
+        print('nbins',zs_bins['n_bins'],zl_bins['n_bins'],zlD_bins['n_bins'],zl_bins_comb['n_bins'],zs_bins_comb['n_bins'])
+
+        ii_lens=np.arange(zs_bins_comb['n_bins'],zl_bins_comb['n_bins'])
+        ii_lens2=np.arange(zs_bins_comb['n_bins']+zs_bins_train['n_bins'],zl_bins_comb['n_bins'])
+        ii_s=np.arange(zs_bins_comb['n_bins'])
+
+        z_bins_kwargs['corr_indxs']={corr_gg:{},corr_ll:{},corr_ggl:{}}
+        z_bins_kwargs['corr_indxs'][corr_gg]=[(i,j) for i in ii_s for j in ii_lens]+[(i,i) for i in ii_lens]
+        z_bins_kwargs['corr_indxs'][corr_gg]+=[(i,j) for i in ii_s for j in np.arange(i,zs_bins_comb['n_bins'] )] #only auto corr for lens bins, auto+cross for source bins.
+
+        z_bins_kwargs['corr_indxs'][corr_ll]=[(i,j) for i in ii_s for j in np.arange(i,zs_bins_comb['n_bins'] )]
+
+        z_bins_kwargs['corr_indxs'][corr_ggl]=[(j,i) for i in ii_s for j in ii_lens2 ] #we ignore lensing around training sample
+        z_bins_kwargs['corr_indxs'][corr_ggl]+=[(j,i) for i in ii_s for j in np.arange(i,zs_bins_comb['n_bins'])]
+
+    #     print('init fish, indxs:',z_bins_kwargs['corr_indxs'])
+
+        Skylens_kwargs['zg_bins']=zl_bins_comb 
+        Skylens_kwargs['zs_bins']=zs_bins_comb 
+
+        
+    #     print('running Skylens',l0.max(),zl_bins_comb['n_bins'],Skylens_kwargs.keys())
+        Skylens_kwargs['use_window']=False #not needed in this particular calc. removed for speed
+        kappa_class=Skylens(l=l0,l_bins=l_bins,stack_indxs=z_bins_kwargs['corr_indxs'],**Skylens_kwargs)
+        Skylens_kwargs['use_window']=use_window
+        #Following is not used unless use_window=False. Note that for z_bins, we always have use_window=True.
+        #Easier to keep track of f_sky overlaps.
+        f_sky={}
+        sc={}
+        for tracer in ['galaxy','shear']:
+            kappa_class.tracer_utils.set_kernel(cosmo_h=kappa_class.Ang_PS.PS.cosmo_h,zl=kappa_class.Ang_PS.z,tracer=tracer)
+        for corr in z_bins_kwargs['corr_indxs']:
+            indxs=z_bins_kwargs['corr_indxs'][corr]
+            f_sky[corr]={}
+            sc[corr]={}
+            for (i,j) in indxs:
+                zs1=kappa_class.z_bins[corr[0]][i]#.copy() #we will modify these locally
+                zs2=kappa_class.z_bins[corr[1]][j]
+                f_sky_ij,mask12=kappa_class.Win.mask_comb(zs1['window'],zs2['window'])
+                sc_ij=np.sum(zs1['kernel_int']*zs2['kernel_int'])
+                if f_sky_ij==0 or sc_ij==0:
+                    print('Fish init: ',corr,(i,j),'removed because fsky=',f_sky_ij,' kernel product=',sc_ij)
+                    z_bins_kwargs['corr_indxs'][corr].remove((i,j))
+                else:
+                    f_sky[corr][(i,j)]=f_sky_ij
+                    sc[corr][(i,j)]=sc_ij
+        print('fsky, kernel: ',f_sky,sc,
+    #           np.all(np.array([list(f_sky[c].values()) for c in f_sky.keys()]).flatten()>0),
+    #           np.all(np.array([list(sc[c].values()) for c in sc.keys()]).flatten()>0)
+             )
+        for corr in kappa_class.cov_indxs:
+            f_sky[corr]={}
+            for (i,j,k,l) in kappa_class.cov_indxs[corr]:
+                zs1=kappa_class.z_bins[corr[0]][i]#.copy() #we will modify these locally
+                zs2=kappa_class.z_bins[corr[1]][j]
+                zs3=kappa_class.z_bins[corr[2]][k]#.copy() #we will modify these locally
+                zs4=kappa_class.z_bins[corr[3]][l]
+                f_sky_12,mask12=kappa_class.Win.mask_comb(zs1['window'],zs2['window'])
+                f_sky_12,mask34=kappa_class.Win.mask_comb(zs3['window'],zs4['window'])
+
+                f_sky_1234,mask1234=kappa_class.Win.mask_comb(mask12,mask34)
+                f_sky[corr][(i,j,k,l)]=f_sky_1234
+        z_bins_kwargs['f_sky']=f_sky
+        z_bins_kwargs['kernel_product']=sc
+    else:
+        zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)
+        Skylens_kwargs['zg_bins']=zl_bins_comb 
+        Skylens_kwargs['zs_bins']=zs_bins_comb
+        
+    Skylens_kwargs['f_sky']=z_bins_kwargs['f_sky']
+    kappa_class=Skylens(l=l0,l_bins=l_bins,stack_indxs=z_bins_kwargs['corr_indxs'],**Skylens_kwargs)
+#     print(kappa_class.f_sky)
 #     z_bins_kwargs['corr_indxs']=kappa_class.corr_indxs.copy()
 #     z_bins_kwargs['corr_indxs'][('galaxy','galaxy')]=z_bins_kwargs['gg_indxs']
     return kappa_class,z_bins_kwargs
@@ -878,22 +922,17 @@ if use_window and store_win:
     try:
         with open(fname_win,'rb') as of:
             WIN=pickle.load(of)
+        print('window read')
     except:
         save_win=True
         print('window not found. Will compute')
 
-kappa_class,z_bins_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=n_lensD_bins,corrs=corrs,
-                                          Win=WIN['full'],store_win=store_win,)
-# cl0=cl0G['stack'].compute()
+# kappa_class,z_bins_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=n_lensD_bins,corrs=corrs,
+#                                           Win=WIN['full'],store_win=store_win,)
+# # cl0=cl0G['stack'].compute()
 
-kappa_class_lsst,z_bins_lsst_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=None,corrs=corrs,
-                                          Win=WIN['lsst'],store_win=store_win)
-
-if save_win:
-    win_all={'full':kappa_class.Win.Win,'lsst':kappa_class_lsst.Win.Win}
-    with open(fname_win,'wb') as of:
-        pickle.dump(win_all,of)
-
+# kappa_class_lsst,z_bins_lsst_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=None,corrs=corrs,
+#                                           Win=WIN['lsst'],store_win=store_win)
         
 fname_cl=file_home+'/cl_cov_'+fname_out
 try:
@@ -902,13 +941,20 @@ try:
         cl_all=pickle.load(of)
     cl_L=cl_all['cl_L']
     cl_L_lsst=cl_all['cl_L_lsst']
+    z_bins_kwargs=cl_all['z_bins']
+    z_bins_lsst_kwargs=cl_all['z_bins_lsst']
     print('read cl / cov from file: ',fname_cl)
-except:
-    print('cl not found. Will compute',fname_cl)
+except Exception as err:
+    print('cl not found. Will compute',fname_cl,err)
 
+    kappa_class,z_bins_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=n_lensD_bins,corrs=corrs,
+                                          Win=WIN['full'],store_win=store_win,)
+
+    kappa_class_lsst,z_bins_lsst_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=None,corrs=corrs,
+                                          Win=WIN['lsst'],store_win=store_win)
+    
     cl0G=kappa_class.cl_tomo(corrs=corrs,stack_corr_indxs=z_bins_kwargs['corr_indxs'])
     cl0G_lsst=kappa_class_lsst.cl_tomo(corrs=corrs,stack_corr_indxs=z_bins_lsst_kwargs['corr_indxs'])
-
 
     proc = psutil.Process()
     print('graphs done, memory: ',format_bytes(proc.memory_info().rss))
@@ -930,6 +976,13 @@ except:
     with open(fname_cl,'wb') as of:
         pickle.dump(cl_all,of)
 
+    if save_win:
+        win_all={'full':kappa_class.Win.Win,'lsst':kappa_class_lsst.Win.Win}
+        with open(fname_win,'wb') as of:
+            pickle.dump(win_all,of)
+            
+    del kappa_class, kappa_class_lsst
+
 if sparse_cov:
     cov_p_inv_test1=np.linalg.inv(cl_L['cov'].todense())
     cov_p_inv_test2=np.linalg.inv(cl_L_lsst['cov'].todense())
@@ -944,14 +997,16 @@ priors['Om']=np.inf
 priors['w']=np.inf
 priors['wa']=np.inf
 
-del kappa_class, kappa_class_lsst
 do_cov=False
+bin_cl=False #True
+use_binned_l=False
+
 kappa_class,z_bins_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=n_lensD_bins,corrs=corrs,
-                                          Win=WIN['full'],store_win=store_win,do_cov=do_cov)#reset after cl,cov calcs
+                                          Win=WIN['full'],store_win=store_win,do_cov=do_cov,z_bins_kwargs=z_bins_kwargs)#reset after cl,cov calcs
 # cl0=cl0G['stack'].compute()
 
 kappa_class_lsst,z_bins_lsst_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=None,corrs=corrs,
-                                          Win=WIN['lsst'],store_win=store_win,do_cov=do_cov)#reset after cl,cov calcs
+                                          Win=WIN['lsst'],store_win=store_win,do_cov=do_cov,z_bins_kwargs=z_bins_lsst_kwargs)#reset after cl,cov calcs
 
 
 # sigma_68=-0.1*(1+z) + 0.12*(1+z)**2 #https://arxiv.org/pdf/1708.01532.pdf
@@ -994,7 +1049,7 @@ for i in np.arange(z_bins_kwargs['zs_bins_missed']['n_bins']): #photo-z bias
     
 pp_l={}
 for i in np.arange(z_bins_kwargs['zl_bins']['n_bins']): #photo-z bias
-    pp_l[i]=sigma_photoz(z_bins_kwargs['zl_bins'][i])/10.
+    pp_l[i]=sigma_photoz(z_bins_kwargs['zl_bins'][i])/5.
     for j in np.arange(n_zl): #photo-z bias
 #         priors['nz_l_'+str(i)+'_'+str(j)]=0.01
         priors['nz_l_'+str(i)+'_'+str(j)]=pp_l[i][j]
@@ -1075,19 +1130,19 @@ galaxy_params+=['g_b_l_1_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['zl_b
 galaxy_params+=['g_b_lD_1_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['zlD_bins']['n_bins'])]
 
 
-fishes['f_all']=fisher_calc(cosmo_params=cosmo_params,z_params=pz_params,galaxy_params=galaxy_params,
-                    kappa_class=kappa_class,clS=cl_L,z_bins_kwargs=z_bins_kwargs,priors=priors,baryon_params=baryon_params)
+# fishes['f_all']=fisher_calc(cosmo_params=cosmo_params,z_params=pz_params,galaxy_params=galaxy_params,
+#                     kappa_class=kappa_class,clS=cl_L,z_bins_kwargs=z_bins_kwargs,priors=priors,baryon_params=baryon_params)
 
-pz_params=['nz_s_{j}_{k}'.format(j=i,k=k) for i in np.arange(z_bins_kwargs['zs_bins']['n_bins']) for k in np.arange(n_zs)]
-pz_params+=['nz_sm_{j}_{k}'.format(j=i,k=k) for i in np.arange(z_bins_kwargs['zs_bins_missed']['n_bins']) for k in np.arange(n_zs)]
-pz_params+=['nz_l_{j}_{k}'.format(j=i,k=k) for i in np.arange(z_bins_kwargs['zl_bins']['n_bins']) for k in np.arange(n_zl)]
-galaxy_params=['g_b_s_1_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['zs_bins']['n_bins'])]
-galaxy_params+=['g_b_sm_1_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['zs_bins_missed']['n_bins'])]
-galaxy_params+=['g_b_l_1_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['zl_bins']['n_bins'])]
-galaxy_params+=['g_b_lD_1_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['zlD_bins']['n_bins'])]
+# pz_params=['nz_s_{j}_{k}'.format(j=i,k=k) for i in np.arange(z_bins_kwargs['zs_bins']['n_bins']) for k in np.arange(n_zs)]
+# pz_params+=['nz_sm_{j}_{k}'.format(j=i,k=k) for i in np.arange(z_bins_kwargs['zs_bins_missed']['n_bins']) for k in np.arange(n_zs)]
+# pz_params+=['nz_l_{j}_{k}'.format(j=i,k=k) for i in np.arange(z_bins_kwargs['zl_bins']['n_bins']) for k in np.arange(n_zl)]
+# galaxy_params=['g_b_s_1_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['zs_bins']['n_bins'])]
+# galaxy_params+=['g_b_sm_1_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['zs_bins_missed']['n_bins'])]
+# galaxy_params+=['g_b_l_1_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['zl_bins']['n_bins'])]
+# galaxy_params+=['g_b_lD_1_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['zlD_bins']['n_bins'])]
 
-fishes['f_nz_all']=fisher_calc(cosmo_params=cosmo_params,z_params=pz_params,galaxy_params=galaxy_params,
-                    kappa_class=kappa_class,clS=cl_L,z_bins_kwargs=z_bins_kwargs,priors=priors,baryon_params=baryon_params)
+# fishes['f_nz_all']=fisher_calc(cosmo_params=cosmo_params,z_params=pz_params,galaxy_params=galaxy_params,
+#                     kappa_class=kappa_class,clS=cl_L,z_bins_kwargs=z_bins_kwargs,priors=priors,baryon_params=baryon_params)
 
 pz_params=['nz_s_{j}_{k}'.format(j=i,k=k) for i in np.arange(z_bins_kwargs['zs_bins']['n_bins']) for k in np.arange(n_zs)]
 pz_params+=['nz_sm_{j}_{k}'.format(j=i,k=k) for i in np.arange(z_bins_kwargs['zs_bins_missed']['n_bins']) for k in np.arange(n_zs)]
