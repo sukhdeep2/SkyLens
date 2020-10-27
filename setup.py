@@ -9,7 +9,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setup(
-    name='Skylens',
+    name='skylens',
     version='0.1',
     description='3X2 theory+covariance',
     url='',
@@ -24,6 +24,7 @@ setup(
         'Programming Language :: Python :: 3.6',
     ],
     packages=['skylens'],
-    install_requires=['scipy', 'numpy', 'Jinja2', 'pyyaml', 'zarr', 'sympy', 'sparse', 'dask'],
+    package_dir = {'skylens': 'skylens'},
+    install_requires=['scipy', 'numpy', 'camb', 'zarr<=2.3.1', 'sympy', 'sparse', 'dask','distributed'],
     python_requires='>=3.6',
 )

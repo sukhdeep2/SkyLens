@@ -1,9 +1,9 @@
 import dask
 from dask import delayed
 import sparse
-from wigner_transform import *
-from binning import *
-from cov_utils import *
+from skylens.wigner_transform import *
+from skylens.binning import *
+from skylens.cov_utils import *
 import numpy as np
 import healpy as hp
 from scipy.interpolate import interp1d

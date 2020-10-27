@@ -7,8 +7,8 @@ import numpy as np
 from scipy.interpolate import interp1d
 from scipy.integrate import quad as scipy_int1d
 from scipy.special import jn, jn_zeros
-from wigner_functions import *
-from binning import *
+from skylens.wigner_functions import *
+from skylens.binning import *
 import healpy as hp
 
 d2r=np.pi/180.

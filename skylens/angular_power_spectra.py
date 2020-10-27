@@ -3,9 +3,9 @@ Class with some hwelper functions to convert the power spectra into form that is
 """
 import os,sys
 
-from power_spectra import *
-from hankel_transform import *
-from binning import *
+from skylens.power_spectra import *
+#from hankel_transform import *
+#from binning import *
 from astropy.constants import c,G
 from astropy import units as u
 import numpy as np
