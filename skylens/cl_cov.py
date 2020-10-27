@@ -759,6 +759,8 @@ class Skylens():
                 for indx in self.corr_indxs[corr]:
                     xi[corr][s1_s2][indx]=delayed(self.get_xi)(cls=cl,corr=corr,indxs=indx,
                                                         s1_s2=s1_s2,Win=self.Win.Win)
+
+        print('Done xi graph',get_size(cl)/1.e6)
         if self.do_cov:
             corrs_iter=[(corrs[i],corrs[j]) for i in np.arange(len(corrs)) for j in np.arange(i,len(corrs))]
             cov_indxs={}
