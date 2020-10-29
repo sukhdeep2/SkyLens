@@ -237,9 +237,14 @@ class Covariance_utils():
         fs0=1
         fs1423=1
         if f_sky is not None:
-            fs1324=np.sqrt(f_sky[tracers[0],tracers[2]][z_indx[0],z_indx[2]]*f_sky[tracers[1],tracers[3]][z_indx[1],z_indx[3]])
-            fs0=f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
-            fs1423=np.sqrt(f_sky[tracers[0],tracers[3]][z_indx[0],z_indx[3]]*f_sky[tracers[1],tracers[2]][z_indx[1],z_indx[2]])
+            if isinstance(self.f_sky,float):
+                fs1324=self.f_sky
+                fs0=self.f_sky**2
+                fs1423=self.f_sky
+            else:
+                fs1324=f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[2]][z_indx[0],z_indx[2]]*f_sky[tracers[1],tracers[3]][z_indx[1],z_indx[3]])
+                fs0=f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
+                fs1423=f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[3]][z_indx[0],z_indx[3]]*f_sky[tracers[1],tracers[2]][z_indx[1],z_indx[2]])
         
         if not self.do_xi:
             G1324/=self.gaussian_cov_norm_2D/fs1324*fs0

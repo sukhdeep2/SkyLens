@@ -30,6 +30,7 @@ parser.add_argument("--lognormal", "-l",type=int, help="use complicated window")
 parser.add_argument("--blending", "-b",type=int, help="use complicated window")
 parser.add_argument("--ssv", "-ssv",type=int, help="use complicated window")
 parser.add_argument("--noise", "-sn",type=int, help="use shot noise")
+parser.add_argument("--scheduler", "-s", help="Scheduler file")
 
 gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
 gc.enable()
@@ -45,13 +46,17 @@ do_blending=False if not args.blending else np.bool(args.blending)
 do_SSV_sim=False if not args.ssv else np.bool(args.ssv)
 use_shot_noise=True if args.noise is None else np.bool(args.noise)
 
+Scheduler_file=args.scheduler
+
+Scheduler_file=None
+
 # if args.noise is None: #because 0 and None both result in same bool
 #     use_shot_noise=True
 
 
 print(use_complicated_window,unit_window,lognormal,do_blending,do_SSV_sim,use_shot_noise,args.noise,np.bool(args.noise),not args.noise)
 
-nsim=1000
+nsim=100
 
 lognormal_scale=2
 
@@ -83,14 +88,17 @@ if test_run:
 wigner_files={}
 # wig_home='/global/cscratch1/sd/sukhdeep/dask_temp/'
 #wig_home='/Users/Deep/dask_temp/'
-wig_home='/home/deep/data/repos/SkyLens/temp/'
-wigner_files[0]= wig_home+'/dask_wig3j_l6500_w2100_0_reorder.zarr'
+home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/'
+wig_home=home+'temp/'
+wigner_files[0]= wig_home+'/dask_wig3j_l3500_w2100_0_reorder.zarr'
 wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 
 l0w=np.arange(3*nside-1)
 
-memory='55gb'#'120gb'
-ncpu=12 #4
+memory='120gb'#'120gb'
+import multiprocessing
+
+ncpu=multiprocessing.cpu_count() - 1
 if test_run:
     memory='20gb'
     ncpu=4
@@ -222,10 +230,10 @@ for corr in corrs:
     cl0['cl'][corr]=clG0['cl'][corr][bi].compute()
 
     cl0['cl_b'][corr]=clG0['pseudo_cl_b'][corr][bi].compute()
-    cl0['cov'][corr]=clG0['cov'][corr+corr][bi+bi].compute()
+    cl0['cov'][corr]=clG0['cov'][corr+corr].compute()[0]
 
     cl0_win['cl_b'][corr]=clG_win['pseudo_cl_b'][corr][bi].compute()
-    cl0_win['cov'][corr]=clG_win['cov'][corr+corr][bi+bi].compute()['final_b']
+    cl0_win['cov'][corr]=clG_win['cov'][corr+corr].compute()[0]['final_b']
 
 print('kappa done, binning coupling matrices')
 from binning import *
@@ -708,7 +716,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
 #         clpg.compute()
         i=0
         j=0
-        step=min(np.int(5),Rsize)
+        step=1#min(np.int(5),Rsize)
         funct=partial(get_clsim2,clg0,window,mask,SN,coupling_M,coupling_M_inv,ndim)
         while j<Rsize:
             futures={}
@@ -819,7 +827,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     #client.close()
     return outp
 #test_home=wig_home+'/tests/'
-test_home='/home/deep/data/repos/SkyLens/tests/'
+test_home=home+'/tests/'
 fname=test_home+'/cl0_sims_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
 if lognormal:
     fname+='_lognormal'+str(lognormal_scale)

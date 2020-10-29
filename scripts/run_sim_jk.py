@@ -31,7 +31,7 @@ from dask.distributed import Client  # we already had this above
 
 import argparse
 
-test_run=True
+test_run=False
 parser = argparse.ArgumentParser()
 parser.add_argument("--cw", "-cw",type=int, help="use complicated window")
 parser.add_argument("--uw", "-uw",type=int, help="use unit window")
@@ -190,8 +190,8 @@ corrs=[corr_ll,corr_ggl,corr_gg]
 
 
 th_min=10./60
-th_max=600./60
-n_th_bins=20
+th_max=120./60
+n_th_bins=15
 th_bins=np.logspace(np.log10(th_min),np.log10(th_max),n_th_bins+1)
 th=np.logspace(np.log10(th_min*0.98),np.log10(1),n_th_bins*30)
 th2=np.linspace(1,th_max*1.02,n_th_bins*30)
