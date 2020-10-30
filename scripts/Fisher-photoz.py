@@ -25,7 +25,7 @@ if debug:
     # problem is likely to be in some package
 
 
-test=True
+test=False
 
 fig_home='./figures/'
 fig_format='pdf'
@@ -51,7 +51,7 @@ bary_nQ=0   #[0,2,1,3,5]
 
 Nl_bins=12
 bin_cl=True #False
-use_binned_l=False
+use_binned_l=True
 use_window=True
 
 unit_window=True
@@ -996,8 +996,6 @@ if sparse_cov:
 proc = psutil.Process()
 print('cl, cov done. memory:',format_bytes(proc.memory_info().rss))
 
-crash
-
 priors={}
 
 priors['Ase9']=np.inf
@@ -1006,7 +1004,7 @@ priors['w']=np.inf
 priors['wa']=np.inf
 
 do_cov=False
-# if use_binned_l:
+# if use_binned_l: 
 #     bin_cl=False #True
 #     use_binned_l=False
 
@@ -1092,8 +1090,7 @@ for i in np.arange(10): #baryon PCA
 fishes={}
 fishes['priors']=priors
 
-z_bins_kwargs['use_window']=False
-
+z_bins_kwargs['use_window']=use_window
 
 if use_window:
     kappa_class.Win.store_win=True

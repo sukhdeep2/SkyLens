@@ -66,7 +66,10 @@ class binning():
         cov_b/=bin_utils['norm_m'][2]
         return cov_b
     
-    def bin_2d_coupling(self,cov=[],bin_utils=None,wt_b=None,wt0=None,partial_bin_side=None,lm=0,lm_step=-1): #asymmetric binning
+    def bin_2d_coupling(self,M=[],bin_utils=None,wt_b=None,wt0=None,partial_bin_side=None,lm=0,lm_step=-1,cov=False): #asymmetric binning
+        ndim=1
+        if cov:
+            ndim=2
         binning_mat=bin_utils['binning_mat']
         if wt_b is None:
             wt_b=bin_utils['wt_b']
@@ -76,16 +79,18 @@ class binning():
         if len(wt0.shape)==1:
             binning_mat2=wt0[:,None]*binning_mat*wt_b
         else:
-            binning_mat2=wt0@binning_mat@wt_b #FIXME: Test this.
+            binning_mat2=wt0@binning_mat@wt_b #FIXME: Test this.... doesnot work. not used anymore.
         
         rdr=bin_utils['r_dr']
+        r_dr_m=bin_utils['r_dr_m'][ndim]
+        
         binning_mat=binning_mat*rdr[:,None]/bin_utils['norm'][None,:]
         if partial_bin_side is None:
-            cov_b=binning_mat.T@cov@binning_mat2
+            cov_b=binning_mat.T@M@binning_mat2
         elif partial_bin_side==1:
-            cov_b=binning_mat.T@cov@binning_mat2[lm:lm+lm_step,:]
+            cov_b=binning_mat.T@M@binning_mat2[lm:lm+lm_step,:]
         elif partial_bin_side==2:
-            cov_b=binning_mat[lm:lm+lm_step,:].T@cov@binning_mat2
+            cov_b=binning_mat[lm:lm+lm_step,:].T@M@binning_mat2
             
 #         cov_b/=bin_utils['norm_m'][1][:,None]
         return cov_b

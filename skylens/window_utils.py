@@ -206,8 +206,8 @@ class window_utils():
             if not cov:
                 M[k]=M[k]*self.MF.T #FIXME: not used in covariance?
             if self.bin_window:# and bin_wt is not None:
-                M[k]=self.binnings.bin_2d_coupling(cov=M[k],bin_utils=self.kappa_class0.cl_bin_utils,
-                    partial_bin_side=2,lm=lm,lm_step=self.step,wt0=bin_wt['wt0'],wt_b=bin_wt['wt_b'])
+                M[k]=self.binnings.bin_2d_coupling(M=M[k],bin_utils=self.kappa_class0.cl_bin_utils,
+                    partial_bin_side=2,lm=lm,lm_step=self.step,wt0=bin_wt['wt0'],wt_b=bin_wt['wt_b'],cov=cov)
                 
         if W_pm!=0:
             del wig
@@ -633,15 +633,19 @@ class window_utils():
             if corr_i==1423:
                 wig_i=wig_3j_2_1423
                 if self.bin_window:
-                    bin_wt={'wt0':np.outer(win['bin_wt']['cl14'],win['bin_wt']['cl23'])} #FIXME: this is an approximation because we donot save unbinned covariance
-                    bin_wt['wt_b']=np.outer(win['bin_wt']['cl_b14'],win['bin_wt']['cl_b23'])
+#                     bin_wt={'wt0':np.outer(win['bin_wt']['cl14'],win['bin_wt']['cl23'])} #FIXME: this is an approximation because we donot save unbinned covariance
+#                     bin_wt['wt_b']=np.outer(win['bin_wt']['cl_b14'],win['bin_wt']['cl_b23'])
+                    bin_wt={'wt0':np.sqrt(win['bin_wt']['cl14']*win['bin_wt']['cl23'])} #FIXME: this is an approximation because we donot save unbinned covariance
+                    bin_wt['wt_b']=np.sqrt(win['bin_wt']['cl_b14']*win['bin_wt']['cl_b23'])
                     if not np.all(bin_wt['wt_b']==0): #avoid NAN
                         bin_wt['wt_b']=1./bin_wt['wt_b']
             else:
                 wig_i=wig_3j_2_1324
                 if self.bin_window:
-                    bin_wt={'wt0':np.outer(win['bin_wt']['cl13'],win['bin_wt']['cl24'])} #FIXME: this is an approximation because we donot save unbinned covariance
-                    bin_wt['wt_b']=np.outer(win['bin_wt']['cl_b13'],win['bin_wt']['cl_b24'])
+#                     bin_wt={'wt0':np.outer(win['bin_wt']['cl13'],win['bin_wt']['cl24'])} #FIXME: this is an approximation because we donot save unbinned covariance
+#                     bin_wt['wt_b']=np.outer(win['bin_wt']['cl_b13'],win['bin_wt']['cl_b24'])
+                    bin_wt={'wt0':np.sqrt(win['bin_wt']['cl13']*win['bin_wt']['cl24'])} #FIXME: this is an approximation because we donot save unbinned covariance
+                    bin_wt['wt_b']=np.sqrt(win['bin_wt']['cl_b13']*win['bin_wt']['cl_b24'])
                     if not np.all(bin_wt['wt_b']==0):#avoid NAN
                         bin_wt['wt_b']=1./bin_wt['wt_b']
             for wp in win['W_pm'][corr_i]:

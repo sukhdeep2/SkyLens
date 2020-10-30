@@ -79,7 +79,7 @@ class Skylens():
             self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,
                                             do_xi=self.do_xi,
                                             do_sample_variance=do_sample_variance,
-                                            use_window=use_window,
+                                            use_window=use_window,use_binned_l=self.use_binned_l,
                                             window_l=self.window_l)
 
         if Ang_PS is None:
@@ -360,7 +360,7 @@ class Skylens():
         if self.use_window and self.do_pseudo_cl:
             cov['G1324'],cov['G1423']=self.cov_utils.gaussian_cov_window(cls,
                                             self.SN,tracers,zs_indx,self.do_xi,Win,
-                                            )#bin_window=self.bin_window,bin_utils=self.cl_bin_utils)
+                                            binned_l=self.use_binned_l)#bin_window=self.bin_window,bin_utils=self.cl_bin_utils)
         else:
             fs=self.f_sky
             if self.do_xi and self.xi_win_approx and self.use_window : #in this case we need to use a separate function directly from xi_cov
