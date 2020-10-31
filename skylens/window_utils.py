@@ -808,10 +808,10 @@ class window_utils():
 
 #             self.cov_keys=list(self.Win_cov.keys())
     #### DONOT delete
-        if self.store_win:
-           self.Win_cl=client.persist(self.Win_cl)
-           if self.do_cov:
-               self.Win_cov=client.persist(self.Win_cov)
+#         if self.store_win:
+#            self.Win_cl=client.persist(self.Win_cl)
+#            if self.do_cov:
+#                self.Win_cov=client.persist(self.Win_cov)
             #    self.Win_cov=self.Win_cov.result()
             #self.Win_cl=self.Win_cl.result()
 
@@ -835,11 +835,13 @@ class window_utils():
         generate graph for window power spectra, which is then combined with the graphs for wigner functions
         to get the final graph.
         """
-        print('setting windows, coupling matrices ',client)
-        self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
         if self.store_win and client is None:
             client=get_client()
+        print('setting windows, coupling matrices ',client)
+        
+        self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
         print('got window cls, now to coupling matrices.',len(self.cl_keys),len(self.cov_keys),self.Win_cl )
+        
         self.Win={'cl':{}}
         Win_cl=self.Win_cl
         Win_cov=self.Win_cov

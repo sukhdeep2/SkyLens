@@ -130,7 +130,7 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
 
 
 def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
-                 AI_z=0,mag_fact=0,k_max=0.3):
+                 AI_z=0,mag_fact=0,shear_m_bias=1,k_max=0.3):
     dzs=np.gradient(zs) if len(zs)>1 else 1
 
     x=np.absolute(p_zs)<1.e-10 #to avoid some numerical errors
@@ -160,6 +160,7 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
     zs_bins[i]['AI']=AI
     zs_bins[i]['AI_z']=AI_z
     zs_bins[i]['mag_fact']=mag_fact
+    zs_bins[i]['shear_m_bias']=shear_m_bias #default value is 1. This is really 1+m
     zm=np.sum(zs_bins[i]['z']*zs_bins[i]['pzdz'])/zs_bins[i]['Norm']
     zs_bins[i]['lm']=k_max*cosmo_h.comoving_transverse_distance(zm).value
     zs_bins[i]['k_max']=k_max
@@ -168,7 +169,7 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
 
 def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
                     zp_sigma=None,zs=None,n_zs=100,z_bins=None,f_sky=0.3,nside=256,use_window=False,
-                    mask_start_pix=0,window_cl_fact=None,bg1=1,AI=0,AI_z=0,l=None,mag_fact=0,
+                    mask_start_pix=0,window_cl_fact=None,bg1=1,AI=0,AI_z=0,shear_m_bias=1,l=None,mag_fact=0,
                      sigma_gamma=0.26,k_max=0.3,unit_win=False,use_shot_noise=True,**kwargs):
     """
         Setting source redshift bins in the format used in code.
@@ -229,7 +230,8 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
                             sigma=zp_sigma[indx[0]:indx[1]],zs=zs)
 
         zs_bins=zbin_pz_norm(zs_bins=zs_bins,bin_indx=i,zs=zs,p_zs=p_zs,ns=ns_i,bg1=bg1,
-                             AI=AI,AI_z=AI_z,mag_fact=mag_fact,k_max=k_max)
+                             AI=AI,AI_z=AI_z,mag_fact=mag_fact,shear_m_bias=shear_m_bias,
+                             k_max=k_max)
         #sc=1./lu.sigma_crit(zl=zl_kernel,zs=zs[x],cosmo_h=cosmo_h)
         #zs_bins[i]['lens_kernel']=np.dot(zs_bins[i]['pzdz'],sc)
 

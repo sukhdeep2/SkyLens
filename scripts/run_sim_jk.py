@@ -1121,6 +1121,11 @@ written=True
 print(fname)
 print('all done')
 
-if Scheduler_file is None:
-    LC.close()
+try:
+    if Scheduler_file is None:
+        LC.close()
+except Exception as err:
+    print('LC close error:', err)
+
 gc.collect()
+sys.exit(0)

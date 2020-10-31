@@ -868,5 +868,9 @@ written=True
 
 print(fname)
 print('all done')
-
-LC.close()
+try:
+    if Scheduler_file is None:
+        LC.close()
+except Exception as err:
+    print('LC close error:', err)
+sys.exit(0)

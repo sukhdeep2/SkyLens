@@ -209,6 +209,7 @@ class Tracer_utils():
                                                         cosmo_h=cosmo_h)
             z_bins[i]['Gkernel_int']=np.dot(z_bins[i]['pzdz'],z_bins[i]['Gkernel'])
             z_bins[i]['Gkernel_int']/=z_bins[i]['Norm']
+            z_bins[i]['Gkernel']*=z_bins[i]['shear_m_bias']
             if z_bins[i]['Norm']==0:#FIXME
                 z_bins[i]['Gkernel_int'][:]=0
             z_bins[i]['Gkernel_int']=np.outer(spin_fact,z_bins[i]['Gkernel_int'])
