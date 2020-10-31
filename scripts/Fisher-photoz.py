@@ -14,6 +14,7 @@ from astropy import units
 import astropy
 import gc
 import time
+from resource import getrusage, RUSAGE_SELF
 
 import psutil
 from distributed.utils import format_bytes
@@ -29,7 +30,7 @@ if debug:
     # problem is likely to be in some package
 
 
-test=False
+test=True
 
 fig_home='./figures/'
 fig_format='pdf'
@@ -74,7 +75,10 @@ n_source-=n_source_missed*train_sample_missed
 
 import multiprocessing
 
-ncpu=multiprocessing.cpu_count()
+ncpu=multiprocessing.cpu_count()-1
+vmem=psutil.virtual_memory()
+mem=str(vmem.total/(1024**3)*0.95)+'GB'
+# mem='220gb'
 #ncpu=20
 
 if bary_nQ>0:
@@ -90,7 +94,7 @@ elif bin_cl and not use_binned_l:
     fname_out='binned_'+fname_out
 if use_window and not unit_window:
     fname_out='win'+str(nside)+'_'+fname_out
-if use_window and unit_window:
+elif use_window and unit_window:
     fname_out='unit_win'+str(nside)+'_'+fname_out
 if SSV_cov:
     fname_out='SSV_'+fname_out
@@ -98,9 +102,11 @@ if SSV_cov:
 from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
 #http://distributed.readthedocs.io/en/latest/_modules/distributed/worker.html
-LC=LocalCluster(n_workers=1,processes=False,memory_limit='220gb',threads_per_worker=ncpu,memory_spill_fraction=.99,
+LC=LocalCluster(n_workers=1,processes=False,memory_limit=mem,threads_per_worker=ncpu,memory_spill_fraction=.99,
                memory_monitor_interval='2000ms')
 client=Client(LC)
+
+print('client: ',client,mem)
 
 # dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler
 
@@ -892,11 +898,11 @@ def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,do_cov=do_cov,
             'SSV_cov':SSV,'tidal_SSV_cov':SSV,'do_xi':False,'use_window':use_window,'window_lmax':window_lmax,
             'f_sky':f_sky,'corrs':corrs,'store_win':store_win,'Win':Win, 'wigner_files':wigner_files, #'sigma_gamma':sigma_gamma
             'do_sample_variance':do_sample_variance,'power_spectra_kwargs':power_spectra_kwargs2,'f_sky':f_sky,
-            'bin_xi':bin_xi,'sparse_cov':sparse_cov,'nz_PS':nz_PS,'z_PS':z_PS
+            'bin_xi':bin_xi,'sparse_cov':sparse_cov,'nz_PS':nz_PS,'z_PS':z_PS,'client':client
 }
     ell_bin_kwargs={'lmax_cl':l_max,'lmin_cl':l_min,'Nl_bins':Nl_bins}
     l0,l_bins,l=get_cl_ells(**ell_bin_kwargs)
-    print(l0,l_bins,l)
+
     if z_bins_kwargs is None:
         z_bins_kwargs={'zmin':z_min,'zmax':z_max,'nsource':n_source,'ns_bins':nbins,'nside':nside,'n_lens_bins':n_lens_bins,'n_lensD_bins':n_lensD_bins,
                         'use_window':True,'nlens':nlens0,'nDlens':nlens0/2.,'area_overlap':0.2, 'f_sky':f_sky,'z_lens_sigma':0.01,
@@ -963,10 +969,10 @@ def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,do_cov=do_cov,
                     f_sky[corr][(i,j)]=f_sky_ij
                     f_sky[corr[::-1]][(j,i)]=f_sky_ij
                     sc[corr][(i,j)]=sc_ij
-        print('fsky, kernel: ',f_sky,sc,
+#         print('fsky, kernel: ',f_sky,sc,
     #           np.all(np.array([list(f_sky[c].values()) for c in f_sky.keys()]).flatten()>0),
     #           np.all(np.array([list(sc[c].values()) for c in sc.keys()]).flatten()>0)
-             )
+#              )
         for corr in kappa_class.cov_indxs:
             f_sky[corr]={}
             for (i,j,k,l) in kappa_class.cov_indxs[corr]:
@@ -1038,6 +1044,7 @@ save_win=False
 if use_window and store_win:
     fname_out='win_'+fname_out
     try:
+#         crash
         with open(fname_win,'rb') as of:
             WIN=pickle.load(of)
         print('window read')
@@ -1098,7 +1105,7 @@ except Exception as err:
         win_all={'full':kappa_class.Win.Win,'lsst':kappa_class_lsst.Win.Win}
         with open(fname_win,'wb') as of:
             pickle.dump(win_all,of)
-            
+        WIN=win_all
     del kappa_class, kappa_class_lsst
 
 if sparse_cov:
@@ -1106,7 +1113,9 @@ if sparse_cov:
     cov_p_inv_test2=np.linalg.inv(cl_L_lsst['cov'].todense())
     del cov_p_inv_test1,cov_p_inv_test2
 proc = psutil.Process()
-print('cl, cov done. memory:',format_bytes(proc.memory_info().rss))
+print('cl, cov done. memory:',format_bytes(proc.memory_info().rss),
+      "Peak memory (gb):",
+      int(getrusage(RUSAGE_SELF).ru_maxrss / 1024/1024))
 
 priors={}
 
@@ -1358,6 +1367,9 @@ fname_fish=file_home+'/fisher_'+fname_out
 with open(fname_fish,'wb') as of:
     pickle.dump(fishes,of)
 
+client.shutdown() 
+LC.close()
+    
 # import plot_fisher_tool
 # reload(plot_fisher_tool)
 # from plot_fisher_tool import *

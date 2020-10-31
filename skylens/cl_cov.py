@@ -7,6 +7,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 import warnings,logging
 import copy
+import multiprocessing,psutil
 import sparse
 import gc
 import dask.bag
@@ -45,14 +46,15 @@ class Skylens():
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 use_binned_theta=False, xi_win_approx=False,
                 corrs=None,corr_indxs=None,stack_indxs=None,
-                 wigner_files=None,name=''):
+                wigner_files=None,name='',
+                client=None):
 
-        inp_args = copy.deepcopy(locals())
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.l0=l*1.
-
+        
+#         self.set_client()
         self.set_bin_params()
-        self.set_binned_measure(inp_args)
+        self.set_binned_measure(locals())
 
         if logger is None:
             self.logger=logging.getLogger() #not really being used right now
@@ -98,7 +100,7 @@ class Skylens():
 
         
         self.Win=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,s1_s2s=self.s1_s2s,
-                        cov_indxs=self.cov_indxs,
+                        cov_indxs=self.cov_indxs,client=self.client,
                         use_window=use_window,do_cov=do_cov,cov_utils=self.cov_utils,
                         f_sky=f_sky,corr_indxs=self.stack_indxs,z_bins=self.z_bins,
                         window_lmax=self.window_lmax,Win=Win,WT=self.WT,do_xi=self.do_xi,
@@ -111,8 +113,22 @@ class Skylens():
         print('Window done. Size:',get_size(self.Win.Win)/1.e6)
         if self.Tri_cov:
             self.CTR=cov_matter_tri(k=self.l)
+    
+    def set_client(self):
+        self.LC=None
+        if self.client is None:
+            ncpu=multiprocessing.cpu_count()-1
+            vmem=psutil.virtual_memory()
+            mem=str(vmem.total/(1024**3)*0.9)+'GB'
+            self.LC=LocalCluster(n_workers=1,processes=False,memory_limit=mem,threads_per_worker=ncpu,memory_spill_fraction=.99,
+               memory_monitor_interval='2000ms')
+            self.client=Client(self.LC)
 
-    def set_binned_measure(self,inp_args):
+    def clean_client(self):
+        if not self.LC is None:
+            self.client.shutdown()
+            self.LC.close()
+    def set_binned_measure(self,local_args):
         """
             If we only want to run computations at effective bin centers, then we 
             need to bin the windows and wigner matrices properly, for which unbinned
@@ -123,6 +139,12 @@ class Skylens():
             covariance and one time calcs, may as well just do the full computation.
         """
         if self.use_binned_l or self.use_binned_theta:
+            inp_args={}
+            for k in local_args.keys():
+                if k=='self' or k=='client':
+                    continue
+                inp_args[k]=copy.deepcopy(local_args[k])
+#             print('inp_args:',inp_args.keys())
             self.lb=np.int32((self.l_bins[1:]+self.l_bins[:-1])*.5)
             inp_args['use_binned_l']=False
             inp_args['use_binned_theta']=False
@@ -133,8 +155,10 @@ class Skylens():
             if self.do_cov:
                 inp_args['corr_indxs']=None
                 inp_args['stack_indxs']=None
-            del inp_args['self']
+#             del inp_args['self']
             inp_args2=copy.deepcopy(inp_args)
+            inp_args['client']=self.client
+            inp_args2['client']=self.client
             self.kappa0=Skylens(**inp_args)  #to get unbinned c_ell and xi
 
             inp_args2['l']=self.lb

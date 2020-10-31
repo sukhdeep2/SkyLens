@@ -20,11 +20,11 @@ class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,corrs=None,s1_s2s=None,use_window=None,f_sky=None,
                 do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,WT=None,xi_bin_utils=None,do_xi=False,
                 store_win=False,Win=None,wigner_files=None,step=None,xi_win_approx=False,
-                 cov_indxs=None,
+                 cov_indxs=None,client=None,
                 kappa_class0=None,kappa_class_b=None,bin_window=True,do_pseudo_cl=True):
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.binning=binning()
-
+        
         nl=len(self.l)
         nwl=len(self.window_l)*1.0
         
@@ -40,10 +40,10 @@ class window_utils():
         if step is None:
             self.step=np.int32(100.*((2000./nl)**2)*(1000./nwl)) #small step is useful for lower memory load
             self.step=min(self.step,nl+1)
-#         self.step=10
+        self.step=50
             
         self.lms=np.int32(np.arange(nl,step=self.step))
-        print('Win gen: step size',self.step,self.do_pseudo_cl,xi_win_approx,nl,nwl,self.lms)
+        print('Win gen: step size',self.step,self.do_pseudo_cl,xi_win_approx,nl,nwl)#,self.lms)
 
         self.c_ell0=None
         self.c_ell_b=None
@@ -62,13 +62,13 @@ class window_utils():
             if self.do_xi:
                 print('Warning: window for xi is different from cl.')
             self.set_wig3j()
-            self.set_window(corrs=self.corrs,corr_indxs=self.corr_indxs)
+            self.set_window(corrs=self.corrs,corr_indxs=self.corr_indxs,client=None)
         elif self.do_xi and xi_win_approx:# and self.use_window:
-            self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=None)
+            self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
             self.Win=delayed(self.combine_coupling_xi_cov)(self.Win_cl,self.Win_cov)
             print('Got xi win graph')
             if self.store_win:
-                client=get_client()
+#                 client=get_client()
                 self.Win=client.compute(self.Win).result()
 #             self.cleanup()
 #             self.Win={'cl':{corr:{} for corr in self.corrs},
@@ -164,7 +164,7 @@ class window_utils():
         self.wig_3j_2={}
         self.wig_3j_1={}
         self.mf_pm={}
-        client=get_client()
+
         for lm in self.lms:
             self.wig_3j_2[lm]=delayed(self.set_wig3j_step_multiplied)(lm=lm)
             #self.wig_3j_1[lm]={m1: delayed(self.wig3j_step_read)(m=m1,lm=lm) for m1 in self.m_s}
@@ -306,7 +306,6 @@ class window_utils():
 #             win0=self.Win_cl
         win2={}
         i=0
-       
         k=win0['corr']+win0['indxs']
 #         for k in self.cl_keys:
         corr=(k[0],k[1])
@@ -351,7 +350,7 @@ class window_utils():
 
         for ii_t in np.arange(len(self.cl_keys)): #list(result[0].keys()):
             ii=0#because we are deleting below
-            print(ii,len(result[0]))
+            
             result_ii=result[0][ii]
             corr=result_ii['corr']
             indxs=result_ii['indxs']
@@ -763,11 +762,11 @@ class window_utils():
         This function sets the graph for computing power spectra of windows 
         for both C_ell and covariance matrices.
         """
-        if self.store_win and client is None:
-            client=get_client()
+        #if self.store_win and client is None:
+         #   client=get_client()
 
         self.cl_keys=[corr+indx for corr in corrs for indx in corr_indxs[corr]]
-        self.Win_cl=dask.bag.from_sequence(self.cl_keys).map(self.get_window_power_cl,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)
+        self.Win_cl=dask.bag.from_sequence(self.cl_keys).map(self.get_window_power_cl,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)#.to_delayed()
 #         self.Win_cl={corr+indx: delayed(self.get_window_power_cl)(corr,indx) for corr in corrs for indx in corr_indxs[corr]}
 
         self.cov_keys=[]
@@ -775,45 +774,17 @@ class window_utils():
         if self.do_cov:
             for corr in self.cov_indxs.keys():
                 self.cov_keys+=[corr+indx for indx in self.cov_indxs[corr]]
-            self.Win_cov=dask.bag.from_sequence(self.cov_keys).map(self.get_window_power_cov,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)
-#             self.Win_cov={}
-#             self.win_cov_tuple=None
-#             for ic1 in np.arange(len(corrs)):
-#                 corr1=corrs[ic1]
-#                 indxs_1=corr_indxs[corr1]
-#                 n_indx1=len(indxs_1)
+            self.Win_cov=dask.bag.from_sequence(self.cov_keys,npartitions=len(self.cov_keys)).map(self.get_window_power_cov,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)#.to_delayed()
 
-#                 for ic2 in np.arange(ic1,len(corrs)):
-#                     corr2=corrs[ic2]
-#                     indxs_2=corr_indxs[corr2]
-#                     n_indx2=len(indxs_2)
-
-#                     corr=corr1+corr2
-
-#                     for i1 in np.arange(n_indx1):
-#                         start2=0
-#                         indx1=indxs_1[i1]
-#                         if corr1==corr2:
-#                             start2=i1
-#                         for i2 in np.arange(start2,n_indx2):
-#                             indx2=indxs_2[i2]
-#                             indxs=indx1+indx2
-
-#                             self.Win_cov.update({corr+indxs: delayed(self.get_window_power_cov)(corr1,corr2,indx1,indx2)})
-
-#                             if self.win_cov_tuple is None:
-#                                 self.win_cov_tuple=[(corr1,corr2,indx1,indx2)]
-#                             else:
-#                                 self.win_cov_tuple.append((corr1,corr2,indx1,indx2))
-
-#             self.cov_keys=list(self.Win_cov.keys())
-    #### DONOT delete
-#         if self.store_win:
-#            self.Win_cl=client.persist(self.Win_cl)
-#            if self.do_cov:
-#                self.Win_cov=client.persist(self.Win_cov)
-            #    self.Win_cov=self.Win_cov.result()
-            #self.Win_cl=self.Win_cl.result()
+        if self.store_win and client is not None:
+#            print('doing client persist',self.Win_cl)
+           self.Win_cl=client.persist(self.Win_cl)
+           if self.do_cov:
+               self.Win_cov=client.persist(self.Win_cov)
+#            print('done client persist',self.Win_cov)
+        else:
+            self.Win_cl=self.Win_cl.to_delayed()
+            self.Win_cov=self.Win_cov.to_delayed()
 
     def combine_coupling_cl_cov(self,win_cl_lm,win_cov_lm):
         Win={}
@@ -836,11 +807,11 @@ class window_utils():
         to get the final graph.
         """
         if self.store_win and client is None:
-            client=get_client()
+            client=get_client() #this seems to be the correct thing to do
         print('setting windows, coupling matrices ',client)
         
         self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
-        print('got window cls, now to coupling matrices.',len(self.cl_keys),len(self.cov_keys),self.Win_cl )
+        print('got window cls, now to coupling matrices.',len(self.cl_keys),len(self.cov_keys))#,self.Win_cl )
         
         self.Win={'cl':{}}
         Win_cl=self.Win_cl
@@ -858,23 +829,27 @@ class window_utils():
                 
 #                 self.Win_cl_lm[lm]=delayed(self.get_cl_coupling_lm)(Win_cl,lm,
 #                                                                 self.wig_3j_2[lm],self.mf_pm[lm])
-#                 self.Win_cl_lm[lm]={self.cl_keys[i]:delayed(self.get_cl_coupling_lm)(Win_cl[i],self.cl_keys[i],lm,
+#                 self.Win_cl_lm[lm]={self.cl_keys[i]:delayed(self.get_cl_coupling_lm)(Win_cl[i],lm,
 #                                                                 self.wig_3j_2[lm],self.mf_pm[lm]) for i in np.arange(len(self.cl_keys))}
                 self.Win_cl_lm[lm]=dask.bag.from_sequence(Win_cl).map(self.get_cl_coupling_lm,lm,
-                                                                self.wig_3j_2[lm],self.mf_pm[lm])
+                                                                self.wig_3j_2[lm],self.mf_pm[lm])#.to_delayed()
+                if not self.store_win:  
+                    self.Win_cl_lm[lm]=self.Win_cl_lm[lm].to_delayed()
                 self.Win_lm[lm]['cl']=self.Win_cl_lm[lm]
                 print('done lm cl graph',lm,time.time()-t1)
                 if self.do_cov:
-#                     self.Win_cov_lm[lm]=delayed(self.get_cov_coupling_lm)(Win_cov,self.cov_keys[i],lm,
+#                     self.Win_cov_lm[lm]={self.cov_keys[i]:delayed(self.get_cov_coupling_lm)(Win_cov[i],lm,
 #                                                                           self.wig_3j_2[lm],self.mf_pm[lm] )
+#                                          for i in np.arange(len(self.cov_keys))}
                     self.Win_cov_lm[lm]=dask.bag.from_sequence(Win_cov).map(self.get_cov_coupling_lm,lm,
-                                                                self.wig_3j_2[lm],self.mf_pm[lm])
-
+                                                                self.wig_3j_2[lm],self.mf_pm[lm])#.to_delayed()
+                    if not self.store_win:  
+                        self.Win_cov_lm[lm]=self.Win_cov_lm[lm].to_delayed()
                     self.Win_lm[lm]['cov']=self.Win_cov_lm[lm]
                 print('done lm cl+cov graph',lm,time.time()-t1)
 #### Donot delete
-                if self.store_win:  #### Donot delete
-                   self.Win_lm[lm]=client.compute(self.Win_lm[lm]).result()
+                if self.store_win:  
+                   self.Win_lm[lm]=client.compute(self.Win_lm[lm]).result() #use client persist
 
                    self.Win_cl_lm[lm]=self.Win_lm[lm]['cl']#.result()
 
