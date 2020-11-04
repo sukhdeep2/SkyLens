@@ -47,7 +47,7 @@ class Skylens():
                 use_binned_theta=False, xi_win_approx=False,
                 corrs=None,corr_indxs=None,stack_indxs=None,
                 wigner_files=None,name='',
-                client=None,scheduler_file=None):
+                client=None,scheduler_info=None):
 
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.l0=l*1.
@@ -100,7 +100,7 @@ class Skylens():
 
         
         self.Win=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,s1_s2s=self.s1_s2s,
-                        cov_indxs=self.cov_indxs,client=self.client,scheduler_file=self.scheduler_file,
+                        cov_indxs=self.cov_indxs,client=self.client,scheduler_info=self.scheduler_info,
                         use_window=use_window,do_cov=do_cov,cov_utils=self.cov_utils,
                         f_sky=f_sky,corr_indxs=self.stack_indxs,z_bins=self.z_bins,
                         window_lmax=self.window_lmax,Win=Win,WT=self.WT,do_xi=self.do_xi,
@@ -116,8 +116,8 @@ class Skylens():
     
     def set_client(self):
         self.LC=None
-        if self.scheduler_file is not None:
-            self.client=get_client(address=self.scheduler_file)
+        if self.scheduler_info is not None:
+            self.client=get_client(address=self.scheduler_info['address'])
         if self.client is None:
             ncpu=multiprocessing.cpu_count()-1
             vmem=psutil.virtual_memory()

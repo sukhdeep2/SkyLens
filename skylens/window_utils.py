@@ -24,7 +24,7 @@ class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,corrs=None,s1_s2s=None,use_window=None,f_sky=None,
                 do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,WT=None,xi_bin_utils=None,do_xi=False,
                 store_win=False,Win=None,wigner_files=None,step=None,xi_win_approx=False,
-                 cov_indxs=None,client=None,scheduler_file=None,
+                 cov_indxs=None,client=None,scheduler_info=None,
                 kappa_class0=None,kappa_class_b=None,bin_window=True,do_pseudo_cl=True):
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.binning=binning()
@@ -76,7 +76,7 @@ class window_utils():
             print('Got xi win graph',self.Win,self.Win_cl,self.Win_cov)
             if self.store_win:
                 if client is None:
-                    client=get_client(address=self.scheduler_file)
+                    client=get_client(address=self.scheduler_info['address'])
                 self.Win=client.compute(self.Win).result()
 #             self.cleanup()
 #             self.Win={'cl':{corr:{} for corr in self.corrs},
@@ -344,7 +344,7 @@ class window_utils():
     
     def get_cl_coupling_all_lm(self,corr_indxs,win0,wig_3j_2,mf_pm):
         win_lm={}
-        client=get_client()
+        client=get_client(address=self.scheduler_info['address'])
         wig_3j_2=client.compute(wig_3j_2).result()
         mf_pm=client.compute(mf_pm).result()
         for lm in self.lms:
@@ -923,7 +923,7 @@ class window_utils():
         to get the final graph.
         """
         if self.store_win and client is None:
-            client=get_client(address=self.scheduler_file) #this seems to be the correct thing to do
+            client=get_client(address=self.scheduler_info['address']) #this seems to be the correct thing to do
         print('setting windows, coupling matrices ',client,client.scheduler_info())
         
         self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)

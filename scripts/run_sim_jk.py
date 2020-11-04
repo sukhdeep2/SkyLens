@@ -6,6 +6,11 @@ import sys, os, gc, threading, subprocess
 sys.path.insert(0,'/verafs/scratch/phy200040p/sukhdeep/project/skylens/skylens/')
 from thread_count import *
 
+from resource import getrusage, RUSAGE_SELF
+import psutil
+from distributed.utils import format_bytes
+
+
 debug=False
 if debug:
     import faulthandler; faulthandler.enable()
@@ -87,7 +92,7 @@ njk=njk1*njk2
 if njk>0:
     nsim=10 #time / memory 
 else:
-    nsim=100
+    nsim=1000
 
 subsample=False
 do_cov_jk=False #compute covariance coupling matrices
@@ -164,7 +169,10 @@ if Scheduler_file is None:
 else:
     client=Client(scheduler_file=Scheduler_file,processes=True)
 #    client.restart()
-print('client: ',client,dask_dir)
+scheduler_info=client.scheduler_info()
+scheduler_info['file']=Scheduler_file
+print('client: ',client,dask_dir,scheduler_info)
+
 
 #setup parameters
 lmin_cl=0
@@ -222,11 +230,12 @@ ww=1000*np.exp(-(l0w-mean)**2/sigma**2)
 print('getting win')
 z0=0.5
 zl_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=10,use_window=use_window,nbins=1,
-                            window_cl_fact=(1+ww*use_complicated_window),
+                            window_cl_fact=(1+ww*use_complicated_window),scheduler_info=scheduler_info,
                             f_sky=f_sky,nside=nside,unit_win=unit_window,use_shot_noise=True)
 
 z0=1 #1087
 zs_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=30,use_window=use_window,
+                              scheduler_info=scheduler_info,
                                     window_cl_fact=(1+ww*use_complicated_window),
                                     f_sky=f_sky,nbins=n_source_bins,nside=nside,
                                     unit_win=unit_window,use_shot_noise=True)
@@ -249,7 +258,7 @@ if not use_shot_noise:
 kappa_win=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
             use_window=use_window,store_win=store_win,window_lmax=window_lmax,corrs=corrs,
             SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=f_sky,
-            WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi,
+            WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi,scheduler_info=scheduler_info,
             wigner_files=wigner_files,do_pseudo_cl=do_pseudo_cl,xi_win_approx=xi_win_approx
 )
 
@@ -262,6 +271,7 @@ if do_xi:
 
 kappa0=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
             use_window=False,store_win=store_win,corrs=corrs,window_lmax=window_lmax,
+               scheduler_info=scheduler_info,
             SSV_cov=True,tidal_SSV_cov=True,f_sky=f_sky,do_pseudo_cl=do_pseudo_cl,xi_win_approx=xi_win_approx,
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi)
 
@@ -1011,7 +1021,10 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
 #                     clB_b['iMaster'][i,:]=clB_b_i['iMaster']
                         
                 i+=1
-            print('done map ',i)
+            proc = psutil.Process()
+            print('done map ',i, thread_count(),'mem, peak mem: ',format_bytes(proc.memory_info().rss),
+                 int(getrusage(RUSAGE_SELF).ru_maxrss/1024./1024.)
+                 )
             del futures
             # client.restart() #this can sometimes fail... useful for clearing memory on cluster.
             j+=step

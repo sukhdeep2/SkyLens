@@ -13,6 +13,11 @@ from skylens import *
 from survey_utils import *
 from scipy.stats import norm,mode,skew,kurtosis,percentileofscore
 
+from resource import getrusage, RUSAGE_SELF
+import psutil
+from distributed.utils import format_bytes
+
+
 import sys
 import tracemalloc
 
@@ -124,7 +129,9 @@ if Scheduler_file is None:
     Scheduler_file=client.scheduler_info()['address']
 else:
     client=Client(scheduler_file=Scheduler_file,processes=True)
-print('client: ',client,dask_dir,client.scheduler_info())
+scheduler_info=client.scheduler_info()
+scheduler_info['file']=Scheduler_file
+print('client: ',client,dask_dir,scheduler_info)
 
 print(client)
 
@@ -188,13 +195,14 @@ ww=1000*np.exp(-(l0w-mean)**2/sigma**2)
 print('getting win')
 z0=0.5
 zl_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=10,use_window=use_window,nbins=1,
+                              scheduler_info=scheduler_info,
                             window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
                             f_sky=f_sky,nside=nside,unit_win=unit_window,use_shot_noise=True)
 
 z0=1 #1087
 zs_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=30,use_window=use_window,
                                     window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
-                                    f_sky=f_sky,nbins=n_source_bins,nside=nside,
+                                    f_sky=f_sky,nbins=n_source_bins,nside=nside,scheduler_info=scheduler_info,
                                     unit_win=unit_window,use_shot_noise=True)
 
 print('zbins done')#,thread_count())
@@ -205,7 +213,7 @@ if not use_shot_noise:
 
 kappa_win=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
             use_window=use_window,store_win=store_win,window_lmax=window_lmax,corrs=corrs,
-            SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=f_sky,
+            SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=f_sky,scheduler_info=scheduler_info,
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi,
             wigner_files=wigner_files,
 )
@@ -226,7 +234,7 @@ Win0=np.nan_to_num(Win0)
 
 kappa0=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
             use_window=False,store_win=store_win,corrs=corrs,window_lmax=window_lmax,
-            SSV_cov=True,tidal_SSV_cov=True,f_sky=f_sky,
+            SSV_cov=True,tidal_SSV_cov=True,f_sky=f_sky,scheduler_info=scheduler_info,
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi)
 
 clG0=kappa0.cl_tomo(corrs=corrs) 
@@ -568,9 +576,9 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     corr_t=[corr_gg,corr_ll,corr_ggl] #order in which sim corrs are output.
     seed=12334
     def get_clsim(i):
-        tracemalloc.clear_traces()
-        tracemalloc.start()
-
+#         tracemalloc.clear_traces()
+#         tracemalloc.start()
+        gc.disable()
 
         # print('doing map: ',i,thread_count(), 'lognormal:',lognormal,'blending', add_blending)
         local_state = np.random.RandomState(seed+i)
@@ -630,13 +638,10 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                 
             clpi=hp.anafast(cl_map, lmax=max(l),pol=True) #TT, EE, BB, TE, EB, TB for polarized input map
             del cl_map,N_map
-            gc.collect()
+#             gc.collect()
             clpi=clpi[:,l]
             clpi_B=clpi[[2,4,5],:]
             clpi=clpi[[0,1,3],:]
-            
-#             for i in np.arange(6):
-            
             
         else:
             cl_map*=window
@@ -699,17 +704,9 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                     clg_b[k][:,ii]=clp_b[:,ii]@coupling_M_binned_inv[k][corr_t[ii]] #be careful with ordering as coupling matrix is not symmetric
                 if corr_t[ii]==corr_ll:
                     clgB_b['iMaster'][:,ii]=clpB_b[:,ii]@coupling_M_binned_inv['iMaster']['shear_B']
-            # dd=gc.get_debug()
-            # snapshot1 = tracemalloc.take_snapshot()
-            # top_stats = snapshot1.statistics('lineno')
-            # stat = top_stats[3]
-            # print("%s memory blocks: %.1f MiB" % (stat.count, stat.size / 1024**2))
-            # for line in stat.traceback.format():
-            #     print(line)
-            # print('got map ',i,thread_count())
             del clpi,clgi,clpi_B
             gc.collect()
-            # return clpi.T,clgi.T,clp_b,clpi_B.T,clg_b,clpB_b,clgB_b
+#             gc.enable()
             return clp_b,clg_b,clpB_b,clgB_b
         else:
             return clpi.T,clgi.T
@@ -750,7 +747,10 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                     clgB_b['iMaster'][i,:]=clgB_b_i['iMaster']
                         
                 i+=1
-            print('done map ',i, thread_count())
+            proc = psutil.Process()
+            print('done map ',i, thread_count(),'mem, peak mem: ',format_bytes(proc.memory_info().rss),
+                 int(getrusage(RUSAGE_SELF).ru_maxrss/1024./1024.)
+                 )
             del futures
             gc.collect()
             #client.restart()

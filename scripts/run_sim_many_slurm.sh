@@ -3,7 +3,7 @@
 #SBATCH -J sims
 #SBATCH -e /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/run_sim_many%A_%a.err
 #SBATCH -o /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/run_sim_many%A_%a.out
-#SBATCH -t 40:00:00
+#SBATCH -t 70:00:00
 #SBATCH -N 1
 ##SBATCH -n 28
 #SBATCH --ntasks-per-node=28
@@ -20,13 +20,13 @@ home='/verafs/scratch/phy200040p/sukhdeep/project/skylens/scripts/'
 
 cd $home
 
-use_complicated_windows=( 0 1 )
+use_complicated_windows=( 0 )
 unit_windows=( 0 ) #( 0 1 )
 
 lognormals=( 0 )  #( 0 1 )
 do_blendings=( 0 ) #( 0 1 ) 
 do_SSV_sims=( 0 )
-use_shot_noises=( 0 1 )
+use_shot_noises=( 1 )
 
 tmp_file="/verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/""$ID""$job_id"".tmp"
 
@@ -106,14 +106,14 @@ do
                         echo '==============================================================' #>>$log_file
                         echo 'begining::' $(date) #>>$log_file 
                         
-                       #python run_sim.py  --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise  --dask_dir=$CSCRATCH #--scheduler=$SCHEFILE #|cat>>$log_file
+                       python run_sim.py  --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise  --dask_dir=$CSCRATCH #--scheduler=$SCHEFILE #|cat>>$log_file
                         
                         #---------------------------------------------------
                         echo '==========================================================================================' #|cat>>$log_file
                         echo 'begining - jk ::' $(date) #>>$log_file
 #                         killall dask-mpi
 #                         ./dask-vera2.sh &
-                        python run_sim_jk.py --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise --dask_dir=$CSCRATCH #--scheduler=$SCHEFILE #|cat>>$log_file
+                        #python run_sim_jk.py --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise --dask_dir=$CSCRATCH #--scheduler=$SCHEFILE #|cat>>$log_file
 
                         #---------------------------------------------------
                         echo 'done'  $lognormal $do_blending $do_SSV_sim $use_shot_noise
