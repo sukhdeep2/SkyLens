@@ -126,8 +126,9 @@ if Scheduler_file is None:
     # client=Client(LC,)#diagnostics_port=8801,)
 else:
     client=Client(scheduler_file=Scheduler_file,processes=True)
-print('client: ',client,dask_dir)
-
+scheduler_info=client.scheduler_info()
+scheduler_info['file']=Scheduler_file
+print('client: ',client,dask_dir,scheduler_info)
 # dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler
 
 def cosmo_w0_wa(cosmo=None,w0=-1,wa=0):
@@ -918,7 +919,7 @@ def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,do_cov=do_cov,
             'SSV_cov':SSV,'tidal_SSV_cov':SSV,'do_xi':False,'use_window':use_window,'window_lmax':window_lmax,
             'f_sky':f_sky,'corrs':corrs,'store_win':store_win,'Win':Win, 'wigner_files':wigner_files, #'sigma_gamma':sigma_gamma
             'do_sample_variance':do_sample_variance,'power_spectra_kwargs':power_spectra_kwargs2,'f_sky':f_sky,
-            'bin_xi':bin_xi,'sparse_cov':sparse_cov,'nz_PS':nz_PS,'z_PS':z_PS,'scheduler_file':scheduler_file#'client':client
+            'bin_xi':bin_xi,'sparse_cov':sparse_cov,'nz_PS':nz_PS,'z_PS':z_PS,'scheduler_info':scheduler_info#'client':client
 }
     ell_bin_kwargs={'lmax_cl':l_max,'lmin_cl':l_min,'Nl_bins':Nl_bins}
     l0,l_bins,l=get_cl_ells(**ell_bin_kwargs)
