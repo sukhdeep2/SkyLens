@@ -47,7 +47,7 @@ class Skylens():
                 use_binned_theta=False, xi_win_approx=False,
                 corrs=None,corr_indxs=None,stack_indxs=None,
                 wigner_files=None,name='',
-                client=None):
+                client=None,scheduler_file=None):
 
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.l0=l*1.
@@ -100,7 +100,7 @@ class Skylens():
 
         
         self.Win=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,s1_s2s=self.s1_s2s,
-                        cov_indxs=self.cov_indxs,client=self.client,
+                        cov_indxs=self.cov_indxs,client=self.client,scheduler_file=self.scheduler_file,
                         use_window=use_window,do_cov=do_cov,cov_utils=self.cov_utils,
                         f_sky=f_sky,corr_indxs=self.stack_indxs,z_bins=self.z_bins,
                         window_lmax=self.window_lmax,Win=Win,WT=self.WT,do_xi=self.do_xi,
@@ -116,6 +116,8 @@ class Skylens():
     
     def set_client(self):
         self.LC=None
+        if self.scheduler_file is not None:
+            self.client=get_client(address=self.scheduler_file)
         if self.client is None:
             ncpu=multiprocessing.cpu_count()-1
             vmem=psutil.virtual_memory()
@@ -376,7 +378,7 @@ class Skylens():
         
         Win=None
         if self.use_window and self.store_win:
-            Win_cov=self.Win.Win['cov'][tracers]
+            Win_cov=self.Win.Win['cov'][tracers] #passed as none to save memory
             Win_cl=self.Win.Win['cl']
         if Win_cov is not None:
             Win=Win_cov[zs_indx]
@@ -482,8 +484,8 @@ class Skylens():
 
     def calc_pseudo_cl(self,cl,Win,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear')):
         pcl=cl@Win['M']
-        if np.any(~np.isfinite(pcl)):
-            print('pseudo cl not finite:', corr,zs1_indx,zs2_indx, cl,Win['M'])
+#         if np.any(~np.isfinite(pcl)):
+#             print('pseudo cl not finite:', corr,zs1_indx,zs2_indx, cl,Win['M'])
         return  pcl
 
     def cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,
@@ -611,24 +613,7 @@ class Skylens():
                     Win_cl=self.Win.Win['cl']
                 cov[corr1+corr2]=dask.bag.from_sequence(cov_indxs_iter).map(self.cl_cov,cls=cl,Win_cov=Win_cov,tracers=corr1+corr2,Win_cl=Win_cl)
             cov['cov_indxs']=cov_indxs
-                        #FIXME: this requires more care to ensure proper ordering when stacking. corr2+corr1 is not defined now.
-#                 if corr1==corr2:
-#                     cov_indxs_iter=[ k for l in [[(i,j) for j in np.arange(i,
-#                                      len(corr1_indxs))] for i in np.arange(len(corr2_indxs))] for k in l]
-#                 else:
-#                     cov_indxs_iter=[ k for l in [[(i,j) for i in np.arange(
-#                                     len(corr1_indxs))] for j in np.arange(len(corr2_indxs))] for k in l]
-                
-#                 for (i,j) in cov_indxs_iter:
-#                     indx=corr1_indxs[i]+corr2_indxs[j]
-#                     cov[corr1+corr2][indx]=delayed(self.cl_cov)(cls=cl, zs_indx=indx,Win=Win,
-#                                                                     tracers=corr1+corr2)
-#                     indx2=corr2_indxs[j]+corr1_indxs[i]
-#                     cov[corr2+corr1][indx2]=cov[corr1+corr2][indx]
-#                     cii_t+=1
-# #                     print(corr1,corr2,len(corr1_indxs),len(corr2_indxs),i,j,cii_t,' done ') #, time.time()-t1)
-#                     if cii_t%100==0:
-#                         print('cov graph now at', cii_t,corr1,corr2,indx)
+
             print('cov dict done')
             gc.enable()
             gc.collect()

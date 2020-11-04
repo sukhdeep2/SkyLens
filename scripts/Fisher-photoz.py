@@ -1,7 +1,5 @@
 #To do:
 # 1. Add cmb lensing
-# 2. marginalize over multiplicative bias, magnification bias, IA.
-
 
 import sys
 import pickle
@@ -22,6 +20,10 @@ from distributed.utils import format_bytes
 from skylens import *
 from PCA_shear import *
 from survey_utils import *
+import argparse
+
+from dask_mpi import initialize as dask_initialize
+from distributed import Client
 
 debug=False
 if debug:
@@ -31,6 +33,16 @@ if debug:
 
 
 test=True
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--dask_dir", "-Dd", help="dask log directory")
+parser.add_argument("--scheduler", "-s", help="Scheduler file")
+
+args = parser.parse_args()
+
+dask_dir=args.dask_dir
+Scheduler_file=args.scheduler
+
 
 fig_home='./figures/'
 fig_format='pdf'
@@ -60,7 +72,7 @@ use_binned_l=True
 use_window=True
 
 unit_window=False
-nside=32
+nside=256 #32
 window_lmax=nside #30
 
 print('doing nside',nside,window_lmax,use_binned_l)
@@ -101,12 +113,20 @@ if SSV_cov:
 
 from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
-#http://distributed.readthedocs.io/en/latest/_modules/distributed/worker.html
-LC=LocalCluster(n_workers=1,processes=False,memory_limit=mem,threads_per_worker=ncpu,memory_spill_fraction=.99,
-               memory_monitor_interval='2000ms')
-client=Client(LC)
-
-print('client: ',client,mem)
+if Scheduler_file is None:
+    dask_initialize(nthreads=27,local_directory=dask_dir)
+    client = Client()
+    # LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
+    #                 local_dir=dask_dir, **worker_kwargs,
+    #                 #scheduler_port=12234,
+    #                 dashboard_address=8801
+    #                 # diagnostics_port=8801,
+    # #                memory_monitor_interval='2000ms')
+    #                )
+    # client=Client(LC,)#diagnostics_port=8801,)
+else:
+    client=Client(scheduler_file=Scheduler_file,processes=True)
+print('client: ',client,dask_dir)
 
 # dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler
 
@@ -898,7 +918,7 @@ def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,do_cov=do_cov,
             'SSV_cov':SSV,'tidal_SSV_cov':SSV,'do_xi':False,'use_window':use_window,'window_lmax':window_lmax,
             'f_sky':f_sky,'corrs':corrs,'store_win':store_win,'Win':Win, 'wigner_files':wigner_files, #'sigma_gamma':sigma_gamma
             'do_sample_variance':do_sample_variance,'power_spectra_kwargs':power_spectra_kwargs2,'f_sky':f_sky,
-            'bin_xi':bin_xi,'sparse_cov':sparse_cov,'nz_PS':nz_PS,'z_PS':z_PS,'client':client
+            'bin_xi':bin_xi,'sparse_cov':sparse_cov,'nz_PS':nz_PS,'z_PS':z_PS,'scheduler_file':scheduler_file#'client':client
 }
     ell_bin_kwargs={'lmax_cl':l_max,'lmin_cl':l_min,'Nl_bins':Nl_bins}
     l0,l_bins,l=get_cl_ells(**ell_bin_kwargs)
@@ -1115,7 +1135,7 @@ if sparse_cov:
 proc = psutil.Process()
 print('cl, cov done. memory:',format_bytes(proc.memory_info().rss),
       "Peak memory (gb):",
-      int(getrusage(RUSAGE_SELF).ru_maxrss / 1024/1024))
+      int(getrusage(RUSAGE_SELF).ru_maxrss/1024./1024.))
 
 priors={}
 

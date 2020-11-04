@@ -16,6 +16,8 @@ from scipy.stats import norm,mode,skew,kurtosis,percentileofscore
 import sys
 import tracemalloc
 
+from dask_mpi import initialize as dask_initialize
+from distributed import Client
 from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
 #http://distributed.readthedocs.io/en/latest/_modules/distributed/worker.html
@@ -31,6 +33,8 @@ parser.add_argument("--blending", "-b",type=int, help="use complicated window")
 parser.add_argument("--ssv", "-ssv",type=int, help="use complicated window")
 parser.add_argument("--noise", "-sn",type=int, help="use shot noise")
 parser.add_argument("--scheduler", "-s", help="Scheduler file")
+parser.add_argument("--dask_dir", "-Dd", help="dask log directory")
+args = parser.parse_args()
 
 gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
 gc.enable()
@@ -47,8 +51,9 @@ do_SSV_sim=False if not args.ssv else np.bool(args.ssv)
 use_shot_noise=True if args.noise is None else np.bool(args.noise)
 
 Scheduler_file=args.scheduler
+dask_dir=args.dask_dir
 
-Scheduler_file=None
+# Scheduler_file=None
 
 # if args.noise is None: #because 0 and None both result in same bool
 #     use_shot_noise=True
@@ -56,7 +61,7 @@ Scheduler_file=None
 
 print(use_complicated_window,unit_window,lognormal,do_blending,do_SSV_sim,use_shot_noise,args.noise,np.bool(args.noise),not args.noise)
 
-nsim=100
+nsim=1000
 
 lognormal_scale=2
 
@@ -103,14 +108,24 @@ if test_run:
     memory='20gb'
     ncpu=4
 worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
-LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
-                local_dir=wig_home+'/NGL-worker/', **worker_kwargs,
-                #scheduler_port=12234,
-                dashboard_address=8801
-                # diagnostics_port=8801,
-#                memory_monitor_interval='2000ms')
-               )
-client=Client(LC,)#diagnostics_port=8801,)
+
+print('initializing dask, scheduler: ',Scheduler_file)
+if Scheduler_file is None:
+#     dask_initialize(nthreads=27,local_directory=dask_dir)
+#     client = Client()
+    LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
+                    local_directory=dask_dir, **worker_kwargs,
+                    #scheduler_port=12234,
+                    dashboard_address=8801
+                    # diagnostics_port=8801,
+    #                memory_monitor_interval='2000ms')
+                   )
+    client=Client(LC,)#diagnostics_port=8801,)
+    Scheduler_file=client.scheduler_info()['address']
+else:
+    client=Client(scheduler_file=Scheduler_file,processes=True)
+print('client: ',client,dask_dir,client.scheduler_info())
+
 print(client)
 
 #setup parameters
@@ -404,12 +419,12 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                                                             bin_utils=kappa_class.cl_bin_utils) 
             coupling_M_binned['nMaster'][corr]*=dl
             
-            coupling_M_binned['iMaster'][corr]=M_binnings[corr].bin_2d_coupling(cov=coupling_M[corr].T,
-                                                                            bin_utils=M_binning_utils[corr])
+            coupling_M_binned['iMaster'][corr]=M_binnings[corr].bin_2d_coupling(M=coupling_M[corr].T,
+                                                                            bin_utils=M_binning_utils[corr],cov=False)
             coupling_M_binned['iMaster'][corr]=coupling_M_binned['iMaster'][corr].T  #to keep the same order in dot product later. Remeber that the coupling matrix is not symmetric.
             
             if corr==corr_ll:
-                coupling_M_binned['iMaster']['shear_B']=M_binnings[corr].bin_2d_coupling(cov=coupling_M['shear_B'].T,bin_utils=M_binning_utils[corr])
+                coupling_M_binned['iMaster']['shear_B']=M_binnings[corr].bin_2d_coupling(M=coupling_M['shear_B'].T,bin_utils=M_binning_utils[corr],cov=False)
                 coupling_M_binned['iMaster']['shear_B']=coupling_M_binned['iMaster']['shear_B'].T  #to keep the same order in dot product later. Remeber that the coupling matrix is not symmetric.
 
             
@@ -868,9 +883,10 @@ written=True
 
 print(fname)
 print('all done')
-try:
-    if Scheduler_file is None:
-        LC.close()
-except Exception as err:
-    print('LC close error:', err)
-sys.exit(0)
+# client.shutdown() #this kills the dask cluster.
+# try:
+#     if Scheduler_file is None:
+#         LC.close()
+# except Exception as err:
+#     print('LC close error:', err)
+# sys.exit(0)

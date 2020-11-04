@@ -25,6 +25,8 @@ from scipy.stats import norm,mode,skew,kurtosis,percentileofscore
 import sys
 import tracemalloc
 
+from dask_mpi import initialize as dask_initialize
+from distributed import Client
 from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
 #http://distributed.readthedocs.io/en/latest/_modules/distributed/worker.html
@@ -43,6 +45,8 @@ parser.add_argument("--xi", "-xi",type=int, help="do_xi, i.e. compute correlatio
 parser.add_argument("--pseudo_cl", "-pcl",type=int, help="do_pseudo_cl, i.e. compute power spectra functions")
 parser.add_argument("--njk", "-njk",type=int, help="number of jackknife regions, default=0 (no jackknife)")
 parser.add_argument("--scheduler", "-s", help="Scheduler file")
+parser.add_argument("--dask_dir", "-Dd", help="dask log directory")
+args = parser.parse_args()
 
 
 # Read arguments from the command line
@@ -59,8 +63,9 @@ do_blending=False if not args.blending else np.bool(args.blending)
 do_SSV_sim=False if not args.ssv else np.bool(args.ssv)
 use_shot_noise=True if args.noise is None else np.bool(args.noise)
 Scheduler_file=args.scheduler
+dask_dir=args.dask_dir
 
-Scheduler_file=None
+# Scheduler_file=None
 
 print(use_complicated_window,unit_window,lognormal,do_blending,do_SSV_sim,use_shot_noise)
 print('scheduler: ',Scheduler_file)
@@ -82,7 +87,7 @@ njk=njk1*njk2
 if njk>0:
     nsim=10 #time / memory 
 else:
-    nsim=30
+    nsim=100
 
 subsample=False
 do_cov_jk=False #compute covariance coupling matrices
@@ -141,21 +146,25 @@ ncpu=multiprocessing.cpu_count() - 1
 if test_run:
     memory='50gb'
     ncpu=8
-
+worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
+print('initializing dask')
 if Scheduler_file is None:
-    worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
+#     worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
     LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
-                local_dir=wig_home+'/NGL-worker/', **worker_kwargs,
+                local_directory=dask_dir, **worker_kwargs,
                 #scheduler_port=12234,
 #                 dashboard_address=8801
                 diagnostics_port=8801,
 #                memory_monitor_interval='2000ms')
                )
     client=Client(LC,)#diagnostics_port=8801,)
+    Scheduler_file=client.scheduler_info()['address']
+#     dask_initialize(nthreads=27,local_directory=dask_dir)
+#     client = Client()
 else:
     client=Client(scheduler_file=Scheduler_file,processes=True)
 #    client.restart()
-print(client)
+print('client: ',client,dask_dir)
 
 #setup parameters
 lmin_cl=0
@@ -372,7 +381,7 @@ def get_treecorr_cat_args(maps,masks=None):
 
 
 def get_xi_window_norm(window=None):
-    window_norm={}
+    window_norm={corr:{} for corr in corrs}
     mask={}
     for tracer in window.keys():
         # window[tracer]=kappa_class.z_bins[tracer][0]['window']
@@ -385,7 +394,7 @@ def get_xi_window_norm(window=None):
     tree_cat0=treecorr.Catalog(**tree_cat_args0['fullsky'])
     tree_corrs0=treecorr.NNCorrelation(**corr_config)
     _=tree_corrs0.process(tree_cat0,tree_cat0)
-    napirs0=tree_corrs0.npairs*fsky
+    npairs0=tree_corrs0.npairs*fsky
     del cat0,tree_cat0,tree_corrs0
     
     tree_cat_args=get_treecorr_cat_args(window,masks=mask)
@@ -394,7 +403,9 @@ def get_xi_window_norm(window=None):
     for corr in corrs:
         tree_corrs=treecorr.NNCorrelation(**corr_config)
         _=tree_corrs.process(tree_cat[corr[0]],tree_cat[corr[1]])
-        window_norm[corr]=tree_corrs.weight*1./tree_corrs.npairs #npairs0
+        window_norm[corr]['weight']=tree_corrs.weight
+        window_norm[corr]['npairs']=tree_corrs.npairs 
+        window_norm[corr]['npairs0']=npairs0
     del tree_cat,tree_corrs
     return window_norm
 
@@ -414,7 +425,7 @@ def get_xi_window_norm_jk(kappa_class=None):
         window_norm[ijk]=get_xi_window_norm(window=window_i)
         del window_i,x
         gc.collect()
-        print('window norm ',ijk,' done',window_norm[ijk][corr_ll].shape,window_norm[ijk].keys())
+        print('window norm ',ijk,' done',)#window_norm[ijk][corr_ll].shape,window_norm[ijk].keys())
     return window_norm
 
 
@@ -435,24 +446,24 @@ def get_xi(map,window_norm,mask=None):
     xi=np.zeros(n_th_bins*(ndim+1))
     th_i=0
     tree_corrs={}
-    for corr in corrs:
+    for corr in corrs:#note that in treecorr npairs includes pairs with 0 weights. That affects this calc
         if corr==corr_ggl:
             tree_corrs[corr]=treecorr.NGCorrelation(**corr_config)
             tree_corrs[corr].process(tree_cat['galaxy'],tree_cat['shear'])
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xi*tree_corrs[corr].weight/tree_corrs[corr].npairs/window_norm[corr]*-1 #sign convention 
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xi*tree_corrs[corr].weight/window_norm[corr]['weight']*-1 #sign convention 
                 #
             th_i+=n_th_bins
         if corr==corr_ll:
             tree_corrs[corr]=treecorr.GGCorrelation(**corr_config)
             tree_corrs[corr].process(tree_cat['shear'])
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xip/window_norm[corr] #*(tree_corrs[corr].weight
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xip*tree_corrs[corr].npairs/window_norm[corr]['weight']
             th_i+=n_th_bins
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xim/window_norm[corr]
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xim*tree_corrs[corr].npairs/window_norm[corr]['weight']
             th_i+=n_th_bins
         if corr==corr_gg:
             tree_corrs[corr]=treecorr.NNCorrelation(**corr_config)
             tree_corrs[corr].process(tree_cat['galaxy'])
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/tree_corrs[corr].npairs/window_norm[corr]  #
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/tree_corrs[corr].npairs/window_norm[corr]['weight']  #
 #             xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/window_norm[corr]
             th_i+=n_th_bins
     del tree_cat,tree_corrs
@@ -1120,12 +1131,12 @@ written=True
 
 print(fname)
 print('all done')
-
-try:
-    if Scheduler_file is None:
-        LC.close()
-except Exception as err:
-    print('LC close error:', err)
+# client.shutdown()
+# try:
+#     if Scheduler_file is None:
+#         LC.close()
+# except Exception as err:
+#     print('LC close error:', err)
 
 gc.collect()
 sys.exit(0)
