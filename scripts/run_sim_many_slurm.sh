@@ -70,12 +70,12 @@ do
                         #     exit 
                         # fi
 
-                   #     if [ "$use_complicated_window" -eq "1" ] && [ "$unit_window" -eq "1" ]
-                    #    then 
-                            #echo $do_blending $do_SSV_sim
-                            #continue
-                     #       exit 
-                            #   fi
+                       if [ "$use_complicated_window" -eq "1" ] && [ "$unit_window" -eq "1" ]
+                       then 
+                            echo 'window exit' $use_complicated_window $unit_window
+                            continue
+                           exit 
+                       fi
                             njob=$(cat $tmp_file)
                             echo $njob
                             njob=$(( $njob + 1 ))

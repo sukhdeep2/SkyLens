@@ -38,7 +38,7 @@ class Tracer_utils():
         self.set_zbins(z_bins=zg_bins,tracer='galaxy')
         self.set_zbins(z_bins=zk_bins,tracer='kappa')
         self.tracers=list(self.z_bins.keys())
-        
+        self.set_z_window()
         if not self.tracers==[]:
             self.set_z_PS_max()
         
@@ -60,6 +60,22 @@ class Tracer_utils():
             self.n_bins[tracer]=self.z_bins[tracer]['n_bins']
             self.set_noise(tracer=tracer)
     
+    def set_z_window(self,):
+        self.z_win={}
+        for tracer in self.tracers:
+            self.z_win[tracer]={}
+            for i in np.arange(self.n_bins[tracer]):
+                self.z_win[tracer][i]={}
+                for k in self.z_bins[tracer][i].keys():
+                    if 'window' in k:
+                        self.z_win[tracer][i][k]=self.z_bins[tracer][i][k]
+                for k in self.z_win[tracer][i].keys():
+                    del self.z_bins[tracer][i][k]
+                    
+    def clean_z_window(self,):
+        self.z_win=None
+#         del self.z_win
+        
     def Rho_crit(self,cosmo_h=None):
         #G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)
         #rc=3*cosmo_h.H0**2/(8*np.pi*G2)
@@ -82,12 +98,6 @@ class Tracer_utils():
 
     def get_z_bins(self,tracer=None):
         return self.z_bins[tracer]
-        # if tracer=='shear':
-        #      return self.zs_bins
-        # if tracer=='galaxy':
-        #     return self.zg_bins
-        # if tracer=='kappa':
-        #     return self.zk_bins
 
     def set_noise(self,tracer=None):
         """

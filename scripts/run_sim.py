@@ -215,7 +215,7 @@ kappa_win=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0
             use_window=use_window,store_win=store_win,window_lmax=window_lmax,corrs=corrs,
             SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=f_sky,scheduler_info=scheduler_info,
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi,
-            wigner_files=wigner_files,
+            wigner_files=wigner_files,clean_tracer_window=False,
 )
 
 clG_win=kappa_win.cl_tomo(corrs=corrs)
@@ -414,7 +414,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     if convolve_win:
         nu=2.*l+1.
         for tracer in kappa_class.z_bins.keys():
-            window[tracer]=kappa_class.z_bins[tracer][0]['window']
+            window[tracer]=kappa_class.tracer_utils.z_win[tracer][0]['window']
             mask[tracer]=window[tracer]==hp.UNSEEN
         for corr in corrs:
             coupling_M[corr]=kappa_class.Win.Win['cl'][corr][(0,0)]['M']
@@ -705,7 +705,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                 if corr_t[ii]==corr_ll:
                     clgB_b['iMaster'][:,ii]=clpB_b[:,ii]@coupling_M_binned_inv['iMaster']['shear_B']
             del clpi,clgi,clpi_B
-            gc.collect()
+#             gc.collect()
 #             gc.enable()
             return clp_b,clg_b,clpB_b,clgB_b
         else:
@@ -719,20 +719,15 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
         return clp,clg 
     
     # print('generating maps', thread_count())
+    del kappa_class
+    gc.disable()
     if convolve_win:
-        futures={}
-#         for i in np.arange(Rsize):
-#             futures[i]=dask.delayed(get_clsim)(i)  
-#         print(futures)
-#         clpg=dask.delayed(comb_maps)(futures)
-#         clpg.compute()
         i=0
         j=0
-        step=1#min(np.int(5),Rsize)
-        funct=partial(get_clsim2,clg0,window,mask,SN,coupling_M,coupling_M_inv,ndim)
+        step=min(np.int(5),Rsize)
+#         funct=partial(get_clsim2,clg0,window,mask,SN,coupling_M,coupling_M_inv,ndim)
         while j<Rsize:
             futures={}
-            #client=Client(LC,)
             for ii in np.arange(step):
                 futures[ii]=delayed(get_clsim)(i+ii)  
             futures=client.compute(futures)
@@ -753,11 +748,14 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                  )
             del futures
             gc.collect()
+            print('done map ',i, thread_count(),'mem, peak mem: ',format_bytes(proc.memory_info().rss),
+                 int(getrusage(RUSAGE_SELF).ru_maxrss/1024./1024.)
+                 )
             #client.restart()
             #client.close()
             # print('done map ',i, thread_count())
             j+=step
-        
+    gc.enable()
     print('done generating maps')
     #client=Client(LC,)    
     outp['clg_b_stats']={}
@@ -776,20 +774,6 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     outp['clp_b_stats']=outp['clp_b_stats'].result()
     outp['clpB_b_stats']=outp['clpB_b_stats'].result()
         
-#         outp['clp_b_stats']=calc_sim_stats(sim=clp_b,sim_truth=clp_b.mean(axis=0))
-#     xiN=np.zeros((Rsize,len(xi)))
-#     xig=np.zeros((Rsize,len(xi)))
-#     xigB=np.zeros((Rsize,len(r_bins)-1))
-#     xiNB=np.zeros((Rsize,len(r_bins)-1))
-#     for i in np.arange(Rsize):
-#         r,xig[i,:]=WT.projected_correlation(k_pk=l,pk=clg[i,:],j_nu=0,taper=True,**taper_kw)
-#         rb,xigB[i,:]=WT.bin_mat(r=r,mat=xig[i,:],r_bins=r_bins)
-#         if do_clN:
-#             r,xiN[i,:]=WT.projected_correlation(k_pk=l,pk=clN[i,:],j_nu=0,taper=True,**taper_kw)
-#             rb,xiNB[i,:]=WT.bin_mat(r=r,mat=xiN[i,:],r_bins=r_bins)
-#     outp['xi_truth']=xi_truth
-#    outp['rb']=rb
-
     # outp['clpB']=clpB
     outp['clg_b']=clg_b
     outp['clgB_b']=clg_b
@@ -800,27 +784,6 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     outp['cl0']=cl0
     outp['clp0']=clp0
     outp['clp_shear_B_b']=clp_shear_B_b
-    # outp['clp_shear_B']=clp_shear_B
-#     outp['clN']=clN
-#     outp['xig']=xig
-#     outp['xigB']=xigB
-#     outp['xiNB']=xiNB
-#     outp['xiN']=xiN
-
-#     outp['clg']=clg
-    # outp['clp']=clp
-#     clg0_2=np.array(clg0)[[0,1,3],:]
-#     outp['clg_stats']={corr_t[ii]: calc_sim_stats(sim=clg[:,:,ii],sim_truth=clg0_2[ii]) for ii in np.arange(ndim)}#calc_sim_stats(sim=clg,sim_truth=clg0)
-#     outp['clp_stats']={corr_t[ii]: calc_sim_stats(sim=clp[:,:,ii],sim_truth=clp[:,:,ii].mean(axis=0)) for ii in np.arange(ndim)}#     calc_sim_stats(sim=clp,sim_truth=clp.mean(axis=0))
-
-#     outp['xig_stats']=calc_sim_stats(sim=xig,sim_truth=xi)
-#     if convolve_win:
-#         outp['xig_stats0']=calc_sim_stats(sim=xig,sim_truth=xi0)
-#     rb,xiB=WT.bin_mat(r=r,mat=xi_truth,r_bins=r_bins)
-#     outp['xigB_stats']=calc_sim_stats(sim=xigB,sim_truth=xiB)
-#     if do_clN:
-#         outp['xiN_stats']=calc_sim_stats(sim=xiN,sim_truth=xi_truth)
-#         outp['xiNB_stats']=calc_sim_stats(sim=xiNB,sim_truth=xiB)
 
     outp['size']=Rsize
     outp['fsky']=fsky

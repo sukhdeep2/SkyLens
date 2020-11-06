@@ -1,6 +1,6 @@
 import os,sys
 from skylens.survey_utils import *
-from skylens.cl_cov import *
+from skylens.skylens_main import *
 #sys.path.append('/verafs/scratch/phy200040p/sukhdeep/project/skylens/skylens/')
 import dask
 from dask import delayed

@@ -19,6 +19,9 @@ import zarr
 from dask.threaded import get
 import time,gc
 from multiprocessing import Pool,cpu_count
+from skylens.thread_count import *
+import pickle
+
 
 class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,corrs=None,s1_s2s=None,use_window=None,f_sky=None,
@@ -46,10 +49,12 @@ class window_utils():
 
         self.c_ell0=None
         self.c_ell_b=None
+        del self.kappa_class0,self.kappa_class_b#,self.z_bins
         if bin_window:
             self.binnings=binning()
-            self.kappa_class0=kappa_class0
-            self.kappa_class_b=kappa_class_b
+            self.cl_bin_utils=kappa_class0.cl_bin_utils
+#             self.kappa_class0=kappa_class0
+#             self.kappa_class_b=kappa_class_b
 
             self.c_ell0=kappa_class0.cl_tomo()['cl']
             if kappa_class_b is not None:
@@ -193,7 +198,7 @@ class window_utils():
             if not cov:
                 M[k]=M[k]*self.MF.T #FIXME: not used in covariance?
             if self.bin_window:# and bin_wt is not None:
-                M[k]=self.binnings.bin_2d_coupling(M=M[k],bin_utils=self.kappa_class0.cl_bin_utils,
+                M[k]=self.binnings.bin_2d_coupling(M=M[k],bin_utils=self.cl_bin_utils,
                     partial_bin_side=2,lm=lm,lm_step=self.step,wt0=bin_wt['wt0'],wt_b=bin_wt['wt_b'],cov=cov)
                 
         if W_pm!=0:
@@ -247,17 +252,16 @@ class window_utils():
 
         z_bin1=self.z_bins[corr[0]][indxs[0]]
         z_bin2=self.z_bins[corr[1]][indxs[1]]
-        alm1=z_bin1['window_alm']
-        alm2=z_bin2['window_alm']
 
         win[12]={} #to keep some naming uniformity with the covariance window
-        win[12]['cl']=hp.alm2cl(alms1=alm1,alms2=alm2,lmax_out=self.window_lmax)[self.window_l] #This is f_sky*cl.
-
-        alm1=z_bin1['window_alm_noise']
-        alm2=z_bin2['window_alm_noise']
+        win[12]['cl']=hp.anafast(map1=z_bin1['window'],map2=z_bin2['window'],
+                                 lmax=self.window_lmax)[self.window_l]
 
         if corr[0]==corr[1] and indxs[0]==indxs[1]:
-            win[12]['N']=hp.alm2cl(alms1=alm1,alms2=alm2,lmax_out=self.window_lmax)[self.window_l] #This is f_sky*cl.
+            map1=np.sqrt(z_bin1['window'])
+            mask=z_bin1['window']==hp.UNSEEN
+            map1[mask]=hp.UNSEEN
+            win[12]['N']=hp.anafast(map1=map1,lmax=self.window_lmax)[self.window_l]
 
         win['binning_util']=None
         win['bin_wt']=None
@@ -266,7 +270,6 @@ class window_utils():
             cl_b=c_ell_b[corr][indxs]
             win['bin_wt']={'wt_b':1./cl_b,'wt0':cl0}
             if np.all(cl_b==0):#avoid nan
-                print('get_window_power_cl: ',corr_indxs, 'zero cl')
                 win['bin_wt']={'wt_b':cl_b,'wt0':cl0}
             
         win['W_pm']=W_pm
@@ -833,11 +836,15 @@ class window_utils():
         t1=time.time()
         self.cl_keys=[corr+indx for corr in corrs for indx in corr_indxs[corr]]
         self.cl_bag=dask.bag.from_sequence(self.cl_keys,npartitions=npartitions)
+        
+#         yy=pickle.dumps(self.get_window_power_cl) #this is the problem. copying this slows down map.
+#         yy2=pickle.dumps(self.get_window_power_cov)
+        print('cl bags doing',time.time()-t1, get_size_pickle(self.get_window_power_cov))#,get_size_pickle(self.z_bins))
         if use_bag:
-            self.Win_cl=self.cl_bag.map(self.get_window_power_cl,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)#.to_delayed()
+            self.Win_cl=self.cl_bag.map(self.get_window_power_cl,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)#this can be slow... https://stackoverflow.com/questions/64559993/what-happens-during-dask-client-map-call
         else:
             self.Win_cl=[delayed(self.get_window_power_cl)(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b) for ck in self.cl_keys]
-
+        print('cl bags done',self.Win_cl,time.time()-t1)
         self.cov_keys=[]
         self.Win_cov=None
         if self.do_cov:
@@ -845,18 +852,18 @@ class window_utils():
                 self.cov_keys+=[corr+indx for indx in self.cov_indxs[corr]]
                 self.cov_bag=dask.bag.from_sequence(self.cov_keys,npartitions=npartitions)
                 if use_bag:
-                    self.Win_cov=self.cov_bag.map(self.get_window_power_cov,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)#.to_delayed()
+                    self.Win_cov=self.cov_bag.map(self.get_window_power_cov,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)
                 else:
                     self.Win_cov=[delayed(self.get_window_power_cov)(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b) for ck in self.cov_keys]
                 # ^ is super slow for very large number of covariances. ^^ helps because dask effectively bunches up delayed.
+                # ^ is better for smaller computes. ^^ for very large ones.
                 # FIXME: We can probably implement custom partitions, bunching up covariances from same tracers to make things more efficient.
-        print('cl bags done',len(self.cl_keys),len(self.cov_keys),time.time()-t1)
+                # Custom partitions will likely require serialization of functions, so unlikely to help with dask map issue.
+        print('cl+cov bags done',len(self.cl_keys),len(self.cov_keys),time.time()-t1)
         if self.store_win and client is not None:
-#            print('doing client persist',self.Win_cl)
            self.Win_cl=client.persist(self.Win_cl)
            if self.do_cov:
                self.Win_cov=client.persist(self.Win_cov)
-#            print('done client persist',self.Win_cov)
 
     def combine_coupling_cl_cov(self,win_cl_lm,win_cov_lm):
         Win={}
@@ -915,7 +922,7 @@ class window_utils():
 #                                                                  self.wig_3j_2[lm],self.mf_pm[lm]) for Wc in Win_cov]
 
                     self.Win_lm[lm]['cov']=self.Win_cov_lm[lm]
-                print('done lm cl+cov graph',lm,time.time()-t1)
+                print('done lm cl+cov graph',lm,time.time()-t1,get_size_pickle(self.get_cl_coupling_lm))
 #### Donot delete
                 if self.store_win:  
                    self.Win_lm[lm]=client.compute(self.Win_lm[lm]).result() #use client persist

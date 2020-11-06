@@ -32,7 +32,7 @@ if debug:
     # problem is likely to be in some package
 
 
-test=True
+test=False
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--dask_dir", "-Dd", help="dask log directory")
@@ -72,7 +72,7 @@ use_binned_l=True
 use_window=True
 
 unit_window=False
-nside=256 #32
+nside=32 #32
 window_lmax=nside #30
 
 print('doing nside',nside,window_lmax,use_binned_l)
@@ -113,17 +113,19 @@ if SSV_cov:
 
 from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
+worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
+
 if Scheduler_file is None:
-    dask_initialize(nthreads=27,local_directory=dask_dir)
-    client = Client()
-    # LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
-    #                 local_dir=dask_dir, **worker_kwargs,
-    #                 #scheduler_port=12234,
-    #                 dashboard_address=8801
-    #                 # diagnostics_port=8801,
-    # #                memory_monitor_interval='2000ms')
-    #                )
-    # client=Client(LC,)#diagnostics_port=8801,)
+#     dask_initialize(nthreads=27,local_directory=dask_dir)
+#     client = Client()
+    LC=LocalCluster(n_workers=1,processes=False,threads_per_worker=ncpu,
+                    local_dir=dask_dir, **worker_kwargs,
+                    #scheduler_port=12234,
+                    dashboard_address=8801
+                    # diagnostics_port=8801,
+    #                memory_monitor_interval='2000ms')
+                   )
+    client=Client(LC,)#diagnostics_port=8801,)
 else:
     client=Client(scheduler_file=Scheduler_file,processes=True)
 scheduler_info=client.scheduler_info()
@@ -919,7 +921,8 @@ def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,do_cov=do_cov,
             'SSV_cov':SSV,'tidal_SSV_cov':SSV,'do_xi':False,'use_window':use_window,'window_lmax':window_lmax,
             'f_sky':f_sky,'corrs':corrs,'store_win':store_win,'Win':Win, 'wigner_files':wigner_files, #'sigma_gamma':sigma_gamma
             'do_sample_variance':do_sample_variance,'power_spectra_kwargs':power_spectra_kwargs2,'f_sky':f_sky,
-            'bin_xi':bin_xi,'sparse_cov':sparse_cov,'nz_PS':nz_PS,'z_PS':z_PS,'scheduler_info':scheduler_info#'client':client
+            'bin_xi':bin_xi,'sparse_cov':sparse_cov,'nz_PS':nz_PS,'z_PS':z_PS,'scheduler_info':scheduler_info,
+                    'clean_tracer_window':clean_tracer_window#'client':client
 }
     ell_bin_kwargs={'lmax_cl':l_max,'lmin_cl':l_min,'Nl_bins':Nl_bins}
     l0,l_bins,l=get_cl_ells(**ell_bin_kwargs)
@@ -979,9 +982,11 @@ def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,do_cov=do_cov,
             f_sky[corr[::-1]]={}
             sc[corr]={}
             for (i,j) in indxs:
+                zs1=kappa_class.tracer_utils.z_win[corr[0]][i]#.copy() #we will modify these locally
+                zs2=kappa_class.tracer_utils.z_win[corr[1]][j]
+                f_sky_ij,mask12=kappa_class.Win.mask_comb(zs1['window'],zs2['window'])
                 zs1=kappa_class.z_bins[corr[0]][i]#.copy() #we will modify these locally
                 zs2=kappa_class.z_bins[corr[1]][j]
-                f_sky_ij,mask12=kappa_class.Win.mask_comb(zs1['window'],zs2['window'])
                 sc_ij=np.sum(zs1['kernel_int']*zs2['kernel_int'])
                 if f_sky_ij==0 or sc_ij==0:
                     print('Fish init: ',corr,(i,j),'removed because fsky=',f_sky_ij,' kernel product=',sc_ij)
@@ -997,10 +1002,10 @@ def init_fish(z_min=z_min,z_max=z_max,corrs=corrs,SSV=SSV_cov,do_cov=do_cov,
         for corr in kappa_class.cov_indxs:
             f_sky[corr]={}
             for (i,j,k,l) in kappa_class.cov_indxs[corr]:
-                zs1=kappa_class.z_bins[corr[0]][i]#.copy() #we will modify these locally
-                zs2=kappa_class.z_bins[corr[1]][j]
-                zs3=kappa_class.z_bins[corr[2]][k]#.copy() #we will modify these locally
-                zs4=kappa_class.z_bins[corr[3]][l]
+                zs1=kappa_class.tracer_utils.z_win[corr[0]][i]#.copy() #we will modify these locally
+                zs2=kappa_class.tracer_utils.z_win[corr[1]][j]
+                zs3=kappa_class.tracer_utils.z_win[corr[2]][k]#.copy() #we will modify these locally
+                zs4=kappa_class.tracer_utils.z_win[corr[3]][l]
                 f_sky_12,mask12=kappa_class.Win.mask_comb(zs1['window'],zs2['window'])
                 f_sky_12,mask34=kappa_class.Win.mask_comb(zs3['window'],zs4['window'])
 
@@ -1079,7 +1084,7 @@ if use_window and store_win:
 
 # kappa_class_lsst,z_bins_lsst_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=None,corrs=corrs,
 #                                           Win=WIN['lsst'],store_win=store_win)
-        
+clean_tracer_window=False
 fname_cl=file_home+'/cl_cov_'+fname_out
 try:
 #     crash
@@ -1145,11 +1150,13 @@ priors['Om']=np.inf
 priors['w']=np.inf
 priors['wa']=np.inf
 
+clean_tracer_window=True
 do_cov=False
 # if use_binned_l: 
 #     bin_cl=False #True
 #     use_binned_l=False
-
+WIN['full']['cov']=None
+WIN['lsst']['cov']=None
 kappa_class,z_bins_kwargs=init_fish(n_source_bins=nbins,n_lens_bins=n_lens_bins,n_lensD_bins=n_lensD_bins,corrs=corrs,
                                           Win=WIN['full'],store_win=store_win,do_cov=do_cov,z_bins_kwargs=z_bins_kwargs)#reset after cl,cov calcs
 # cl0=cl0G['stack'].compute()

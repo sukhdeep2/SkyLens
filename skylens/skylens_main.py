@@ -41,7 +41,7 @@ class Skylens():
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 use_binned_theta=False, xi_win_approx=False,
                 corrs=None,corr_indxs=None,stack_indxs=None,
-                wigner_files=None,name='',
+                wigner_files=None,name='',clean_tracer_window=True,
                 client=None,scheduler_info=None):
 
         self.__dict__.update(locals()) #assign all input args to the class as properties
@@ -70,6 +70,7 @@ class Skylens():
         self.set_WT_binned()
 
         self.z_bins=self.tracer_utils.z_bins
+        del self.zs_bins,self.zg_bins,self.zk_bins
         self.set_fsky(f_sky)
         
         if cov_utils is None:
@@ -97,13 +98,16 @@ class Skylens():
         self.Win=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,s1_s2s=self.s1_s2s,
                         cov_indxs=self.cov_indxs,client=self.client,scheduler_info=self.scheduler_info,
                         use_window=use_window,do_cov=do_cov,cov_utils=self.cov_utils,
-                        f_sky=f_sky,corr_indxs=self.stack_indxs,z_bins=self.z_bins,
+                        f_sky=f_sky,corr_indxs=self.stack_indxs,z_bins=self.tracer_utils.z_win,
                         window_lmax=self.window_lmax,Win=Win,WT=self.WT,do_xi=self.do_xi,
                         xi_win_approx=self.xi_win_approx,do_pseudo_cl=self.do_pseudo_cl,
                         kappa_class0=self.kappa0,kappa_class_b=self.kappa_b,wigner_step=wigner_step,
                         xi_bin_utils=self.xi_bin_utils,store_win=store_win,wigner_files=wigner_files,
                         bin_window=self.use_binned_l)
         self.bin_window=self.Win.bin_window
+        self.set_binned_measure(None,clean_up=True)
+        if clean_tracer_window:
+            self.tracer_utils.clean_z_window()
         
         print('Window done. Size:',get_size(self.Win.Win)/1.e6)
         if self.Tri_cov:
@@ -125,7 +129,7 @@ class Skylens():
         if not self.LC is None:
             self.client.shutdown()
             self.LC.close()
-    def set_binned_measure(self,local_args):
+    def set_binned_measure(self,local_args,clean_up=False):
         """
             If we only want to run computations at effective bin centers, then we 
             need to bin the windows and wigner matrices properly, for which unbinned
@@ -135,6 +139,10 @@ class Skylens():
             This is useful when running multiple computations for chains etc. For 
             covariance and one time calcs, may as well just do the full computation.
         """
+        if clean_up:
+            if self.use_binned_l or self.use_binned_theta:
+                del self.kappa0,self.kappa_b
+            return 
         if self.use_binned_l or self.use_binned_theta:
             inp_args={}
             for k in local_args.keys():
@@ -527,17 +535,20 @@ class Skylens():
                                 cosmo_params=cosmo_params)
 
         out={}
-        cl={corr:{} corr in corrs2}.update({corr[::-1]:{} corr in corrs2})
-        pcl={corr:{} corr in corrs2}.update({corr[::-1]:{} corr in corrs2}) #pseudo_cl
-        cl_b={corr:{} corr in corrs2}.update({corr[::-1]:{} corr in corrs2})
-        pcl_b={corr:{} corr in corrs2}.update({corr[::-1]:{} corr in corrs2})
+        cl={corr:{} for corr in corrs2}
+        cl.update({corr[::-1]:{} for corr in corrs2})
+        pcl={corr:{} for corr in corrs2}
+        pcl.update({corr[::-1]:{} for corr in corrs2}) #pseudo_cl
+        cl_b={corr:{} for corr in corrs2}
+        cl_b.update({corr[::-1]:{} for corr in corrs2})
+        pcl_b={corr:{} for corr in corrs2}
+        pcl_b.update({corr[::-1]:{} for corr in corrs2})
         
         cov={}
         for corr in corrs2:
             corr2=corr[::-1]
             corr_indxs=self.corr_indxs[(corr[0],corr[1])]#+self.cov_indxs
             for (i,j) in corr_indxs:#FIXME: we might want to move to map, like covariance. will be useful to define the tuples in forzenset then.
-                # out[(i,j)]
                 cl[corr][(i,j)]=delayed(self.calc_cl)(zs1_indx=i,zs2_indx=j,corr=corr) 
                 cl_b[corr][(i,j)]=delayed(self.bin_cl_func)(cl=cl[corr][(i,j)],cov=None)
                 if self.use_window and self.do_pseudo_cl and (i,j) in self.stack_indxs[corr]:

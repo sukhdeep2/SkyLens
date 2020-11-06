@@ -11,7 +11,7 @@ from skylens.tracer_utils import *
 from astropy.cosmology import Planck15 as cosmo
 from astropy.table import Table
 cosmo_h_PL=cosmo.clone(H0=100)
-from skylens.cl_cov import *
+from skylens.skylens_main import *
 from dask.distributed import Client,get_client
 import healpy as hp
 import sys
@@ -122,15 +122,14 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
         cl_t=hp.anafast(cl_map)
 #         cl_map/=cl_map[mask].mean()
         cl_map/=np.sqrt(cl_t[0]) #this is important for shear map normalization in correlation functions.
-        cl_map_noise=np.sqrt(cl_map)
         cl_map[~mask]=hp.UNSEEN
+        cl_map_noise=np.sqrt(cl_map)
         cl_map_noise[~mask]=hp.UNSEEN
         # cl_map.mask=mask
         zs_bins[i]['window_cl0']=cl_i
         zs_bins[i]['window']=cl_map
-        zs_bins[i]['window_alm']=hp.map2alm(cl_map)
-        zs_bins[i]['window_alm_noise']=hp.map2alm(cl_map_noise)
-#         zs_bins[i]['window_cl']=cl_i
+#         zs_bins[i]['window_alm']=hp.map2alm(cl_map)
+#         zs_bins[i]['window_alm_noise']=hp.map2alm(cl_map_noise)
 
     return zs_bins
 

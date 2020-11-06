@@ -1,7 +1,8 @@
-import sys, os, gc, threading, subprocess
-pid=os.getpid()
-print('pid: ',pid, sys.version)
+import sys, os, gc, threading, subprocess,pickle
+import numpy as np
+# print('pid: ',pid, sys.version)
 def thread_count():
+    pid=os.getpid()
     nlwp=subprocess.run(['ps', '-o', 'nlwp', str(pid)], stdout=subprocess.PIPE).stdout.decode('utf-8').split('\n')[1]
     nlwp=int(nlwp)
     thc=threading.active_count()
@@ -31,3 +32,8 @@ def get_size(obj, seen=None): #https://stackoverflow.com/questions/449560/how-do
         elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
             size += sum([get_size(i, seen) for i in obj])
         return size
+    
+    
+def get_size_pickle(obj):
+    yy=pickle.dumps(obj)
+    return np.around(sys.getsizeof(yy)/1.e6,decimals=2)

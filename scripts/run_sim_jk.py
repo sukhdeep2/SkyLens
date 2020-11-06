@@ -38,7 +38,7 @@ from dask.distributed import Client  # we already had this above
 
 import argparse
 
-test_run=False
+test_run=True
 parser = argparse.ArgumentParser()
 parser.add_argument("--cw", "-cw",type=int, help="use complicated window")
 parser.add_argument("--uw", "-uw",type=int, help="use unit window")
@@ -259,7 +259,8 @@ kappa_win=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0
             use_window=use_window,store_win=store_win,window_lmax=window_lmax,corrs=corrs,
             SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=f_sky,
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi,scheduler_info=scheduler_info,
-            wigner_files=wigner_files,do_pseudo_cl=do_pseudo_cl,xi_win_approx=xi_win_approx
+            wigner_files=wigner_files,do_pseudo_cl=do_pseudo_cl,xi_win_approx=xi_win_approx,
+                  clean_tracer_window=False,
 )
 
 clG_win=kappa_win.cl_tomo(corrs=corrs)
@@ -719,7 +720,7 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
     if convolve_win:
         nu=2.*l+1.
         for tracer in kappa_class.z_bins.keys():
-            window[tracer]=kappa_class.z_bins[tracer][0]['window']
+            window[tracer]=kappa_class.tracer_utils.z_win[tracer][0]['window']
             mask[tracer]=window[tracer]==hp.UNSEEN
 #             print(coupling_M_inv.keys())
     outp={}
@@ -974,7 +975,7 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
             # for k in cl_b_jk.keys():
             #     cl_b_jk[k]=jk_mean(cl_b_jk[k],njk=njk)
 #             return pcli_jk,cli_jk,pcl_b_jk,pcli_B_jk,cl_b_jk,pclB_b_jk,clB_b_jk
-        gc.collect()
+#         gc.collect()
         return pcl_b_jk,cl_b_jk,xi_jk
         # else:
         #     for ijk in pcl_jk.keys():
@@ -989,36 +990,23 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
         return pcl,cl 
     
     print('generating maps')
+    gc.disable()
     if convolve_win:
-        futures={}
-#         for i in np.arange(nsim):
-#             futures[i]=dask.delayed(get_clsim)(i)  
-#         print(futures)
-#         pcl=dask.delayed(comb_maps)(futures)
-#         pcl.compute()
         i=0
         j=0
         step= min(nsim,len(client.scheduler_info()['workers']))
-        # if njk==0:
-        #     step=min(3,nsim)
-        # funct=partial(get_clsim2,cl0,window,mask,SN,coupling_M['full'],ndim)
         while j<nsim:
             futures={}
             for ii in np.arange(step):
                 futures[ii]=delayed(get_clsim)(i+ii)  
             futures=client.compute(futures).result()
             for ii in np.arange(step):
-#                     pcl[i],cl[i],pcl_b[i],pclB[i],cl_b[i],pclB_b[i],clB_b[i]=futures.result()[ii]
                 tt=futures[ii]
                 if do_pseudo_cl:
                     pcl_b[i]=tt[0]
                     cl_b[i]=tt[1]
                 if do_xi:
                     xi_b[i]=tt[2]
-#                     pcl[i,:],cl[i,:],pcl_b[i,:],pclB[i,:],cl_b_i,pclB_b[i,:],clB_b_i=futures.result()[ii]
-#                     for k in cl_b_i.keys():
-#                         cl_b[k][i,:]=cl_b_i[i][k]
-#                     clB_b['iMaster'][i,:]=clB_b_i['iMaster']
                         
                 i+=1
             proc = psutil.Process()
@@ -1026,10 +1014,11 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
                  int(getrusage(RUSAGE_SELF).ru_maxrss/1024./1024.)
                  )
             del futures
+            gc.collect()
             # client.restart() #this can sometimes fail... useful for clearing memory on cluster.
             j+=step
     print('done generating maps')
-    
+    gc.enable()
     def get_full_samp(cljk={}):
         k=None
         try:
