@@ -1,7 +1,5 @@
 # SkyLens
 
-Skylens is the code to compute the two point power spectra, correlation functions and their covariances. The code is under active development, most of the development is happening in the dask branch. Currently only projected quantities in the angular space are supported, with full sky calculations. 
-
 Dependencies
 
 1. Dask: To enable parallel computation using graphs.

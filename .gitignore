@@ -9,9 +9,12 @@
 *.old
 
 
-*dask-worker-space/*
+*dask-worker-space*
 *mydask.png*
 *.dat
 *.pkl
 temp/*
 desi/*
+tests/*
+build/*
+dist/*
