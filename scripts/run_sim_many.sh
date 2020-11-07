@@ -59,7 +59,7 @@ do
                         echo '=============================================================='>>$log_file
                         echo 'begining::' $(date)>>$log_file 
                         
-#                         python3 run_sim.py  --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise |cat>>$log_file
+                        python3 run_sim.py  --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise |cat>>$log_file
                         
                         #---------------------------------------------------
                         echo '=========================================================================================='|cat>>$log_file

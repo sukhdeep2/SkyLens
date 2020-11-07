@@ -13,9 +13,16 @@ from skylens import *
 from survey_utils import *
 from scipy.stats import norm,mode,skew,kurtosis,percentileofscore
 
+from resource import getrusage, RUSAGE_SELF
+import psutil
+from distributed.utils import format_bytes
+
+
 import sys
 import tracemalloc
 
+from dask_mpi import initialize as dask_initialize
+from distributed import Client
 from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
 #http://distributed.readthedocs.io/en/latest/_modules/distributed/worker.html
@@ -30,6 +37,9 @@ parser.add_argument("--lognormal", "-l",type=int, help="use complicated window")
 parser.add_argument("--blending", "-b",type=int, help="use complicated window")
 parser.add_argument("--ssv", "-ssv",type=int, help="use complicated window")
 parser.add_argument("--noise", "-sn",type=int, help="use shot noise")
+parser.add_argument("--scheduler", "-s", help="Scheduler file")
+parser.add_argument("--dask_dir", "-Dd", help="dask log directory")
+args = parser.parse_args()
 
 gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
 gc.enable()
@@ -44,6 +54,11 @@ lognormal=False if not args.lognormal else np.bool(args.lognormal)
 do_blending=False if not args.blending else np.bool(args.blending)
 do_SSV_sim=False if not args.ssv else np.bool(args.ssv)
 use_shot_noise=True if args.noise is None else np.bool(args.noise)
+
+Scheduler_file=args.scheduler
+dask_dir=args.dask_dir
+
+# Scheduler_file=None
 
 # if args.noise is None: #because 0 and None both result in same bool
 #     use_shot_noise=True
@@ -83,26 +98,41 @@ if test_run:
 wigner_files={}
 # wig_home='/global/cscratch1/sd/sukhdeep/dask_temp/'
 #wig_home='/Users/Deep/dask_temp/'
-wig_home='/home/deep/data/repos/SkyLens/temp/'
-wigner_files[0]= wig_home+'/dask_wig3j_l6500_w2100_0_reorder.zarr'
+home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/'
+wig_home=home+'temp/'
+wigner_files[0]= wig_home+'/dask_wig3j_l3500_w2100_0_reorder.zarr'
 wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 
 l0w=np.arange(3*nside-1)
 
-memory='55gb'#'120gb'
-ncpu=12 #4
+memory='120gb'#'120gb'
+import multiprocessing
+
+ncpu=multiprocessing.cpu_count() - 1
 if test_run:
     memory='20gb'
     ncpu=4
 worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
-LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
-                local_dir=wig_home+'/NGL-worker/', **worker_kwargs,
-                #scheduler_port=12234,
-                dashboard_address=8801
-                # diagnostics_port=8801,
-#                memory_monitor_interval='2000ms')
-               )
-client=Client(LC,)#diagnostics_port=8801,)
+
+print('initializing dask, scheduler: ',Scheduler_file)
+if Scheduler_file is None:
+#     dask_initialize(nthreads=27,local_directory=dask_dir)
+#     client = Client()
+    LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
+                    local_directory=dask_dir, **worker_kwargs,
+                    #scheduler_port=12234,
+                    dashboard_address=8801
+                    # diagnostics_port=8801,
+    #                memory_monitor_interval='2000ms')
+                   )
+    client=Client(LC,)#diagnostics_port=8801,)
+    Scheduler_file=client.scheduler_info()['address']
+else:
+    client=Client(scheduler_file=Scheduler_file,processes=True)
+scheduler_info=client.scheduler_info()
+scheduler_info['file']=Scheduler_file
+print('client: ',client,dask_dir,scheduler_info)
+
 print(client)
 
 #setup parameters
@@ -165,13 +195,14 @@ ww=1000*np.exp(-(l0w-mean)**2/sigma**2)
 print('getting win')
 z0=0.5
 zl_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=10,use_window=use_window,nbins=1,
+                              scheduler_info=scheduler_info,
                             window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
                             f_sky=f_sky,nside=nside,unit_win=unit_window,use_shot_noise=True)
 
 z0=1 #1087
 zs_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=30,use_window=use_window,
                                     window_cl_fact=window_cl_fact*(1+ww*use_complicated_window),
-                                    f_sky=f_sky,nbins=n_source_bins,nside=nside,
+                                    f_sky=f_sky,nbins=n_source_bins,nside=nside,scheduler_info=scheduler_info,
                                     unit_win=unit_window,use_shot_noise=True)
 
 print('zbins done')#,thread_count())
@@ -182,9 +213,9 @@ if not use_shot_noise:
 
 kappa_win=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
             use_window=use_window,store_win=store_win,window_lmax=window_lmax,corrs=corrs,
-            SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=f_sky,
+            SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=f_sky,scheduler_info=scheduler_info,
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi,
-            wigner_files=wigner_files,
+            wigner_files=wigner_files,clean_tracer_window=False,
 )
 
 clG_win=kappa_win.cl_tomo(corrs=corrs)
@@ -203,7 +234,7 @@ Win0=np.nan_to_num(Win0)
 
 kappa0=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
             use_window=False,store_win=store_win,corrs=corrs,window_lmax=window_lmax,
-            SSV_cov=True,tidal_SSV_cov=True,f_sky=f_sky,
+            SSV_cov=True,tidal_SSV_cov=True,f_sky=f_sky,scheduler_info=scheduler_info,
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi)
 
 clG0=kappa0.cl_tomo(corrs=corrs) 
@@ -222,10 +253,10 @@ for corr in corrs:
     cl0['cl'][corr]=clG0['cl'][corr][bi].compute()
 
     cl0['cl_b'][corr]=clG0['pseudo_cl_b'][corr][bi].compute()
-    cl0['cov'][corr]=clG0['cov'][corr+corr][bi+bi].compute()
+    cl0['cov'][corr]=clG0['cov'][corr+corr].compute()[0]
 
     cl0_win['cl_b'][corr]=clG_win['pseudo_cl_b'][corr][bi].compute()
-    cl0_win['cov'][corr]=clG_win['cov'][corr+corr][bi+bi].compute()['final_b']
+    cl0_win['cov'][corr]=clG_win['cov'][corr+corr].compute()[0]['final_b']
 
 print('kappa done, binning coupling matrices')
 from binning import *
@@ -383,7 +414,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     if convolve_win:
         nu=2.*l+1.
         for tracer in kappa_class.z_bins.keys():
-            window[tracer]=kappa_class.z_bins[tracer][0]['window']
+            window[tracer]=kappa_class.tracer_utils.z_win[tracer][0]['window']
             mask[tracer]=window[tracer]==hp.UNSEEN
         for corr in corrs:
             coupling_M[corr]=kappa_class.Win.Win['cl'][corr][(0,0)]['M']
@@ -396,12 +427,12 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                                                             bin_utils=kappa_class.cl_bin_utils) 
             coupling_M_binned['nMaster'][corr]*=dl
             
-            coupling_M_binned['iMaster'][corr]=M_binnings[corr].bin_2d_coupling(cov=coupling_M[corr].T,
-                                                                            bin_utils=M_binning_utils[corr])
+            coupling_M_binned['iMaster'][corr]=M_binnings[corr].bin_2d_coupling(M=coupling_M[corr].T,
+                                                                            bin_utils=M_binning_utils[corr],cov=False)
             coupling_M_binned['iMaster'][corr]=coupling_M_binned['iMaster'][corr].T  #to keep the same order in dot product later. Remeber that the coupling matrix is not symmetric.
             
             if corr==corr_ll:
-                coupling_M_binned['iMaster']['shear_B']=M_binnings[corr].bin_2d_coupling(cov=coupling_M['shear_B'].T,bin_utils=M_binning_utils[corr])
+                coupling_M_binned['iMaster']['shear_B']=M_binnings[corr].bin_2d_coupling(M=coupling_M['shear_B'].T,bin_utils=M_binning_utils[corr],cov=False)
                 coupling_M_binned['iMaster']['shear_B']=coupling_M_binned['iMaster']['shear_B'].T  #to keep the same order in dot product later. Remeber that the coupling matrix is not symmetric.
 
             
@@ -545,9 +576,9 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     corr_t=[corr_gg,corr_ll,corr_ggl] #order in which sim corrs are output.
     seed=12334
     def get_clsim(i):
-        tracemalloc.clear_traces()
-        tracemalloc.start()
-
+#         tracemalloc.clear_traces()
+#         tracemalloc.start()
+        gc.disable()
 
         # print('doing map: ',i,thread_count(), 'lognormal:',lognormal,'blending', add_blending)
         local_state = np.random.RandomState(seed+i)
@@ -607,13 +638,10 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                 
             clpi=hp.anafast(cl_map, lmax=max(l),pol=True) #TT, EE, BB, TE, EB, TB for polarized input map
             del cl_map,N_map
-            gc.collect()
+#             gc.collect()
             clpi=clpi[:,l]
             clpi_B=clpi[[2,4,5],:]
             clpi=clpi[[0,1,3],:]
-            
-#             for i in np.arange(6):
-            
             
         else:
             cl_map*=window
@@ -676,17 +704,9 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                     clg_b[k][:,ii]=clp_b[:,ii]@coupling_M_binned_inv[k][corr_t[ii]] #be careful with ordering as coupling matrix is not symmetric
                 if corr_t[ii]==corr_ll:
                     clgB_b['iMaster'][:,ii]=clpB_b[:,ii]@coupling_M_binned_inv['iMaster']['shear_B']
-            # dd=gc.get_debug()
-            # snapshot1 = tracemalloc.take_snapshot()
-            # top_stats = snapshot1.statistics('lineno')
-            # stat = top_stats[3]
-            # print("%s memory blocks: %.1f MiB" % (stat.count, stat.size / 1024**2))
-            # for line in stat.traceback.format():
-            #     print(line)
-            # print('got map ',i,thread_count())
             del clpi,clgi,clpi_B
-            gc.collect()
-            # return clpi.T,clgi.T,clp_b,clpi_B.T,clg_b,clpB_b,clgB_b
+#             gc.collect()
+#             gc.enable()
             return clp_b,clg_b,clpB_b,clgB_b
         else:
             return clpi.T,clgi.T
@@ -699,20 +719,15 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
         return clp,clg 
     
     # print('generating maps', thread_count())
+    del kappa_class
+    gc.disable()
     if convolve_win:
-        futures={}
-#         for i in np.arange(Rsize):
-#             futures[i]=dask.delayed(get_clsim)(i)  
-#         print(futures)
-#         clpg=dask.delayed(comb_maps)(futures)
-#         clpg.compute()
         i=0
         j=0
         step=min(np.int(5),Rsize)
-        funct=partial(get_clsim2,clg0,window,mask,SN,coupling_M,coupling_M_inv,ndim)
+#         funct=partial(get_clsim2,clg0,window,mask,SN,coupling_M,coupling_M_inv,ndim)
         while j<Rsize:
             futures={}
-            #client=Client(LC,)
             for ii in np.arange(step):
                 futures[ii]=delayed(get_clsim)(i+ii)  
             futures=client.compute(futures)
@@ -727,14 +742,20 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
                     clgB_b['iMaster'][i,:]=clgB_b_i['iMaster']
                         
                 i+=1
-            print('done map ',i, thread_count())
+            proc = psutil.Process()
+            print('done map ',i, thread_count(),'mem, peak mem: ',format_bytes(proc.memory_info().rss),
+                 int(getrusage(RUSAGE_SELF).ru_maxrss/1024./1024.)
+                 )
             del futures
             gc.collect()
+            print('done map ',i, thread_count(),'mem, peak mem: ',format_bytes(proc.memory_info().rss),
+                 int(getrusage(RUSAGE_SELF).ru_maxrss/1024./1024.)
+                 )
             #client.restart()
             #client.close()
             # print('done map ',i, thread_count())
             j+=step
-        
+    gc.enable()
     print('done generating maps')
     #client=Client(LC,)    
     outp['clg_b_stats']={}
@@ -753,20 +774,6 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     outp['clp_b_stats']=outp['clp_b_stats'].result()
     outp['clpB_b_stats']=outp['clpB_b_stats'].result()
         
-#         outp['clp_b_stats']=calc_sim_stats(sim=clp_b,sim_truth=clp_b.mean(axis=0))
-#     xiN=np.zeros((Rsize,len(xi)))
-#     xig=np.zeros((Rsize,len(xi)))
-#     xigB=np.zeros((Rsize,len(r_bins)-1))
-#     xiNB=np.zeros((Rsize,len(r_bins)-1))
-#     for i in np.arange(Rsize):
-#         r,xig[i,:]=WT.projected_correlation(k_pk=l,pk=clg[i,:],j_nu=0,taper=True,**taper_kw)
-#         rb,xigB[i,:]=WT.bin_mat(r=r,mat=xig[i,:],r_bins=r_bins)
-#         if do_clN:
-#             r,xiN[i,:]=WT.projected_correlation(k_pk=l,pk=clN[i,:],j_nu=0,taper=True,**taper_kw)
-#             rb,xiNB[i,:]=WT.bin_mat(r=r,mat=xiN[i,:],r_bins=r_bins)
-#     outp['xi_truth']=xi_truth
-#    outp['rb']=rb
-
     # outp['clpB']=clpB
     outp['clg_b']=clg_b
     outp['clgB_b']=clg_b
@@ -777,27 +784,6 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     outp['cl0']=cl0
     outp['clp0']=clp0
     outp['clp_shear_B_b']=clp_shear_B_b
-    # outp['clp_shear_B']=clp_shear_B
-#     outp['clN']=clN
-#     outp['xig']=xig
-#     outp['xigB']=xigB
-#     outp['xiNB']=xiNB
-#     outp['xiN']=xiN
-
-#     outp['clg']=clg
-    # outp['clp']=clp
-#     clg0_2=np.array(clg0)[[0,1,3],:]
-#     outp['clg_stats']={corr_t[ii]: calc_sim_stats(sim=clg[:,:,ii],sim_truth=clg0_2[ii]) for ii in np.arange(ndim)}#calc_sim_stats(sim=clg,sim_truth=clg0)
-#     outp['clp_stats']={corr_t[ii]: calc_sim_stats(sim=clp[:,:,ii],sim_truth=clp[:,:,ii].mean(axis=0)) for ii in np.arange(ndim)}#     calc_sim_stats(sim=clp,sim_truth=clp.mean(axis=0))
-
-#     outp['xig_stats']=calc_sim_stats(sim=xig,sim_truth=xi)
-#     if convolve_win:
-#         outp['xig_stats0']=calc_sim_stats(sim=xig,sim_truth=xi0)
-#     rb,xiB=WT.bin_mat(r=r,mat=xi_truth,r_bins=r_bins)
-#     outp['xigB_stats']=calc_sim_stats(sim=xigB,sim_truth=xiB)
-#     if do_clN:
-#         outp['xiN_stats']=calc_sim_stats(sim=xiN,sim_truth=xi_truth)
-#         outp['xiNB_stats']=calc_sim_stats(sim=xiNB,sim_truth=xiB)
 
     outp['size']=Rsize
     outp['fsky']=fsky
@@ -819,7 +805,7 @@ def sim_cl_xi(Rsize=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins
     #client.close()
     return outp
 #test_home=wig_home+'/tests/'
-test_home='/home/deep/data/repos/SkyLens/tests/'
+test_home=home+'/tests/'
 fname=test_home+'/cl0_sims_newN'+str(nsim)+'_ns'+str(nside)+'_lmax'+str(lmax_cl)+'_wlmax'+str(window_lmax)+'_fsky'+str(f_sky)
 if lognormal:
     fname+='_lognormal'+str(lognormal_scale)
@@ -860,5 +846,10 @@ written=True
 
 print(fname)
 print('all done')
-
-LC.close()
+# client.shutdown() #this kills the dask cluster.
+# try:
+#     if Scheduler_file is None:
+#         LC.close()
+# except Exception as err:
+#     print('LC close error:', err)
+# sys.exit(0)

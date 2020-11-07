@@ -18,6 +18,7 @@ sky_area=np.pi*4/(d2r)**2 #in degrees
 class Covariance_utils():
     def __init__(self,f_sky=0,l=None,logger=None,l_cut_jnu=None,do_sample_variance=True,
                  use_window=True,window_l=None,window_file=None,wig_3j=None, do_xi=False,
+                 use_binned_l=False
                 ):
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.binning=binning()
@@ -31,6 +32,10 @@ class Covariance_utils():
                                                         #binning later
                                                         #take care of f_sky later
         self.gaussian_cov_norm_2D=np.outer(np.sqrt(self.gaussian_cov_norm),np.sqrt(self.gaussian_cov_norm))
+        if use_window and use_binned_l:
+            dl=np.sqrt(np.gradient(self.l))
+            self.dl_norm=np.outer(dl,dl)
+
 
     def set_window_params(self):
         if isinstance(self.f_sky,float):
@@ -133,7 +138,7 @@ class Covariance_utils():
         CV2[23]=cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f
         return CV2
 
-    def gaussian_cov_window(self,cls,SN,tracers,z_indx,do_xi,Win,Bmode_mf=1,bin_window=False,bin_utils=None):
+    def gaussian_cov_window(self,cls,SN,tracers,z_indx,do_xi,Win,Bmode_mf=1,bin_window=False,bin_utils=None,binned_l=False):
         """
         Computes the power spectrum gaussian covariance, with proper factors of window. We have separate function for the 
         case when window is not supplied.
@@ -144,7 +149,6 @@ class Covariance_utils():
         
         G={1324:0,1423:0}
         cv_indxs={1324:(13,24),1423:(14,23)}
-        
         add_EB=1
         if self.do_xi and np.all(np.array(tracers)=='shear'):
             add_EB+=1
@@ -172,7 +176,11 @@ class Covariance_utils():
                             G_t*=Bmode_mf #need to -1 for xi+/- cross covariance
                         # if bin_window:
                         #     G_t=self.binning.bin_2d(cov=G_t,bin_utils=bin_utils)
-                        G[corr_i]+=G_t*Win['M'][corr_i][k][wp]
+                        if not binned_l:
+                            G[corr_i]+=G_t*Win['M'][corr_i][k][wp]
+                        else:
+                            G[corr_i]+=G_t*Win['M'][corr_i][k][wp]/self.dl_norm #FIXME: consider using factor of 2l+1 in window and cov separately.
+#                             G[corr_i]/=np.gradient(self.l)
 
         return G[1324],G[1423]
         
@@ -237,9 +245,14 @@ class Covariance_utils():
         fs0=1
         fs1423=1
         if f_sky is not None:
-            fs1324=np.sqrt(f_sky[tracers[0],tracers[2]][z_indx[0],z_indx[2]]*f_sky[tracers[1],tracers[3]][z_indx[1],z_indx[3]])
-            fs0=f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
-            fs1423=np.sqrt(f_sky[tracers[0],tracers[3]][z_indx[0],z_indx[3]]*f_sky[tracers[1],tracers[2]][z_indx[1],z_indx[2]])
+            if isinstance(self.f_sky,float):
+                fs1324=self.f_sky
+                fs0=self.f_sky**2
+                fs1423=self.f_sky
+            else:
+                fs1324=f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[2]][z_indx[0],z_indx[2]]*f_sky[tracers[1],tracers[3]][z_indx[1],z_indx[3]])
+                fs0=f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
+                fs1423=f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[3]][z_indx[0],z_indx[3]]*f_sky[tracers[1],tracers[2]][z_indx[1],z_indx[2]])
         
         if not self.do_xi:
             G1324/=self.gaussian_cov_norm_2D/fs1324*fs0

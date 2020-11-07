@@ -11,7 +11,8 @@ from skylens.tracer_utils import *
 from astropy.cosmology import Planck15 as cosmo
 from astropy.table import Table
 cosmo_h_PL=cosmo.clone(H0=100)
-from skylens.cl_cov import *
+from skylens.skylens_main import *
+from dask.distributed import Client,get_client
 import healpy as hp
 import sys
 sys.path.append('./ForQuE/')
@@ -76,7 +77,7 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None):
     
     return zs,p_zs
 
-def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False):
+def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False,scheduler_info=None):
     w_lmax=3*nside-1
     l0=np.arange(3*nside-1,dtype='int')
     corr=('galaxy','galaxy')
@@ -98,8 +99,13 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
     zs_bins['window0']=cl_map0
     zs_bins['window0_alm']=hp.map2alm(cl_map0)
 
+    if scheduler_info is None:
+        client=get_client()
+    else:
+        client=get_client(address=scheduler_info['address'])
+    
     for i in np.arange(zs_bins['n_bins']):
-        cl_i=cl0G['cl'][corr][(i,i)].compute()
+        cl_i=client.compute(cl0G['cl'][corr][(i,i)]).result()
         if unit_win:
             cl_map=hp.ma(np.ones(12*nside*nside))
 #             cl_i=1
@@ -116,21 +122,20 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
         cl_t=hp.anafast(cl_map)
 #         cl_map/=cl_map[mask].mean()
         cl_map/=np.sqrt(cl_t[0]) #this is important for shear map normalization in correlation functions.
-        cl_map_noise=np.sqrt(cl_map)
         cl_map[~mask]=hp.UNSEEN
+        cl_map_noise=np.sqrt(cl_map)
         cl_map_noise[~mask]=hp.UNSEEN
         # cl_map.mask=mask
         zs_bins[i]['window_cl0']=cl_i
         zs_bins[i]['window']=cl_map
-        zs_bins[i]['window_alm']=hp.map2alm(cl_map)
-        zs_bins[i]['window_alm_noise']=hp.map2alm(cl_map_noise)
-#         zs_bins[i]['window_cl']=cl_i
+#         zs_bins[i]['window_alm']=hp.map2alm(cl_map)
+#         zs_bins[i]['window_alm_noise']=hp.map2alm(cl_map_noise)
 
     return zs_bins
 
 
 def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
-                 AI_z=0,mag_fact=0,k_max=0.3):
+                 AI_z=0,mag_fact=0,shear_m_bias=1,k_max=0.3):
     dzs=np.gradient(zs) if len(zs)>1 else 1
 
     x=np.absolute(p_zs)<1.e-10 #to avoid some numerical errors
@@ -160,15 +165,16 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
     zs_bins[i]['AI']=AI
     zs_bins[i]['AI_z']=AI_z
     zs_bins[i]['mag_fact']=mag_fact
+    zs_bins[i]['shear_m_bias']=shear_m_bias #default value is 1. This is really 1+m
     zm=np.sum(zs_bins[i]['z']*zs_bins[i]['pzdz'])/zs_bins[i]['Norm']
     zs_bins[i]['lm']=k_max*cosmo_h.comoving_transverse_distance(zm).value
     zs_bins[i]['k_max']=k_max
     return zs_bins
 
 
-def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
+def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,scheduler_info=None,
                     zp_sigma=None,zs=None,n_zs=100,z_bins=None,f_sky=0.3,nside=256,use_window=False,
-                    mask_start_pix=0,window_cl_fact=None,bg1=1,AI=0,AI_z=0,l=None,mag_fact=0,
+                    mask_start_pix=0,window_cl_fact=None,bg1=1,AI=0,AI_z=0,shear_m_bias=1,l=None,mag_fact=0,
                      sigma_gamma=0.26,k_max=0.3,unit_win=False,use_shot_noise=True,**kwargs):
     """
         Setting source redshift bins in the format used in code.
@@ -229,7 +235,8 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
                             sigma=zp_sigma[indx[0]:indx[1]],zs=zs)
 
         zs_bins=zbin_pz_norm(zs_bins=zs_bins,bin_indx=i,zs=zs,p_zs=p_zs,ns=ns_i,bg1=bg1,
-                             AI=AI,AI_z=AI_z,mag_fact=mag_fact,k_max=k_max)
+                             AI=AI,AI_z=AI_z,mag_fact=mag_fact,shear_m_bias=shear_m_bias,
+                             k_max=k_max)
         #sc=1./lu.sigma_crit(zl=zl_kernel,zs=zs[x],cosmo_h=cosmo_h)
         #zs_bins[i]['lens_kernel']=np.dot(zs_bins[i]['pzdz'],sc)
 
@@ -278,11 +285,11 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     zs_bins['bias_func']='constant_bias'
     if use_window:
         zs_bins=set_window(zs_bins=zs_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
-                           window_cl_fact=window_cl_fact,unit_win=unit_win)
+                           window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info)
     return zs_bins
 
 def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
-                        zp_sigma=None,cosmo_h=None,z_bins=None):
+                        zp_sigma=None,cosmo_h=None,z_bins=None,scheduler_info=None):
     """
         Setting source redshift bins in the format used in code.
         Need
@@ -298,7 +305,7 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
 
     z_bins=np.linspace(min(zp),max(zp)*0.9,nz_bins) if z_bins is None else z_bins
 
-    zs_bins0=source_tomo_bins(zp=zp,p_zp=p_zp,zp_bias=zp_bias,zp_sigma=zp_sigma,ns=ns,nz_bins=1)
+    zs_bins0=source_tomo_bins(zp=zp,p_zp=p_zp,zp_bias=zp_bias,zp_sigma=zp_sigma,ns=ns,nz_bins=1,scheduler_info=scheduler_info)
     lu=tracer_utils()
 
     if cosmo_h is None:
@@ -335,7 +342,7 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
 
 
 def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bias=None,
-                     window_cl_fact=None,mag_fact=0,
+                     window_cl_fact=None,mag_fact=0,scheduler_info=None,
                     zp_sigma=None,zg=None,f_sky=0.3,nside=256,use_window=False,mask_start_pix=0,
                     l=None,sigma_gamma=0,k_max=0.3,unit_win=True,use_shot_noise=True):
     """
@@ -397,7 +404,7 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
     zg_bins['n_bins']=nz_bins #easy to remember the counts
     if use_window:
         zg_bins=set_window(zs_bins=zg_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
-                           window_cl_fact=window_cl_fact,unit_win=unit_win
+                           window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info
                            )
     return zg_bins
 
@@ -407,6 +414,7 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
                           window_cl_fact=None,ztrue_func=ztrue_given_pz_Gaussian,z_sigma_power=1,
                           f_sky=0.3,nside=256,zp=None,pzs=None,use_window=False,mask_start_pix=0,
                           l=None,sigma_gamma=0.26,AI=0,AI_z=0,mag_fact=0,k_max=0.3,
+                          scheduler_info=None,
                           unit_win=False,use_shot_noise=True,**kwargs):
 
     z=zp
@@ -449,12 +457,12 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
                         zp_sigma=z_sigma,z_bins=z_bins,f_sky=f_sky,nside=nside,
                            use_window=use_window,mask_start_pix=mask_start_pix,k_max=k_max,
                            l=l,sigma_gamma=sigma_gamma,AI=AI,AI_z=AI_z,unit_win=unit_win
-                           ,use_shot_noise=use_shot_noise,**kwargs)
+                            ,use_shot_noise=use_shot_noise,scheduler_info=scheduler_info,**kwargs)
 
 
 def DESI_lens_bins(dataset='lrg',nbins=1,window_cl_fact=None,z_bins=None,
                     f_sky=0.3,nside=256,use_window=False,mask_start_pix=0,bg1=1,
-                       l=None,sigma_gamma=0,mag_fact=0,
+                       l=None,sigma_gamma=0,mag_fact=0,scheduler_info=None,
                     **kwargs):
 
     home='../data/desi/data/desi/'
@@ -485,10 +493,11 @@ def DESI_lens_bins(dataset='lrg',nbins=1,window_cl_fact=None,z_bins=None,
                          ztrue_func=None,zp_bias=0,window_cl_fact=window_cl_fact,
                         zp_sigma=0,z_bins=z_bins,f_sky=f_sky,nside=nside,
                            use_window=use_window,mask_start_pix=mask_start_pix,bg1=bg1,
-                           l=l,sigma_gamma=sigma_gamma,**kwargs)
+                            l=l,sigma_gamma=sigma_gamma,scheduler_info=scheduler_info,**kwargs)
 
 
-def DES_lens_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigma_gamma=0,nside=256,mask_start_pix=0,window_cl_fact=0,unit_win=True,use_window=True,f_sky=1):
+def DES_lens_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigma_gamma=0,nside=256,mask_start_pix=0,window_cl_fact=0,unit_win=True,
+                  use_window=True,f_sky=1,scheduler_info=None):
     z_bins={}
     try:
         t=Table.read(fname,format='fits',hdu=6)
@@ -526,10 +535,11 @@ def DES_lens_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None
     z_bins['zmax']=zmax
     if use_window:
         z_bins=set_window(zs_bins=z_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
-                           window_cl_fact=window_cl_fact,unit_win=unit_win)
+                           window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info)
     return z_bins
 
-def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigma_gamma=0,nside=256,mask_start_pix=0,window_cl_fact=0,unit_win=True,use_window=True,f_sky=1):
+def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigma_gamma=0,nside=256,mask_start_pix=0,window_cl_fact=0,unit_win=True,use_window=True,
+             f_sky=1,scheduler_info=None):
     z_bins={}
     try:
         t=Table.read(fname,format='fits',hdu=6)
@@ -571,7 +581,7 @@ def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigm
     z_bins['zmax']=zmax
     if use_window:
         z_bins=set_window(zs_bins=z_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
-                           window_cl_fact=window_cl_fact,unit_win=unit_win)
+                           window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info)
     return z_bins
 
 

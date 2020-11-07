@@ -1,3 +1,7 @@
+        #TODO: 
+        # - Allow windows to be read from a file.
+        # - Allow an alternative graph that allows different windows to be computed independently (i.e. wigner split is secondary). 
+        
 import dask
 from dask import delayed
 import sparse
@@ -15,33 +19,42 @@ import zarr
 from dask.threaded import get
 import time,gc
 from multiprocessing import Pool,cpu_count
+from skylens.thread_count import *
+import pickle
+
 
 class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,corrs=None,s1_s2s=None,use_window=None,f_sky=None,
                 do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,WT=None,xi_bin_utils=None,do_xi=False,
                 store_win=False,Win=None,wigner_files=None,step=None,xi_win_approx=False,
-                 cov_indxs=None,
+                cov_indxs=None,client=None,scheduler_info=None,wigner_step=None,
                 kappa_class0=None,kappa_class_b=None,bin_window=True,do_pseudo_cl=True):
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.binning=binning()
-
+        
         nl=len(self.l)
         nwl=len(self.window_l)*1.0
+        
+        self.MF=(2*self.l[:,None]+1)# this is multiplied with coupling matrices, before binning.
 
-        # self.step=step
+
+        self.step=wigner_step
         if step is None:
             self.step=np.int32(100.*((2000./nl)**2)*(1000./nwl)) #small step is useful for lower memory load
-            self.step=min(self.step,nl+1)
+            self.step=np.int32(min(self.step,nl+1))
+#         self.step=50
             
-        self.lms=np.int32(np.arange(nwl,step=self.step))
-        print('Win gen: step size',self.step,self.do_pseudo_cl,xi_win_approx)#,self.window_l,self.lms)
+        self.lms=np.int32(np.arange(nl,step=self.step))
+        print('Win gen: step size',self.step,self.do_pseudo_cl,xi_win_approx,nl,nwl)#,self.lms)
 
         self.c_ell0=None
         self.c_ell_b=None
+        del self.kappa_class0,self.kappa_class_b#,self.z_bins
         if bin_window:
             self.binnings=binning()
-            self.kappa_class0=kappa_class0
-            self.kappa_class_b=kappa_class_b
+            self.cl_bin_utils=kappa_class0.cl_bin_utils
+#             self.kappa_class0=kappa_class0
+#             self.kappa_class_b=kappa_class_b
 
             self.c_ell0=kappa_class0.cl_tomo()['cl']
             if kappa_class_b is not None:
@@ -49,32 +62,23 @@ class window_utils():
             else:
                 self.c_ell_b=kappa_class0.cl_tomo()['cl_b']
                 
-        if self.Win is None and self.use_window and self.do_pseudo_cl:
+        if self.Win is None and self.use_window and self.do_pseudo_cl: #pseudo_cl window
             if self.do_xi:
                 print('Warning: window for xi is different from cl.')
             self.set_wig3j()
-            self.set_window(corrs=self.corrs,corr_indxs=self.corr_indxs)
-        elif self.do_xi and xi_win_approx:# and self.use_window:
-            self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=None)
-            self.Win=delayed(self.combine_coupling_xi_cov)(self.Win_cl,self.Win_cov)
-            print('Got xi win graph')
             if self.store_win:
-                client=get_client()
+                self.set_store_window(corrs=self.corrs,corr_indxs=self.corr_indxs,client=None)
+            else:
+                self.set_window_graph(corrs=self.corrs,corr_indxs=self.corr_indxs,client=None)
+        elif self.do_xi and xi_win_approx:# and self.use_window:
+            self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
+            self.Win=delayed(self.combine_coupling_xi_cov)(self.Win_cl,self.Win_cov)
+            print('Got xi win graph',self.Win,self.Win_cl,self.Win_cov)
+            if self.store_win:
+                if client is None:
+                    client=get_client(address=self.scheduler_info['address'])
                 self.Win=client.compute(self.Win).result()
 #             self.cleanup()
-#             self.Win={'cl':{corr:{} for corr in self.corrs},
-#                       'cov':{corr1+corr2: {} for corr1 in self.corrs for corr2 in self.corrs}}
-#             self.set_window_cl(corrs=self.corrs,corr_indxs=self.corr_indxs)
-
-#             for k in self.Win_cl.keys():
-#                 wint=self.Win_cl[k]
-#                 self.Win['cl'][wint['corr']][wint['indxs']]=wint
-#             if self.do_cov:
-#                 for k in self.Win_cov.keys():
-#                     wint=self.Win_cov[k]
-#                     corrs=wint['corr1']+wint['corr2']
-#                     indxs=wint['indxs1']+wint['indxs2']
-#                     self.Win['cov'][corrs][indxs]=wint
 
     def wig3j_step_read(self,m=0,lm=None):
         """
@@ -89,6 +93,7 @@ class window_utils():
         """
         product of two partial migner matrices
         """
+        print('getting wig3j',lm)
         wig_3j_2={}
         wig_3j_1={m1: self.wig3j_step_read(m=m1,lm=lm) for m1 in self.m_s}
         mi=0
@@ -120,7 +125,7 @@ class window_utils():
         mf=mf.transpose(1,2,0)
         out={}
         out['mf_p']=(1.+mf)/2.
-        # out['mf_p']=np.int8((1.+mf)/2.)#.astype('bool') #memory hog...
+        # out['mf_p']=np.int8((1.+mf)/2.)#.astype('bool')
                               #bool doesn't help in itself, as it is also byte size in numpy.
                               #we donot need to store mf_n, as it is simply a 0-1 flip or "not" when written as bool
                               #using bool or int does cost somewhat in computation as numpy only computes with float 64 (or 32 
@@ -154,10 +159,9 @@ class window_utils():
         self.wig_3j_2={}
         self.wig_3j_1={}
         self.mf_pm={}
-        client=get_client()
+
         for lm in self.lms:
             self.wig_3j_2[lm]=delayed(self.set_wig3j_step_multiplied)(lm=lm)
-            #self.wig_3j_1[lm]={m1: delayed(self.wig3j_step_read)(m=m1,lm=lm) for m1 in self.m_s}
             self.mf_pm[lm]=delayed(self.set_window_pm_step)(lm=lm)
             
         self.wig_s1s2s={}
@@ -174,7 +178,7 @@ class window_utils():
     #     """
     #     return np.dot(wig_3j_1*wig_3j_2,win*(2*self.window_l+1)   )/4./np.pi
 
-    def coupling_matrix_large(self,win,wig_3j_2,mf_pm,bin_wt,W_pm,lm):
+    def coupling_matrix_large(self,win,wig_3j_2,mf_pm,bin_wt,W_pm,lm,cov):
         """
         get the large coupling matrices from windows power spectra, wigner functions and spin dependent 
         multiplicative factors. Also do the binning if called for. 
@@ -186,18 +190,17 @@ class window_utils():
                 wig=wig*mf_pm['mf_p']#.astype('float64') #https://stackoverflow.com/questions/45479363/numpy-multiplying-large-arrays-with-dtype-int8-is-slow
             if W_pm==-2: #W_-
                 wig=wig*(1-mf_pm['mf_p'])
-#             wig=wig*mf #this can still blow up peak memory
-                                                                            #M[lm:lm+step,:]
-                            #         M=np.einsum('ijk,i->jk',wig.todense()*mf, win*(2*self.window_l+1), optimize=True )/4./np.pi
+
         M={}
         for k in win.keys():
             M[k]=wig@(win[k]*(2*self.window_l+1))
             M[k]/=4.*np.pi
+            if not cov:
+                M[k]=M[k]*self.MF.T #FIXME: not used in covariance?
             if self.bin_window:# and bin_wt is not None:
-                M[k]=self.binnings.bin_2d_coupling(cov=M[k],bin_utils=self.kappa_class0.cl_bin_utils,
-                    partial_bin_side=2,lm=lm,lm_step=self.step,wt0=bin_wt['wt0'],wt_b=bin_wt['wt_b'])
-                if np.any(~np.isfinite(M[k])):
-                    print('M[k] not finite',k, win[k],bin_wt['wt0'],bin_wt['wt_b'])
+                M[k]=self.binnings.bin_2d_coupling(M=M[k],bin_utils=self.cl_bin_utils,
+                    partial_bin_side=2,lm=lm,lm_step=self.step,wt0=bin_wt['wt0'],wt_b=bin_wt['wt_b'],cov=cov)
+                
         if W_pm!=0:
             del wig
         return M
@@ -217,7 +220,6 @@ class window_utils():
         Useful for some covariance calculations, specially SSC, where we assume a uniform window.
         """
         W=win1*win2
-#         W/=W  #mask = 0,1
         x=np.logical_or(win1==hp.UNSEEN, win2==hp.UNSEEN)
         W[x]=hp.UNSEEN
         W[~x]=1. #mask = 0,1
@@ -231,15 +233,12 @@ class window_utils():
         cases. 
         Spin factors and binning weights if needed are also set here.
         """
-#         print('cl window doing',corr,indxs)
+#         print('getting window power cl',corr_indxs)
         corr=(corr_indxs[0],corr_indxs[1])
         indxs=(corr_indxs[2],corr_indxs[3])
         win={}
         win['corr']=corr
         win['indxs']=indxs
-#         if not self.use_window:
-#             win={'cl':self.f_sky, 'M':self.coupling_M,'xi':1,'xi_b':1}
-#             return win
 
         s1s2=np.absolute(self.s1_s2s[corr]).flatten()
         W_pm=0
@@ -253,17 +252,16 @@ class window_utils():
 
         z_bin1=self.z_bins[corr[0]][indxs[0]]
         z_bin2=self.z_bins[corr[1]][indxs[1]]
-        alm1=z_bin1['window_alm']
-        alm2=z_bin2['window_alm']
 
         win[12]={} #to keep some naming uniformity with the covariance window
-        win[12]['cl']=hp.alm2cl(alms1=alm1,alms2=alm2,lmax_out=self.window_lmax)[self.window_l] #This is f_sky*cl.
-
-        alm1=z_bin1['window_alm_noise']
-        alm2=z_bin2['window_alm_noise']
+        win[12]['cl']=hp.anafast(map1=z_bin1['window'],map2=z_bin2['window'],
+                                 lmax=self.window_lmax)[self.window_l]
 
         if corr[0]==corr[1] and indxs[0]==indxs[1]:
-            win[12]['N']=hp.alm2cl(alms1=alm1,alms2=alm2,lmax_out=self.window_lmax)[self.window_l] #This is f_sky*cl.
+            map1=np.sqrt(z_bin1['window'])
+            mask=z_bin1['window']==hp.UNSEEN
+            map1[mask]=hp.UNSEEN
+            win[12]['N']=hp.anafast(map1=map1,lmax=self.window_lmax)[self.window_l]
 
         win['binning_util']=None
         win['bin_wt']=None
@@ -272,7 +270,6 @@ class window_utils():
             cl_b=c_ell_b[corr][indxs]
             win['bin_wt']={'wt_b':1./cl_b,'wt0':cl0}
             if np.all(cl_b==0):#avoid nan
-                print('get_window_power_cl: ',corr_indxs, 'zero cl')
                 win['bin_wt']={'wt_b':cl_b,'wt0':cl0}
             
         win['W_pm']=W_pm
@@ -286,38 +283,52 @@ class window_utils():
         win['M_noise']=None
         return win
 
-    def get_cl_coupling_lm(self,win0,lm,wig_3j_2_lm,mf_pm):
+    def get_cl_coupling_lm(self,corr_indxs,win,lm,wig_3j_2_lm,mf_pm):
         """
         This function gets the partial coupling matrix given window power spectra and wigner functions. 
         Note that it get the matrices for both signal and noise as well as for E/B modes if applicable.
         """
+#         indx=self.cl_keys.index(corr_indxs)
+        win0=win#[indx]
         win2={}
         i=0
-        for k in self.cl_keys:
-            corr=(k[0],k[1])
-            
-            wig_3j_2=wig_3j_2_lm[self.wig_s1s2s[corr]]
-            win=win0[i]#[k]
-            assert win['corr']==corr
-            win2[k]={'M':{},'M_noise':None,'M_B':None,'M_B_noise':None,'binning_util':win['binning_util']}
-            if lm==0:
-                win2[k]=win
-        
-            win_M=self.coupling_matrix_large(win[12], wig_3j_2=wig_3j_2,mf_pm=mf_pm,bin_wt=win['bin_wt']
-                                         ,W_pm=win['W_pm'],lm=lm)
-            #         win_M=self.coupling_matrix_large(win[12],wig_3j_2=wig_3j_2[win['W_pm']])
-            win2[k]['M'][lm]=win_M['cl']
-            if 'N' in win_M.keys():
-                win2[k]['M_noise']={lm:win_M['N']}
-            if win['corr']==('shear','shear') and win['indxs'][0]==win['indxs'][1]:# and not self.do_xi: #B-mode for cl
-            #FIXME for xi, window is same in xi+/-. pseudo-C_ell and xi together are not supported right now.
-                win_M=self.coupling_matrix_large(win[12],wig_3j_2=wig_3j_2,mf_pm=mf_pm,W_pm=-2,bin_wt=win['bin_wt'],
-                                                lm=lm)
-                win2[k]['M_B_noise']={lm: win_M['N']}
-                win2[k]['M_B']={lm: win_M['cl']}
-            i+=1
-        return win2
+        k=win0['corr']+win0['indxs']
 
+        corr=(k[0],k[1])
+
+        wig_3j_2=wig_3j_2_lm[self.wig_s1s2s[corr]]
+        win=win0#[i]#[k]
+#             assert win['corr']==corr
+        win2={'M':{},'M_noise':None,'M_B':None,'M_B_noise':None,'binning_util':win['binning_util']}
+        for kt in ['corr','indxs']:
+            win2[kt]=win0[kt]
+        if lm==0:
+            win2=win
+
+        win_M=self.coupling_matrix_large(win[12], wig_3j_2=wig_3j_2,mf_pm=mf_pm,bin_wt=win['bin_wt']
+                                     ,W_pm=win['W_pm'],lm=lm,cov=False)
+        win2['M'][lm]=win_M['cl']
+        if 'N' in win_M.keys():
+            win2['M_noise']={lm:win_M['N']}
+        if win['corr']==('shear','shear') and win['indxs'][0]==win['indxs'][1]:# and not self.do_xi: #B-mode for cl
+        #FIXME for xi, window is same in xi+/-. pseudo-C_ell and xi together are not supported right now.
+            win_M=self.coupling_matrix_large(win[12],wig_3j_2=wig_3j_2,mf_pm=mf_pm,W_pm=-2,bin_wt=win['bin_wt'],
+                                            lm=lm,cov=False)
+            win2['M_B_noise']={lm: win_M['N']}
+            win2['M_B']={lm: win_M['cl']}
+        i+=1
+        return win2
+    
+    def get_cl_coupling_all_lm(self,corr_indxs,win0,wig_3j_2,mf_pm):
+        win_lm={}
+        client=get_client(address=self.scheduler_info['address'])
+        wig_3j_2=client.compute(wig_3j_2).result()
+        mf_pm=client.compute(mf_pm).result()
+        for lm in self.lms:
+            win_lm[lm]=self.get_cl_coupling_lm(corr_indxs,win0,lm,wig_3j_2[lm],mf_pm[lm])
+#             win_lm[lm]=delayed(self.get_cl_coupling_lm)(win0,wig_3j_2[lm],mf_pm[lm])
+        return win_lm
+    
     def combine_coupling_cl(self,result):
         """
         This function combines the partial coupling matrices computed above. It loops over all combinations of tracers
@@ -328,12 +339,10 @@ class window_utils():
         # nl2=nl
         if self.bin_window:
             nl=len(self.l_bins)-1
-#        for corr in corrs:
- #           dic[corr]={}
-  #          dic[corr[::-1]]={}
 
-        for ii in list(result[0].keys()):
-
+        for ii_t in np.arange(len(self.cl_keys)): #list(result[0].keys()):
+            ii=0#because we are deleting below
+            
             result_ii=result[0][ii]
             corr=result_ii['corr']
             indxs=result_ii['indxs']
@@ -349,12 +358,14 @@ class window_utils():
                 result0['M_B_noise']=np.zeros((nl,nl))
                 result0['M_B']=np.zeros((nl,nl))
 
-            for lm in self.lms:
+            for i_lm in np.arange(len(self.lms)):
+                lm=self.lms[i_lm]
                 start_i=lm
                 end_i=lm+self.step
                 if self.bin_window:
                     start_i=0
                     end_i=nl
+              
                 result0['M'][start_i:end_i,:]+=result[lm][ii]['M'][lm]
                 if  result_ii['M_noise'] is not None:
                     result0['M_noise'][start_i:end_i,:]+=result[lm][ii]['M_noise'][lm]
@@ -363,19 +374,6 @@ class window_utils():
                     result0['M_B'][start_i:end_i,:]+=result[lm][ii]['M_B'][lm]
 
                 del result[lm][ii]
-            if self.bin_window:
-                lb=0.5*(self.l_bins[1:]+self.l_bins[:-1])
-                dl=self.l_bins[1:]-self.l_bins[:-1]
-                MF=(2*lb[:,None]+1)*dl #FIXME: Check dl factor
-            else:
-                MF=(2*self.l[:,None]+1)  
-            result0['M']*=MF
-            # result0['M']=self.binnings.bin_2d_coupling(cov=result0['M'],bin_utils=result0['binning_util'],partial_bin_side=1)
-            if  result_ii['M_noise'] is not None:
-                result0['M_noise']*=MF
-            if corr==('shear','shear') and indxs[0]==indxs[1]:#FIXME: this should be dprecated once shearB is implemented.
-                result0['M_B_noise']*=MF
-                result0['M_B']*=MF
 
             corr21=corr[::-1]
             if dic.get(corr) is None:
@@ -384,8 +382,57 @@ class window_utils():
                 dic[corr21]={}
             dic[corr][indxs]=result0
             dic[corr[::-1]][indxs[::-1]]=result0
-
         return dic
+    
+    def combine_single_coupling_cl(self,corr_indxs,result):
+        """
+        This function combines the partial coupling matrices computed above. It loops over all lms for a 
+        given correlation
+        and returns a dictionary of coupling matrices for C_ell.
+        """
+        nl=len(self.l)
+        # nl2=nl
+        if self.bin_window:
+            nl=len(self.l_bins)-1
+
+        result_ii=result[0]
+        corr=result_ii['corr']
+        indxs=result_ii['indxs']
+
+        result0={}
+        
+        for k in result_ii.keys():
+            result0[k]=result_ii[k]
+
+        result0['M']=np.zeros((nl,nl))
+        if  result_ii['M_noise'] is not None:
+            result0['M_noise']=np.zeros((nl,nl))
+        if corr==('shear','shear') and indxs[0]==indxs[1]:
+            result0['M_B_noise']=np.zeros((nl,nl))
+            result0['M_B']=np.zeros((nl,nl))
+
+        for i_lm in np.arange(len(self.lms)):
+            lm=self.lms[i_lm]
+            start_i=lm
+            end_i=lm+self.step
+            if self.bin_window:
+                start_i=0
+                end_i=nl
+            
+            result0['M'][start_i:end_i,:]+=result[lm]['M'][lm]
+            if  result_ii['M_noise'] is not None:
+                result0['M_noise'][start_i:end_i,:]+=result[lm]['M_noise'][lm]
+            if corr==('shear','shear') and indxs[0]==indxs[1]:
+                result0['M_B_noise'][start_i:end_i,:]+=result[lm]['M_B_noise'][lm]
+                result0['M_B'][start_i:end_i,:]+=result[lm]['M_B'][lm]
+
+            del result[lm]
+          
+#         corr21=corr[::-1]
+#         dic={corr:{},corr21:{}}
+        dic={corr+indxs:result0}
+#         dic[corr21][indxs[::-1]]=result0
+        return result0
     
     def combine_coupling_xi(self,result):
         dic={}
@@ -427,6 +474,7 @@ class window_utils():
         are further split into different combinations of noise and signal (signal-signal, noise-noise) 
         and noise-signal.
         """
+#         print('getting window power cov',corr_indxs)
         corr1=(corr_indxs[0],corr_indxs[1])
         corr2=(corr_indxs[2],corr_indxs[3])
         indxs1=(corr_indxs[4],corr_indxs[5])
@@ -438,6 +486,7 @@ class window_utils():
         win['corr2']=corr2
         win['indxs1']=indxs1
         win['indxs2']=indxs2
+        win['corr_indxs']=corr_indxs
 
         def get_window_spins(cov_indxs=[(0,2),(1,3)]):    #W +/- factors based on spin
             W_pm=[0]
@@ -578,58 +627,66 @@ class window_utils():
         win['s1s2']=s1s2s
         return win
 
-    def get_cov_coupling_lm(self,win0,lm,wig_3j_2,mf_pm):
+    def get_cov_coupling_lm(self,corr_indxs,win_all,lm,wig_3j_2,mf_pm):
         """
         This function computes the partial coupling matrix for a given covariance matrix between two C_ells.
         Requires window power spectra and wigner functions in the input, which are different for different
         elements of covariance. Here by different elements we mean two parts of covariance, 13-24 and 14-23, which
         are further split buy different combinations of noise and signal power spectra.
         """
+#         indx=self.cov_keys.index(corr_indxs)
+        win0=win_all#[indx]
+
         i=0
-        win_all={}
-        for k0 in self.cov_keys:
-            win=win0[i] #[k0]
-            bin_wt=None
+#         for k0 in self.cov_keys:
+        k0=win0['corr_indxs']#cov_key
 
-            corr=(k0[0],k0[1],k0[2],k0[3])
-            s1s2s={}
-            s1s2s[1324]=np.sort(np.array([self.cov_s1s2s(corr=(corr[0],corr[2])), #13
-                                          self.cov_s1s2s(corr=(corr[1],corr[3])) #24
-                                         ]))
-            s1s2s[1324]=str(s1s2s[1324][0])+str(s1s2s[1324][1])
-            s1s2s[1423]=np.sort(np.array([self.cov_s1s2s(corr=(corr[0],corr[3])), #14
-                                        self.cov_s1s2s(corr=(corr[1],corr[2])) #23
-                                        ]))
-            s1s2s[1423]=str(s1s2s[1423][0])+str(s1s2s[1423][1])
-                        
-            wig_3j_2_1324=wig_3j_2[s1s2s[1324]]
-            wig_3j_2_1423=wig_3j_2[s1s2s[1423]]
-            for corr_i in [1324,1423]:
-                if corr_i==1423:
-                    wig_i=wig_3j_2_1423
-                    if self.bin_window:
-                        bin_wt={'wt0':np.outer(win['bin_wt']['cl14'],win['bin_wt']['cl23'])} #FIXME: this is an approximation because we donot save unbinned covariance
-                        bin_wt['wt_b']=np.outer(win['bin_wt']['cl_b14'],win['bin_wt']['cl_b23'])
-                        if not np.all(bin_wt['wt_b']==0): #avoid NAN
-                            bin_wt['wt_b']=1./bin_wt['wt_b']
-                else:
-                    wig_i=wig_3j_2_1324
-                    if self.bin_window:
-                        bin_wt={'wt0':np.outer(win['bin_wt']['cl13'],win['bin_wt']['cl24'])} #FIXME: this is an approximation because we donot save unbinned covariance
-                        bin_wt['wt_b']=np.outer(win['bin_wt']['cl_b13'],win['bin_wt']['cl_b24'])
-                        if not np.all(bin_wt['wt_b']==0):#avoid NAN
-                            bin_wt['wt_b']=1./bin_wt['wt_b']
-                for wp in win['W_pm'][corr_i]:
-                    win_t=self.coupling_matrix_large(win[corr_i], wig_3j_2=wig_i,mf_pm=mf_pm,W_pm=wp,
-                                                bin_wt=bin_wt,lm=lm)
-#                 win_t=self.coupling_matrix_large(win[corr_i],wig_i[wp])
-                    for k in win[corr_i].keys():
-                        win['M'][corr_i][k][wp][lm]=win_t[k]
-#                     win['M'][corr_i][k][wp][lm]=self.coupling_matrix_large(win[corr_i][k], win['s1s2'][corr_i],lm=lm,wig_3j_2=wig_3j_2_1324,mf_pm=mf_pm,W_pm=wp)
-            win_all[k0]=win
-            i+=1
-        return win_all
+        win=win0#[i] #[k0]
+        bin_wt=None
 
+        corr=(k0[0],k0[1],k0[2],k0[3])
+        s1s2s={}
+        s1s2s[1324]=np.sort(np.array([self.cov_s1s2s(corr=(corr[0],corr[2])), #13
+                                      self.cov_s1s2s(corr=(corr[1],corr[3])) #24
+                                     ]))
+        s1s2s[1324]=str(s1s2s[1324][0])+str(s1s2s[1324][1])
+        s1s2s[1423]=np.sort(np.array([self.cov_s1s2s(corr=(corr[0],corr[3])), #14
+                                    self.cov_s1s2s(corr=(corr[1],corr[2])) #23
+                                    ]))
+        s1s2s[1423]=str(s1s2s[1423][0])+str(s1s2s[1423][1])
+
+        wig_3j_2_1324=wig_3j_2[s1s2s[1324]]
+        wig_3j_2_1423=wig_3j_2[s1s2s[1423]]
+        for corr_i in [1324,1423]:
+            if corr_i==1423:
+                wig_i=wig_3j_2_1423
+                if self.bin_window:
+                    bin_wt={'wt0':np.sqrt(win['bin_wt']['cl14']*win['bin_wt']['cl23'])} #FIXME: this is an approximation because we donot save unbinned covariance
+                    bin_wt['wt_b']=np.sqrt(win['bin_wt']['cl_b14']*win['bin_wt']['cl_b23'])
+                    if not np.all(bin_wt['wt_b']==0): #avoid NAN
+                        bin_wt['wt_b']=1./bin_wt['wt_b']
+            else:
+                wig_i=wig_3j_2_1324
+                if self.bin_window:
+                    bin_wt={'wt0':np.sqrt(win['bin_wt']['cl13']*win['bin_wt']['cl24'])} #FIXME: this is an approximation because we donot save unbinned covariance
+                    bin_wt['wt_b']=np.sqrt(win['bin_wt']['cl_b13']*win['bin_wt']['cl_b24'])
+                    if not np.all(bin_wt['wt_b']==0):#avoid NAN
+                        bin_wt['wt_b']=1./bin_wt['wt_b']
+            for wp in win['W_pm'][corr_i]:
+                win_t=self.coupling_matrix_large(win[corr_i], wig_3j_2=wig_i,mf_pm=mf_pm,W_pm=wp,
+                                            bin_wt=bin_wt,lm=lm,cov=True)
+                for k in win[corr_i].keys():
+                    win['M'][corr_i][k][wp][lm]=win_t[k]
+        i+=1
+        return win
+
+    def get_cov_coupling_all_lm(self,corr_indxs,win0,wig_3j_2,mf_pm):
+        cov_lm={}
+        for lm in self.lms:
+            cov_lm[lm]=self.get_cov_coupling_lm(corr_indxs,win0,lm,wig_3j_2[lm],mf_pm[lm])
+#             cov_lm[lm]=delayed(self.get_cov_coupling_lm)(win0,wig_3j_2[lm],mf_pm[lm])
+        return cov_lm
+    
     def combine_coupling_cov_xi(self,result):
         dic={}
         i=0
@@ -667,7 +724,8 @@ class window_utils():
         if self.bin_window:
             nl=len(self.l_bins)-1
         
-        for ii in list(result[0].keys()):#np.arange(len(result)):
+        for ii_t in np.arange(len(self.cov_keys)): #list(result[0].keys()):#np.arange(len(result)):
+            ii=0 #because we delete below
             result0={}
 
             for k in result[0][ii].keys():
@@ -687,11 +745,9 @@ class window_utils():
                     for wp in W_pm[corr_i]:
                         result0['M'][corr_i][k][wp]=np.zeros((nl,nl))
 
-
-            #win['M'][1324][k][wp]
-
-            for lm in self.lms:
-                start_i=lm
+            for i_lm in np.arange(len(self.lms)):
+                lm=self.lms[i_lm]
+                start_i=self.lms[i_lm]
                 end_i=lm+self.step
                 if self.bin_window:
                     start_i=0
@@ -702,12 +758,6 @@ class window_utils():
                             result0['M'][corr_i][k][wp][start_i:end_i,:]+=result[lm][ii]['M'][corr_i][k][wp][lm]
 
                 del result[lm][ii]
-
-#             for wp in W_pm[1324]:
-#                 result0['M1324'][wp]=sparse.COO(result0['M1324'][wp]) #covariance coupling matrices are stored as sparse.
-#                                                         #because there are more of them and are only needed occasionaly.
-#             for wp in W_pm[1423]:
-#                 result0['M1423'][wp]=sparse.COO(result0['M1423'][wp])
 
             corr=corr1+corr2
             corr21=corr2+corr1
@@ -727,64 +777,93 @@ class window_utils():
 
         return dic
 
-    def set_window_cl(self,corrs=None,corr_indxs=None,client=None):
+    def combine_single_coupling_cov(self,corr_indxs,result):
+        """
+        This function combines the partial coupling matrices computed for covariance and returns a 
+        dictionary of all coupling matrices.
+        """
+        nl=len(self.l)
+        if self.bin_window:
+            nl=len(self.l_bins)-1
+        
+        ii=0 #because we delete below
+        result0={}
+
+        for k in result[0].keys():
+            result0[k]=result[0][k]
+
+        W_pm=result[0]['W_pm']
+        corr1=result[0]['corr1']
+        corr2=result[0]['corr2']
+        indx1=result[0]['indxs1']
+        indx2=result[0]['indxs2']
+
+        result0['M']={1324:{},1423:{}}
+
+        for corr_i in [1324,1423]:
+            for k in result[0]['M'][corr_i].keys():
+                result0['M'][corr_i][k]={}
+                for wp in W_pm[corr_i]:
+                    result0['M'][corr_i][k][wp]=np.zeros((nl,nl))
+
+
+        #win['M'][1324][k][wp]
+
+        for i_lm in np.arange(len(self.lms)):
+            lm=self.lms[i_lm]
+            start_i=self.lms[i_lm]
+            end_i=lm+self.step
+            if self.bin_window:
+                start_i=0
+                end_i=nl
+            for corr_i in [1324,1423]:
+                for wp in W_pm[corr_i]:
+                    for k in result[lm]['M'][corr_i].keys():
+                        result0['M'][corr_i][k][wp][start_i:end_i,:]+=result[lm]['M'][corr_i][k][wp][lm]
+
+            del result[lm]
+
+        return result0 #{corr_indxs:result0}
+
+    
+    def set_window_cl(self,corrs=None,corr_indxs=None,client=None,npartitions=100,use_bag=True):
         """
         This function sets the graph for computing power spectra of windows 
         for both C_ell and covariance matrices.
         """
-        if self.store_win and client is None:
-            client=get_client()
-
-        print('setting windows',client)
-        
-        
+        #if self.store_win and client is None:
+         #   client=get_client()
+        t1=time.time()
         self.cl_keys=[corr+indx for corr in corrs for indx in corr_indxs[corr]]
-        self.Win_cl=dask.bag.from_sequence(self.cl_keys).map(self.get_window_power_cl,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)
-#         self.Win_cl={corr+indx: delayed(self.get_window_power_cl)(corr,indx) for corr in corrs for indx in corr_indxs[corr]}
-
+        self.cl_bag=dask.bag.from_sequence(self.cl_keys,npartitions=npartitions)
+        
+#         yy=pickle.dumps(self.get_window_power_cl) #this is the problem. copying this slows down map.
+#         yy2=pickle.dumps(self.get_window_power_cov)
+        print('cl bags doing',time.time()-t1, get_size_pickle(self.get_window_power_cov))#,get_size_pickle(self.z_bins))
+        if use_bag:
+            self.Win_cl=self.cl_bag.map(self.get_window_power_cl,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)#this can be slow... https://stackoverflow.com/questions/64559993/what-happens-during-dask-client-map-call
+        else:
+            self.Win_cl=[delayed(self.get_window_power_cl)(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b) for ck in self.cl_keys]
+        print('cl bags done',self.Win_cl,time.time()-t1)
         self.cov_keys=[]
+        self.Win_cov=None
         if self.do_cov:
             for corr in self.cov_indxs.keys():
                 self.cov_keys+=[corr+indx for indx in self.cov_indxs[corr]]
-            self.Win_cov=dask.bag.from_sequence(self.cov_keys).map(self.get_window_power_cov,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)
-#             self.Win_cov={}
-#             self.win_cov_tuple=None
-#             for ic1 in np.arange(len(corrs)):
-#                 corr1=corrs[ic1]
-#                 indxs_1=corr_indxs[corr1]
-#                 n_indx1=len(indxs_1)
-
-#                 for ic2 in np.arange(ic1,len(corrs)):
-#                     corr2=corrs[ic2]
-#                     indxs_2=corr_indxs[corr2]
-#                     n_indx2=len(indxs_2)
-
-#                     corr=corr1+corr2
-
-#                     for i1 in np.arange(n_indx1):
-#                         start2=0
-#                         indx1=indxs_1[i1]
-#                         if corr1==corr2:
-#                             start2=i1
-#                         for i2 in np.arange(start2,n_indx2):
-#                             indx2=indxs_2[i2]
-#                             indxs=indx1+indx2
-
-#                             self.Win_cov.update({corr+indxs: delayed(self.get_window_power_cov)(corr1,corr2,indx1,indx2)})
-
-#                             if self.win_cov_tuple is None:
-#                                 self.win_cov_tuple=[(corr1,corr2,indx1,indx2)]
-#                             else:
-#                                 self.win_cov_tuple.append((corr1,corr2,indx1,indx2))
-
-#             self.cov_keys=list(self.Win_cov.keys())
-    #### DONOT delete
-        if self.store_win:
+                self.cov_bag=dask.bag.from_sequence(self.cov_keys,npartitions=npartitions)
+                if use_bag:
+                    self.Win_cov=self.cov_bag.map(self.get_window_power_cov,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)
+                else:
+                    self.Win_cov=[delayed(self.get_window_power_cov)(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b) for ck in self.cov_keys]
+                # ^ is super slow for very large number of covariances. ^^ helps because dask effectively bunches up delayed.
+                # ^ is better for smaller computes. ^^ for very large ones.
+                # FIXME: We can probably implement custom partitions, bunching up covariances from same tracers to make things more efficient.
+                # Custom partitions will likely require serialization of functions, so unlikely to help with dask map issue.
+        print('cl+cov bags done',len(self.cl_keys),len(self.cov_keys),time.time()-t1)
+        if self.store_win and client is not None:
            self.Win_cl=client.persist(self.Win_cl)
            if self.do_cov:
                self.Win_cov=client.persist(self.Win_cov)
-            #    self.Win_cov=self.Win_cov.result()
-            #self.Win_cl=self.Win_cl.result()
 
     def combine_coupling_cl_cov(self,win_cl_lm,win_cov_lm):
         Win={}
@@ -800,56 +879,161 @@ class window_utils():
             Win['cov']=self.combine_coupling_cov_xi(win_cov)
         return Win
 
-    def set_window(self,corrs=None,corr_indxs=None,client=None):
+    def set_store_window(self,corrs=None,corr_indxs=None,client=None):
         """
-        This function sets the graph for computing the coupling matrices. It first calls the function to 
+        This function sets and computes the graph for the coupling matrices. It first calls the function to 
         generate graph for window power spectra, which is then combined with the graphs for wigner functions
         to get the final graph.
         """
-        self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
         if self.store_win and client is None:
-            client=get_client()
-        print('got window cls, now to coupling matrices.',len(self.cl_keys),len(self.cov_keys) )
+            client=get_client(address=self.scheduler_info['address']) #this seems to be the correct thing to do
+        print('setting windows, coupling matrices ',client,client.scheduler_info())
+        
+        self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
+        print('got window cls, now to coupling matrices.',len(self.cl_keys),len(self.cov_keys),self.Win_cl )
+        
         self.Win={'cl':{}}
-
+        Win_cl=self.Win_cl
+        Win_cov=self.Win_cov
         if self.do_pseudo_cl: #this is probably redundant due to if statement in init.
             self.Win_cl_lm={}
             self.Win_cov_lm={}
             self.Win_lm={}
 
             for lm in self.lms:
+                print('doing lm',lm)
                 t1=time.time()
                 self.Win_cl_lm[lm]={}
                 self.Win_lm[lm]={}
-                
-                self.Win_cl_lm[lm]=delayed(self.get_cl_coupling_lm)(self.Win_cl,lm,
-                                                                self.wig_3j_2[lm],self.mf_pm[lm])
+
+                self.Win_cl_lm[lm]=self.cl_bag.map(self.get_cl_coupling_lm,Win_cl,lm,
+                                               self.wig_3j_2[lm],self.mf_pm[lm])
+
+#                 self.Win_cl_lm[lm]=[delayed(self.get_cl_coupling_lm)(Wc,lm,
+#                                                                      self.wig_3j_2[lm],self.mf_pm[lm]) for Wc in Win_cl]
+
                 self.Win_lm[lm]['cl']=self.Win_cl_lm[lm]
-                
+                print('done lm cl graph',lm,time.time()-t1)
                 if self.do_cov:
-                    self.Win_cov_lm[lm]=delayed(self.get_cov_coupling_lm)(self.Win_cov,lm,
-                                                                          self.wig_3j_2[lm],self.mf_pm[lm] )
+                    self.Win_cov_lm[lm]=self.cov_bag.map(self.get_cov_coupling_lm,Win_cov,lm,
+                                                   self.wig_3j_2[lm],self.mf_pm[lm])
+
+#                     self.Win_cov_lm[lm]=[delayed(self.get_cov_coupling_lm)(Wc,lm,
+#                                                                  self.wig_3j_2[lm],self.mf_pm[lm]) for Wc in Win_cov]
 
                     self.Win_lm[lm]['cov']=self.Win_cov_lm[lm]
-
+                print('done lm cl+cov graph',lm,time.time()-t1,get_size_pickle(self.get_cl_coupling_lm))
 #### Donot delete
-                #if self.store_win:  #### Donot delete
-                 #   self.Win_lm[lm]=client.compute(self.Win_lm[lm]).result()
+                if self.store_win:  
+                   self.Win_lm[lm]=client.compute(self.Win_lm[lm]).result() #use client persist
 
-                  #  self.Win_cl_lm[lm]=self.Win_lm[lm]['cl']#.result()
+                   self.Win_cl_lm[lm]=self.Win_lm[lm]['cl']#.result()
 
-                   # if self.do_cov:
-                    #    self.Win_cov_lm[lm]=self.Win_lm[lm]['cov']
+                   if self.do_cov:
+                       self.Win_cov_lm[lm]=self.Win_lm[lm]['cov']
 
-                    #del self.wig_3j_2[lm]
-                    #del self.mf_pm[lm]
-                    #gc.collect()
+                   del self.wig_3j_2[lm]
+                   del self.mf_pm[lm]
+                   gc.collect()
+                print('done lm',lm,time.time()-t1)
                     
             self.Win=delayed(self.combine_coupling_cl_cov)(self.Win_cl_lm,self.Win_cov_lm)
             self.Win_cl=delayed(self.combine_coupling_cl)(self.Win_cl_lm)
-
+            
             if self.do_cov:
                 self.Win_cov=delayed(self.combine_coupling_cov)(self.Win_cov_lm)
+            print('done combine lm graph',time.time()-t1)
+
+        if self.store_win:
+            self.Win=client.compute(self.Win).result()
+            
+            if self.do_pseudo_cl:
+                self.cleanup()
+        return self.Win
+    
+    def reduce_win_cl(self,win,win2):
+        print(win,win2)
+        dic=win
+        corr=win2['corr']
+        corr2=corr[::-1]
+        indxs=win2['indxs']
+        indxs2=indxs[::-1]
+        if dic.get(corr) is None:
+            self.Win['cl'][corr]={}
+        if dic.get(corr2) is None:
+            self.Win['cl'][corr2]={}
+        dic[corr2][indxs2]=win2
+        dic[corr][indxs]=win2
+        return dic
+    
+    def set_window_graph(self,corrs=None,corr_indxs=None,client=None,npartitions=2):
+        """
+        This function sets the graph for the coupling matrices. 
+        This graph is different from the one used in set_store_window.
+        It first calls the function to 
+        generate graph for window power spectra, which is then combined with the graphs for wigner functions
+        to get the final graph.
+        """
+        print('setting windows graph only, coupling matrices ',client)
+        
+        self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client,npartitions=npartitions,use_bag=False)
+        print('got window cls, now to coupling matrices.',len(self.cl_keys),len(self.cov_keys))#,self.Win_cl )
+        
+        self.Win={'cl':{}}
+        Win_cl=self.Win_cl#.to_delayed()
+        Win_cov=self.Win_cov#.to_delayed()
+        if self.do_pseudo_cl: #this is probably redundant due to if statement in init.
+            self.Win_cl_lm={}
+            self.Win_cov_lm={}
+            self.Win_lm={}
+#             self.Win_cl_lm=dask.bag.from_sequence(self.cl_keys,npartitions=npartitions).map(self.get_cl_coupling_all_lm,Win_cl,
+#                                                             self.wig_3j_2,self.mf_pm)#.to_delayed()
+#             self.WinM_cl=dask.bag.from_sequence(self.cl_keys,npartitions=npartitions).map(self.combine_single_coupling_cl,self.Win_cl_lm)#.to_delayed()
+            ##             self.WinM_cl=self.WinM_cl.take(len(self.cl_keys),-1,compute=False).to_delayed()
+            self.Win_cl_lm=[{lm:delayed(self.get_cl_coupling_lm)(None,Wc,lm,
+                                                            self.wig_3j_2[lm],self.mf_pm[lm]) for lm in self.lms} for Wc in self.Win_cl]
+            self.WinM_cl=[delayed(self.combine_single_coupling_cl)(None,Wc) for Wc in self.Win_cl_lm]
+            
+            print('done cl graph')
+            if self.do_cov:
+#                 self.Win_cov_lm=dask.bag.from_sequence(self.cov_keys,npartitions=npartitions).map(self.get_cov_coupling_all_lm,Win_cov,
+#                                                             self.wig_3j_2,self.mf_pm)#.to_delayed()
+#                 self.WinM_cov=dask.bag.from_sequence(self.cov_keys,npartitions=npartitions).map(self.combine_single_coupling_cov,self.Win_cov_lm)#.to_delayed()
+#         #                 self.WinM_cov=self.WinM_cov.take(len(self.cov_keys),-1,compute=False).to_delayed()
+                self.Win_cov_lm=[{lm: delayed(self.get_cov_coupling_lm)(None,Wc,lm,self.wig_3j_2[lm],self.mf_pm[lm]) for lm in self.lms} for Wc in self.Win_cov]
+                self.WinM_cov=[delayed(self.combine_single_coupling_cov)(None,Wc) for Wc in self.Win_cov_lm]
+
+
+            print('done cl+cov graph',self.WinM_cl)#,len(self.WinM_cl))
+            
+            self.Win={'cl':{},'cov':{}}
+            i=0
+            for k in self.cl_keys:
+                corr=(k[0],k[1])
+                corr2=corr[::-1]
+                indxs=(k[2],k[3])
+                indxs2=indxs[::-1]
+                if self.Win['cl'].get(corr) is None:
+                    self.Win['cl'][corr]={}
+                if self.Win['cl'].get(corr2) is None:
+                    self.Win['cl'][corr2]={}
+                self.Win['cl'][corr2][indxs2]=self.WinM_cl[i]#.pluck(k)
+                self.Win['cl'][corr][indxs]=self.WinM_cl[i]#self.Win['cl'][corr2][indxs2]
+                i+=1
+                
+            i=0
+            for k in self.cov_keys:
+                corr1=(k[0],k[1])
+                corr2=(k[2],k[3])
+                indxs1=(k[4],k[5])
+                indxs2=(k[6],k[7])
+                corr=corr1+corr2
+                indxs=indxs1+indxs2
+                if self.Win['cov'].get(corr) is None:
+                    self.Win['cov'][corr]={}
+                self.Win['cov'][corr][indxs]=self.WinM_cov[i]#.pluck(k)
+                i+=1
+                    
 
         if self.store_win:
             self.Win=client.compute(self.Win).result()

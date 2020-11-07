@@ -41,19 +41,19 @@ SOCKSPORT=1080
 CMD="jupyter notebook --no-browser --ip `hostname` --port=8080"
 MONITORHOST=
 
-CSCRATCH='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
-log_file=$CSCRATCH/${SLURM_JOB_ID}/'dask.log'
+CSCRATCH='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/scheduler_'${SLURM_ARRAY_JOB_ID}${SLURM_ARRAY_TASK_ID}'/'
+log_file=$CSCRATCH/'dask.log'
+touch $log_file
+SCHEFILE=$CSCRATCH/Scheduler.dasksche.json
 
-SCHEFILE=$CSCRATCH/${SLURM_JOB_ID}/${SLURM_JOB_ID}.dasksche.json
-
-WORKSPACE=$CSCRATCH/${SLURM_JOB_ID}/dask-local
-CONTROLFILE=$CSCRATCH/${SLURM_JOB_ID}/${SLURM_JOB_ID}.control
+WORKSPACE=$CSCRATCH/dask-local
+CONTROLFILE=$CSCRATCH/dask.control
 MEM=$(($MEMORYLIMIT / $NPROCS))MB
 
 NPROCS=1
 NCPU=$SLURM_CPUS_ON_NODE
-NTHREADS=$(($SLURM_CPUS_ON_NODE*2))
-NWORKER=$(($SLURM_NNODES ))
+NTHREADS=$(($SLURM_CPUS_ON_NODE -1))
+NWORKER=1 #$(($SLURM_NNODES ))
 
 MEMORYLIMIT=`free -t -m| awk '/^Total/ {print $2}'`
 
@@ -133,30 +133,38 @@ DASKWORKER=`which dask-worker`
 # avoid thread oversubscription
 #export OMP_NUM_THREADS=1
 
-# set -x
+# set -x  `hostname`
 # launch the scheduler, and reserve the first node 
-srun -x `hostname` --cpu-bind=none -n 1 -N 1 -l \
+srun  -l --exclusive\
+    --nodes=1 --ntasks=1 --cpus-per-task=1 \
     --output=$WORKSPACE/scheduler.log \
     python `which dask-scheduler` \
-    --scheduler-file=$SCHEFILE |cat>>$log_file & #--local-directory=$WORKSPACE & # https://docs.dask.org/en/latest/setup/cli.html
+    --scheduler-file=$SCHEFILE & #|cat>>$log_file & #--local-directory=$WORKSPACE & # https://docs.dask.org/en/latest/setup/cli.html
 
-echo 'started srun1' $SCHEFILE $WORKSPACE>>$log_file
+echo 'started srun1' $SCHEFILE $WORKSPACE $NWORKER'  '$NTHREADS'  '$NPROCS '  ' $SCHEFILE #>>$log_file
 
 while ! [ -f $SCHEFILE ]; do
     sleep 3
-    echo -n .>>$log_file
+    echo -n . #>>$log_file
 done
-echo 'Scheduler booted, launching worker and client' $NWORKER'  '$NTHREADS'  '$NPROCS '  ' $SCHEFILE>>$log_file
+echo 'Scheduler booted, launching worker and client' $NWORKER'  '$NTHREADS'  '$NPROCS '  ' $SCHEFILE #>>$log_file
 
-srun -x `hostname` --cpu-bind=none -l -N $SLURM_NNODES -n $NWORKER -c $NCPU \
+srun -l --exclusive  --nodes=1 --ntasks=$NWORKER --cpus-per-task=$NTHREADS \
  --output=$WORKSPACE/worker-%t.log \
  python `which dask-worker` \
  --nthreads=$NTHREADS \
   --scheduler-file=$SCHEFILE \
- --local-directory=$WORKSPACE |cat >>$log_file&
+ --local-directory=$WORKSPACE & #|cat >>$log_file &
 #--memory-limit=$MEM \
   #--nprocs $NPROCS \
-    #--no-bokeh \
+    #--no-bokeh \--cpu-bind=none
+
+worker_log=$CSCRATCH/dask-local/worker-0.log
+while ! [ -f $worker_log ]; do
+    sleep 3
+    echo -n . #>>$log_file
+done
+echo 'worker booted' $NWORKER'  '$NTHREADS #>>$log_file
 
 # run the command
 #srun --cpu-bind=none -r 0 -n 1 $CMD

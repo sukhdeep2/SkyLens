@@ -6,6 +6,11 @@ import sys, os, gc, threading, subprocess
 sys.path.insert(0,'/verafs/scratch/phy200040p/sukhdeep/project/skylens/skylens/')
 from thread_count import *
 
+from resource import getrusage, RUSAGE_SELF
+import psutil
+from distributed.utils import format_bytes
+
+
 debug=False
 if debug:
     import faulthandler; faulthandler.enable()
@@ -25,6 +30,8 @@ from scipy.stats import norm,mode,skew,kurtosis,percentileofscore
 import sys
 import tracemalloc
 
+from dask_mpi import initialize as dask_initialize
+from distributed import Client
 from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
 #http://distributed.readthedocs.io/en/latest/_modules/distributed/worker.html
@@ -43,6 +50,8 @@ parser.add_argument("--xi", "-xi",type=int, help="do_xi, i.e. compute correlatio
 parser.add_argument("--pseudo_cl", "-pcl",type=int, help="do_pseudo_cl, i.e. compute power spectra functions")
 parser.add_argument("--njk", "-njk",type=int, help="number of jackknife regions, default=0 (no jackknife)")
 parser.add_argument("--scheduler", "-s", help="Scheduler file")
+parser.add_argument("--dask_dir", "-Dd", help="dask log directory")
+args = parser.parse_args()
 
 
 # Read arguments from the command line
@@ -59,8 +68,9 @@ do_blending=False if not args.blending else np.bool(args.blending)
 do_SSV_sim=False if not args.ssv else np.bool(args.ssv)
 use_shot_noise=True if args.noise is None else np.bool(args.noise)
 Scheduler_file=args.scheduler
+dask_dir=args.dask_dir
 
-Scheduler_file=None
+# Scheduler_file=None
 
 print(use_complicated_window,unit_window,lognormal,do_blending,do_SSV_sim,use_shot_noise)
 print('scheduler: ',Scheduler_file)
@@ -82,7 +92,7 @@ njk=njk1*njk2
 if njk>0:
     nsim=10 #time / memory 
 else:
-    nsim=30
+    nsim=1000
 
 subsample=False
 do_cov_jk=False #compute covariance coupling matrices
@@ -141,21 +151,28 @@ ncpu=multiprocessing.cpu_count() - 1
 if test_run:
     memory='50gb'
     ncpu=8
-
+worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
+print('initializing dask')
 if Scheduler_file is None:
-    worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
+#     worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
     LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
-                local_dir=wig_home+'/NGL-worker/', **worker_kwargs,
+                local_directory=dask_dir, **worker_kwargs,
                 #scheduler_port=12234,
 #                 dashboard_address=8801
                 diagnostics_port=8801,
 #                memory_monitor_interval='2000ms')
                )
     client=Client(LC,)#diagnostics_port=8801,)
+    Scheduler_file=client.scheduler_info()['address']
+#     dask_initialize(nthreads=27,local_directory=dask_dir)
+#     client = Client()
 else:
     client=Client(scheduler_file=Scheduler_file,processes=True)
 #    client.restart()
-print(client)
+scheduler_info=client.scheduler_info()
+scheduler_info['file']=Scheduler_file
+print('client: ',client,dask_dir,scheduler_info)
+
 
 #setup parameters
 lmin_cl=0
@@ -190,8 +207,8 @@ corrs=[corr_ll,corr_ggl,corr_gg]
 
 
 th_min=10./60
-th_max=600./60
-n_th_bins=20
+th_max=120./60
+n_th_bins=15
 th_bins=np.logspace(np.log10(th_min),np.log10(th_max),n_th_bins+1)
 th=np.logspace(np.log10(th_min*0.98),np.log10(1),n_th_bins*30)
 th2=np.linspace(1,th_max*1.02,n_th_bins*30)
@@ -213,11 +230,12 @@ ww=1000*np.exp(-(l0w-mean)**2/sigma**2)
 print('getting win')
 z0=0.5
 zl_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=10,use_window=use_window,nbins=1,
-                            window_cl_fact=(1+ww*use_complicated_window),
+                            window_cl_fact=(1+ww*use_complicated_window),scheduler_info=scheduler_info,
                             f_sky=f_sky,nside=nside,unit_win=unit_window,use_shot_noise=True)
 
 z0=1 #1087
 zs_bin1=lsst_source_tomo_bins(zp=np.array([z0]),ns0=30,use_window=use_window,
+                              scheduler_info=scheduler_info,
                                     window_cl_fact=(1+ww*use_complicated_window),
                                     f_sky=f_sky,nbins=n_source_bins,nside=nside,
                                     unit_win=unit_window,use_shot_noise=True)
@@ -240,8 +258,9 @@ if not use_shot_noise:
 kappa_win=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
             use_window=use_window,store_win=store_win,window_lmax=window_lmax,corrs=corrs,
             SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=f_sky,
-            WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi,
-            wigner_files=wigner_files,do_pseudo_cl=do_pseudo_cl,xi_win_approx=xi_win_approx
+            WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi,scheduler_info=scheduler_info,
+            wigner_files=wigner_files,do_pseudo_cl=do_pseudo_cl,xi_win_approx=xi_win_approx,
+                  clean_tracer_window=False,
 )
 
 clG_win=kappa_win.cl_tomo(corrs=corrs)
@@ -253,6 +272,7 @@ if do_xi:
 
 kappa0=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
             use_window=False,store_win=store_win,corrs=corrs,window_lmax=window_lmax,
+               scheduler_info=scheduler_info,
             SSV_cov=True,tidal_SSV_cov=True,f_sky=f_sky,do_pseudo_cl=do_pseudo_cl,xi_win_approx=xi_win_approx,
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi)
 
@@ -372,7 +392,7 @@ def get_treecorr_cat_args(maps,masks=None):
 
 
 def get_xi_window_norm(window=None):
-    window_norm={}
+    window_norm={corr:{} for corr in corrs}
     mask={}
     for tracer in window.keys():
         # window[tracer]=kappa_class.z_bins[tracer][0]['window']
@@ -385,7 +405,7 @@ def get_xi_window_norm(window=None):
     tree_cat0=treecorr.Catalog(**tree_cat_args0['fullsky'])
     tree_corrs0=treecorr.NNCorrelation(**corr_config)
     _=tree_corrs0.process(tree_cat0,tree_cat0)
-    napirs0=tree_corrs0.npairs*fsky
+    npairs0=tree_corrs0.npairs*fsky
     del cat0,tree_cat0,tree_corrs0
     
     tree_cat_args=get_treecorr_cat_args(window,masks=mask)
@@ -394,7 +414,9 @@ def get_xi_window_norm(window=None):
     for corr in corrs:
         tree_corrs=treecorr.NNCorrelation(**corr_config)
         _=tree_corrs.process(tree_cat[corr[0]],tree_cat[corr[1]])
-        window_norm[corr]=tree_corrs.weight*1./tree_corrs.npairs #npairs0
+        window_norm[corr]['weight']=tree_corrs.weight
+        window_norm[corr]['npairs']=tree_corrs.npairs 
+        window_norm[corr]['npairs0']=npairs0
     del tree_cat,tree_corrs
     return window_norm
 
@@ -414,7 +436,7 @@ def get_xi_window_norm_jk(kappa_class=None):
         window_norm[ijk]=get_xi_window_norm(window=window_i)
         del window_i,x
         gc.collect()
-        print('window norm ',ijk,' done',window_norm[ijk][corr_ll].shape,window_norm[ijk].keys())
+        print('window norm ',ijk,' done',)#window_norm[ijk][corr_ll].shape,window_norm[ijk].keys())
     return window_norm
 
 
@@ -435,24 +457,24 @@ def get_xi(map,window_norm,mask=None):
     xi=np.zeros(n_th_bins*(ndim+1))
     th_i=0
     tree_corrs={}
-    for corr in corrs:
+    for corr in corrs:#note that in treecorr npairs includes pairs with 0 weights. That affects this calc
         if corr==corr_ggl:
             tree_corrs[corr]=treecorr.NGCorrelation(**corr_config)
             tree_corrs[corr].process(tree_cat['galaxy'],tree_cat['shear'])
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xi*tree_corrs[corr].weight/tree_corrs[corr].npairs/window_norm[corr]*-1 #sign convention 
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xi*tree_corrs[corr].weight/window_norm[corr]['weight']*-1 #sign convention 
                 #
             th_i+=n_th_bins
         if corr==corr_ll:
             tree_corrs[corr]=treecorr.GGCorrelation(**corr_config)
             tree_corrs[corr].process(tree_cat['shear'])
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xip/window_norm[corr] #*(tree_corrs[corr].weight
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xip*tree_corrs[corr].npairs/window_norm[corr]['weight']
             th_i+=n_th_bins
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xim/window_norm[corr]
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xim*tree_corrs[corr].npairs/window_norm[corr]['weight']
             th_i+=n_th_bins
         if corr==corr_gg:
             tree_corrs[corr]=treecorr.NNCorrelation(**corr_config)
             tree_corrs[corr].process(tree_cat['galaxy'])
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/tree_corrs[corr].npairs/window_norm[corr]  #
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/tree_corrs[corr].npairs/window_norm[corr]['weight']  #
 #             xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/window_norm[corr]
             th_i+=n_th_bins
     del tree_cat,tree_corrs
@@ -698,7 +720,7 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
     if convolve_win:
         nu=2.*l+1.
         for tracer in kappa_class.z_bins.keys():
-            window[tracer]=kappa_class.z_bins[tracer][0]['window']
+            window[tracer]=kappa_class.tracer_utils.z_win[tracer][0]['window']
             mask[tracer]=window[tracer]==hp.UNSEEN
 #             print(coupling_M_inv.keys())
     outp={}
@@ -953,7 +975,7 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
             # for k in cl_b_jk.keys():
             #     cl_b_jk[k]=jk_mean(cl_b_jk[k],njk=njk)
 #             return pcli_jk,cli_jk,pcl_b_jk,pcli_B_jk,cl_b_jk,pclB_b_jk,clB_b_jk
-        gc.collect()
+#         gc.collect()
         return pcl_b_jk,cl_b_jk,xi_jk
         # else:
         #     for ijk in pcl_jk.keys():
@@ -968,44 +990,35 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
         return pcl,cl 
     
     print('generating maps')
+    gc.disable()
     if convolve_win:
-        futures={}
-#         for i in np.arange(nsim):
-#             futures[i]=dask.delayed(get_clsim)(i)  
-#         print(futures)
-#         pcl=dask.delayed(comb_maps)(futures)
-#         pcl.compute()
         i=0
         j=0
         step= min(nsim,len(client.scheduler_info()['workers']))
-        # if njk==0:
-        #     step=min(3,nsim)
-        # funct=partial(get_clsim2,cl0,window,mask,SN,coupling_M['full'],ndim)
         while j<nsim:
             futures={}
             for ii in np.arange(step):
                 futures[ii]=delayed(get_clsim)(i+ii)  
             futures=client.compute(futures).result()
             for ii in np.arange(step):
-#                     pcl[i],cl[i],pcl_b[i],pclB[i],cl_b[i],pclB_b[i],clB_b[i]=futures.result()[ii]
                 tt=futures[ii]
                 if do_pseudo_cl:
                     pcl_b[i]=tt[0]
                     cl_b[i]=tt[1]
                 if do_xi:
                     xi_b[i]=tt[2]
-#                     pcl[i,:],cl[i,:],pcl_b[i,:],pclB[i,:],cl_b_i,pclB_b[i,:],clB_b_i=futures.result()[ii]
-#                     for k in cl_b_i.keys():
-#                         cl_b[k][i,:]=cl_b_i[i][k]
-#                     clB_b['iMaster'][i,:]=clB_b_i['iMaster']
                         
                 i+=1
-            print('done map ',i)
+            proc = psutil.Process()
+            print('done map ',i, thread_count(),'mem, peak mem: ',format_bytes(proc.memory_info().rss),
+                 int(getrusage(RUSAGE_SELF).ru_maxrss/1024./1024.)
+                 )
             del futures
+            gc.collect()
             # client.restart() #this can sometimes fail... useful for clearing memory on cluster.
             j+=step
     print('done generating maps')
-    
+    gc.enable()
     def get_full_samp(cljk={}):
         k=None
         try:
@@ -1120,7 +1133,12 @@ written=True
 
 print(fname)
 print('all done')
+# client.shutdown()
+# try:
+#     if Scheduler_file is None:
+#         LC.close()
+# except Exception as err:
+#     print('LC close error:', err)
 
-if Scheduler_file is None:
-    LC.close()
 gc.collect()
+sys.exit(0)
