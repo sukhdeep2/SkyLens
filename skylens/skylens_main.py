@@ -594,7 +594,8 @@ class Skylens():
                 if self.use_window and not self.store_win:
                     Win_cov=self.Win.Win['cov'][corr1+corr2] # we only want to pass this if it is a graph. Otherwise, read within function
                     Win_cl=self.Win.Win['cl']
-                cov[corr1+corr2]=dask.bag.from_sequence(cov_indxs_iter).map(self.cl_cov,cls=cl,Win_cov=Win_cov,tracers=corr1+corr2,Win_cl=Win_cl)
+                #cov[corr1+corr2]=dask.bag.from_sequence(cov_indxs_iter).map(self.cl_cov,cls=cl,Win_cov=Win_cov,tracers=corr1+corr2,Win_cl=Win_cl)
+                cov[corr1+corr2]={indxs: delayed(self.cl_cov)(indxs,cls=cl,Win_cov=Win_cov,tracers=corr1+corr2,Win_cl=Win_cl) for indxs in cov_indxs_iter}
             cov['cov_indxs']=cov_indxs
 
             print('cov dict done')
@@ -612,7 +613,8 @@ class Skylens():
             In current implementation of hankel transform works only for s1_s2=s1_s2_cross.
             So no cross covariance between xi+ and xi-.
         """
-
+        if cov_cl is None:
+            cov_cl=self.cl_cov(cov_cl_indx,cls=cls,Win_cov=Win_cov,tracers=corr1+corr2,Win_cl=Win_cl)
 #         z_indx=indxs_1+indxs_2
         z_indx=cov_cl['z_indx']
         indxs_1=(z_indx[0],z_indx[1])
@@ -778,13 +780,15 @@ class Skylens():
                         start2=im1
                     for im2 in np.arange(start2,len(s1_s2s_2)):
                         s1_s2_cross=s1_s2s_2[im2]
-                        cov_xi[corr][s1_s2+s1_s2_cross]=dask.bag.from_sequence(cov_cl).map(self.xi_cov,
+                        #cov_xi[corr][s1_s2+s1_s2_cross]=dask.bag.from_sequence(cov_cl).map(self.xi_cov,
+                        cov_xi[corr][s1_s2+s1_s2_cross]={indxs:delayed(self.xi_cov)(indxs,
                                                                                         cls=cl,s1_s2=s1_s2,
                                                                                         s1_s2_cross=s1_s2_cross,#clr=clr,
                                                                                         Win_cov=Win_cov,
                                                                                         Win_cl=Win_cl,
                                                                                         corr1=corr1,corr2=corr2
                                                                                         )
+                                                         for indxs in cov_iter}
 
         out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi,'est':'xi'},corrs=corrs)
         out['xi']=xi

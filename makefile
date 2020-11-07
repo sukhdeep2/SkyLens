@@ -2,6 +2,7 @@ build:
 	python setup.py build
 
 install:
+	make clean
 	python setup.py install
 clean:
 	rm -rf build/*
