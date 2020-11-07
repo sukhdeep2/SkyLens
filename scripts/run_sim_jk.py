@@ -38,7 +38,7 @@ from dask.distributed import Client  # we already had this above
 
 import argparse
 
-test_run=True
+test_run=False
 parser = argparse.ArgumentParser()
 parser.add_argument("--cw", "-cw",type=int, help="use complicated window")
 parser.add_argument("--uw", "-uw",type=int, help="use unit window")
@@ -994,7 +994,7 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
     if convolve_win:
         i=0
         j=0
-        step= min(nsim,len(client.scheduler_info()['workers']))
+        step= 1 # min(nsim,len(client.scheduler_info()['workers']))
         while j<nsim:
             futures={}
             for ii in np.arange(step):
@@ -1015,6 +1015,9 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
                  )
             del futures
             gc.collect()
+            print('done map ',i, thread_count(),'mem, peak mem: ',format_bytes(proc.memory_info().rss),
+                 int(getrusage(RUSAGE_SELF).ru_maxrss/1024./1024.)
+                 )
             # client.restart() #this can sometimes fail... useful for clearing memory on cluster.
             j+=step
     print('done generating maps')

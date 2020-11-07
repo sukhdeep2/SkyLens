@@ -1,0 +1,11 @@
+#Put this file in ~/.config/dask/
+#https://github.com/dask/distributed/blob/master/distributed/distributed.yaml#L129-L131
+#https://docs.dask.org/en/latest/configuration.html
+distributed:
+  comm:
+    timeouts:
+      connect: 100s          # time before connecting fails
+      tcp: 300s
+#    
+  scheduler:
+     unknown-task-duration: 500s
