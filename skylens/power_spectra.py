@@ -85,7 +85,7 @@ class Power_Spectra():
                  logger=None):
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.cosmo_h=cosmo.clone(H0=100)
-        
+        self.set_cosmology(cosmo_params=cosmo_params)
         pk_func=pk_params.get('pk_func')
         pk_func_default=self.camb_pk_too_many_z
         if camb is None:
@@ -95,7 +95,19 @@ class Power_Spectra():
             self.kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),
             pk_params['nk'])
 
+    
+    def set_cosmology(self,cosmo_params=None,cosmo_h=None):
+        if cosmo_params is None or cosmo_params==self.cosmo_params:
+            return
+        self.cosmo_params.update(cosmo_params)
+        m_nu=cosmo.m_nu.value
+        m_nu[-1]=cosmo_params['mnu']
+        m_nu*=cosmo.m_nu.units
+        self.cosmo=self.cosmo.clone(H0=cosmo_params['h']*100,Ob0=cosmo_params['Omb'],Om0=cosmo_params['Om'],
+                                   mnu=m_nu,Ok0=cosmo_params['Omk'])
+        self.cosmo_h=cosmo.clone(H0=100)
 
+    
     def get_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
         pk_func=self.pk_func
 

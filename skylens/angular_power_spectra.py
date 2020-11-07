@@ -68,7 +68,6 @@ class Angular_power_spectra():
             if pk_params ==self.clz['pk_params'] and cosmo_params==self.clz['cosmo_params']:
 #                 print('angular_power_z: Pk same as before, not recomputing')
                 return # same as last calculation
-#         print('angular_power_z: computing Pk')
         
         if cosmo_h is None:
             cosmo_h=self.PS.cosmo_h

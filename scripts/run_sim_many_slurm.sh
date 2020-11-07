@@ -5,8 +5,8 @@
 #SBATCH -o /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/run_sim_many%A_%a.out
 #SBATCH -t 60:00:00
 #SBATCH -N 1
-##SBATCH -n 28
-#SBATCH --ntasks-per-node=28
+#SBATCH -n 28
+##SBATCH --ntasks-per-node=2
 #SBATCH --mem=128G
 #SBATCH -A phy200040p
 #SBATCH --array=1-4

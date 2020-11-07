@@ -38,7 +38,7 @@ from dask.distributed import Client  # we already had this above
 
 import argparse
 
-test_run=False
+test_run=True
 parser = argparse.ArgumentParser()
 parser.add_argument("--cw", "-cw",type=int, help="use complicated window")
 parser.add_argument("--uw", "-uw",type=int, help="use unit window")
@@ -254,16 +254,20 @@ if not use_shot_noise:
     for t in zs_bin1['SN'].keys():
         zs_bin1['SN'][t]*=0
         zl_bin1['SN'][t]*=0
-
+client.restart()
+cl_func_names={corr:'calc_cl2' for corr in corrs}
+# cl_func_names=None
 kappa_win=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zl_bin1,
             use_window=use_window,store_win=store_win,window_lmax=window_lmax,corrs=corrs,
             SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=f_sky,
+                  cl_func_names=cl_func_names,
             WT=WT_L,bin_xi=bin_xi,theta_bins=th_bins,do_xi=do_xi,scheduler_info=scheduler_info,
             wigner_files=wigner_files,do_pseudo_cl=do_pseudo_cl,xi_win_approx=xi_win_approx,
-                  clean_tracer_window=False,
+            clean_tracer_window=False,
 )
 
 clG_win=kappa_win.cl_tomo(corrs=corrs)
+print(clG_win['cl'][corr_gg])
 cl0_win=client.compute(clG_win['stack']).result()#.compute()
 #client.restart()
 if do_xi:
@@ -424,7 +428,7 @@ def get_xi_window_norm_jk(kappa_class=None):
     window_norm={}
     window={}
     for tracer in kappa_class.z_bins.keys():
-        window[tracer]=kappa_class.z_bins[tracer][0]['window']
+        window[tracer]=kappa_class.tracer_utils.z_win[tracer][0]['window']
     window_norm['full']=get_xi_window_norm(window=window)
     
     for ijk in np.arange(njk):

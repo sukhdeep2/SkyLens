@@ -36,7 +36,7 @@ class Skylens():
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
                 Tri_cov=False,sparse_cov=False,
                 use_window=True,window_lmax=None,window_l=None,store_win=False,Win=None,
-                f_sky=None,wigner_step=None,
+                f_sky=None,wigner_step=None,cl_func_names={},
                 l_bins=None,bin_cl=False,use_binned_l=False,do_pseudo_cl=True,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 use_binned_theta=False, xi_win_approx=False,
@@ -88,9 +88,9 @@ class Skylens():
                                 z_PS=z_PS,nz_PS=nz_PS,log_z_PS=log_z_PS,
                                 z_PS_max=self.tracer_utils.z_PS_max)
                         #FIXME: Need a dict for these args
-
-        self.Win={}
+        self.set_cl_funcs()
         
+        self.Win={}
         if self.do_xi and not self.xi_win_approx: #FIXME: Since the `aprrox' is actually the correct way, change the notation.
             self.do_pseudo_cl=True #we will use pseudo_cl transform to get correlation functions.
 
@@ -129,6 +129,28 @@ class Skylens():
         if not self.LC is None:
             self.client.shutdown()
             self.LC.close()
+            
+    def set_cl_funcs(self,):
+        self.cl_func={}
+        for corr in self.corrs:
+#            self.cl_func[corr]=self.calc_cl
+            if self.cl_func_names.get(corr) is None:
+                if self.cl_func_names.get(corr[::-1]) is None:
+                    self.cl_func_names[corr]='calc_cl'
+                    self.cl_func_names[corr[::-1]]='calc_cl'
+                else:
+                    self.cl_func_names[corr]=self.cl_func_names[corr[::-1]]
+            if self.cl_func.get(corr) is None: 
+                if hasattr(self,self.cl_func_names[corr]):
+                    self.cl_func[corr]=getattr(self,self.cl_func_names[corr])
+                elif hasattr(self.Ang_PS.PS,self.cl_func_names[corr]):
+                    self.cl_func[corr]=getattr(self.Ang_PS.PS,self.cl_func_names[corr])
+                else:
+                    self.cl_func[corr]=globals()[self.cl_func_names[corr]]
+            if not callable(self.cl_func[corr]):
+                raise Exception(self.cl_func[corr],'is not a callable function')
+            self.cl_func[corr[::-1]]=self.cl_func[corr]
+            
     def set_binned_measure(self,local_args,clean_up=False):
         """
             If we only want to run computations at effective bin centers, then we 
@@ -332,21 +354,16 @@ class Skylens():
                                                     r_bins=self.theta_bins,
                                                     r_dim=2,mat_dims=[1,2])
             
-    def calc_cl(self,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear')):
+    def calc_cl(self,zbin1={}, zbin2={},corr=('shear','shear'),cosmo_params=None,Ang_PS=None):#FIXME: this can be moved outside the class.thenwe don't need to serialize self.
         """
             Compute the angular power spectra, Cl between two source bins
             zs1, zs2: Source bins. Dicts containing information about the source bins
         """
-
-        zs1=self.z_bins[corr[0]][zs1_indx]#.copy() #we will modify these locally
-        zs2=self.z_bins[corr[1]][zs2_indx]#.copy()
-
         clz=self.Ang_PS.clz
         cls=clz['cls']
         f=self.Ang_PS.cl_f
-        sc=zs1['kernel_int']*zs2['kernel_int']
-
-        dchi=np.copy(clz['dchi'])
+        sc=zbin1['kernel_int']*zbin1['kernel_int']
+        dchi=clz['dchi']
         cl=np.dot(cls.T*sc,dchi)
                 # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
         return cl
@@ -458,7 +475,7 @@ class Skylens():
         # gc.collect() #this can slow down the code.
         return cov
 
-    def bin_cl_func(self,cl=None,cov=None):
+    def bin_cl_func(self,cl=None,cov=None):#FIXME: this can be moved outside the class.thenwe don't need to serialize self.
         """
             bins the tomographic power spectra
             results: Either cl or covariance
@@ -482,10 +499,8 @@ class Skylens():
                 cov_b=self.binning.bin_2d(cov=cov,bin_utils=self.cl_bin_utils)
             return cov_b
 
-    def calc_pseudo_cl(self,cl,Win,zs1_indx=-1, zs2_indx=-1,corr=('shear','shear')):
+    def calc_pseudo_cl(self,cl,Win):#FIXME: this can be moved outside the class.thenwe don't need to serialize self.
         pcl=cl@Win['M']
-#         if np.any(~np.isfinite(pcl)):
-#             print('pseudo cl not finite:', corr,zs1_indx,zs2_indx, cl,Win['M'])
         return  pcl
 
     def cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,
@@ -514,6 +529,7 @@ class Skylens():
                         corrs2+=[(tracers[i],tracers[j])]
                         print('added extra corr calc for covariance',corrs2)
 
+        self.Ang_PS.PS.set_cosmology(cosmo_params=cosmo_params,cosmo_h=cosmo_h)
         if cosmo_h is None:
             cosmo_h=self.Ang_PS.PS.cosmo_h
 
@@ -532,7 +548,7 @@ class Skylens():
             self.SN[('galaxy','galaxy')]=self.tracer_utils.SN['galaxy']
 
         self.Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,
-                                cosmo_params=cosmo_params)
+                                    cosmo_params=cosmo_params)
 
         out={}
         cl={corr:{} for corr in corrs2}
@@ -549,17 +565,16 @@ class Skylens():
             corr2=corr[::-1]
             corr_indxs=self.corr_indxs[(corr[0],corr[1])]#+self.cov_indxs
             for (i,j) in corr_indxs:#FIXME: we might want to move to map, like covariance. will be useful to define the tuples in forzenset then.
-                cl[corr][(i,j)]=delayed(self.calc_cl)(zs1_indx=i,zs2_indx=j,corr=corr) 
+                cl[corr][(i,j)]=delayed(self.cl_func[corr])(zbin1=self.z_bins[corr[0]][i],zbin2=self.z_bins[corr[1]][j],
+                                                             corr=corr,cosmo_params=cosmo_params,Ang_PS=self.Ang_PS) 
                 cl_b[corr][(i,j)]=delayed(self.bin_cl_func)(cl=cl[corr][(i,j)],cov=None)
                 if self.use_window and self.do_pseudo_cl and (i,j) in self.stack_indxs[corr]:
                     if not self.bin_window:
-                        pcl[corr][(i,j)]=delayed(self.calc_pseudo_cl)(cl[corr][(i,j)],Win=self.Win.Win['cl'][corr][(i,j)],zs1_indx=i,
-                                                zs2_indx=j,corr=corr)
+                        pcl[corr][(i,j)]=delayed(self.calc_pseudo_cl)(cl[corr][(i,j)],Win=self.Win.Win['cl'][corr][(i,j)])
                         pcl_b[corr][(i,j)]=delayed(self.bin_cl_func)(cl=pcl[corr][(i,j)],cov=None)
                     else:
                         pcl[corr][(i,j)]=None
-                        pcl_b[corr][(i,j)]=delayed(self.calc_pseudo_cl)(cl_b[corr][(i,j)],Win=self.Win.Win['cl'][corr][(i,j)],zs1_indx=i,
-                                                zs2_indx=j,corr=corr)
+                        pcl_b[corr][(i,j)]=delayed(self.calc_pseudo_cl)(cl_b[corr][(i,j)],Win=self.Win.Win['cl'][corr][(i,j)])
                 else:
                     pcl[corr][(i,j)]=cl[corr][(i,j)]
                     pcl_b[corr][(i,j)]=cl_b[corr][(i,j)]
@@ -891,8 +906,8 @@ class Skylens():
                                 indx0_2=(i2)*len_bins
                                 indx=indxs_1[i1]+indxs_2[i2]
 #                                 i_here=np.where(self.cov_indxs[corr]==indx)[0]
-                                i_here=dat['cov']['cov_indxs'][corr].index(indx)
-#                                 i_here=indx
+                                #i_here=dat['cov']['cov_indxs'][corr].index(indx)
+                                i_here=indx
                                 if est=='xi':
                                     cov_here=dat['cov'][corr][s1_s2_1[im1]+s1_s2_2[im2]][i_here]['final']
                                 else:
@@ -921,6 +936,19 @@ class Skylens():
         out[est]=D_final
         return out
 
+def calc_cl2(zbin1={}, zbin2={},corr=('shear','shear'),cosmo_params=None,Ang_PS=None):#FIXME: this can be moved outside the class.thenwe don't need to serialize self.
+    """
+        Compute the angular power spectra, Cl between two source bins
+        zs1, zs2: Source bins. Dicts containing information about the source bins
+    """
+    clz=Ang_PS.clz
+    cls=clz['cls']
+    f=Ang_PS.cl_f
+    sc=zbin1['kernel_int']*zbin1['kernel_int']
+    dchi=clz['dchi']
+    cl=np.dot(cls.T*sc,dchi)
+            # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
+    return cl
 
 if __name__ == "__main__":
     import cProfile

@@ -130,7 +130,7 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
         zs_bins[i]['window']=cl_map
 #         zs_bins[i]['window_alm']=hp.map2alm(cl_map)
 #         zs_bins[i]['window_alm_noise']=hp.map2alm(cl_map_noise)
-
+    del cl0G,kappa0
     return zs_bins
 
 
