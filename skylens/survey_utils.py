@@ -636,3 +636,33 @@ def cmb_bins(zs=1100,l=None):
     zs_bins['SN']['kappa']=SN.reshape(len(SN),1,1)
     zs_bins['SN']['galaxy']=SN.reshape(len(SN),1,1)*0
     return zs_bins
+
+
+def combine_zbins(z_bins1={},z_bins2={}):
+    if z_bins1['n_bins']>0:
+        z_bins3=copy.deepcopy(z_bins1)
+    else:
+        z_bins3=copy.deepcopy(z_bins2)
+    if z_bins1['n_bins']==0 or z_bins2['n_bins']==0:
+        return z_bins3 
+    j=0
+    for i in np.arange(z_bins1['n_bins'],z_bins1['n_bins']+z_bins2['n_bins']):
+#         print(i,z_bins2.keys())
+        z_bins3[i]=copy.deepcopy(z_bins2[j])
+        j+=1
+    z_bins3['n_bins']+=z_bins2['n_bins']
+    nl=z_bins2['SN']['shear'].shape[0]
+    z_bins3['SN']={}
+    z_bins3['SN']['galaxy']=np.zeros((nl,z_bins3['n_bins'],z_bins3['n_bins']))
+    z_bins3['SN']['shear']=np.zeros((nl,z_bins3['n_bins'],z_bins3['n_bins']))
+    j=0
+    for i in np.arange(z_bins1['n_bins']):
+        z_bins3['SN']['galaxy'][:,j,j]+=z_bins1['SN']['galaxy'][:,i,i]
+        z_bins3['SN']['shear'][:,j,j]+=z_bins1['SN']['shear'][:,i,i]
+        j+=1
+    for i in np.arange(z_bins2['n_bins']):
+        z_bins3['SN']['galaxy'][:,j,j]+=z_bins2['SN']['galaxy'][:,i,i]
+        z_bins3['SN']['shear'][:,j,j]+=z_bins2['SN']['shear'][:,i,i]
+        j+=1
+    
+    return z_bins3
