@@ -322,7 +322,7 @@ class Skylens():
             Setting up the binning functions to be used in binning the data
         """
         self.binning=binning()
-        if self.bin_cl:
+        if self.bin_cl or self.use_binned_l:
             self.cl_bin_utils=self.binning.bin_utils(r=self.l0,r_bins=self.l_bins,
                                                 r_dim=2,mat_dims=[1,2])
         self.xi_bin_utils={}
@@ -605,7 +605,7 @@ class Skylens():
         # gc.collect()
         return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl,'pseudo_cl':pcl,'pseudo_cl_b':pcl_b}
 
-    def xi_cov(self,cov_cl,cls={},s1_s2=None,s1_s2_cross=None,#clr=None,clrk=None,
+    def xi_cov(self,cov_cl_indx,cov_cl=None,cls={},s1_s2=None,s1_s2_cross=None,#clr=None,clrk=None,
 #                indxs_1=[],indxs_2=[],
                corr1=[],corr2=[], Win_cov=None,Win_cl=None):
         """
@@ -632,6 +632,11 @@ class Skylens():
 
         SN1324=0
         SN1423=0
+        wig_d1=None
+        wig_d2=None
+        if self.use_binned_l:
+            wig_d1=self.WT_binned[corr1][s1_s2][indxs_1]
+            wig_d2=self.WT_binned[corr2][s1_s2_cross][indxs_2]
 
         Win=None
         if self.use_window and self.store_win:
@@ -642,15 +647,9 @@ class Skylens():
         if np.all(np.array(tracers)=='shear') and  s1_s2!=s1_s2_cross and not self.xi_win_approx: #cross between xi+ and xi-
             if self.use_window:
                 G1324,G1423=self.cov_utils.gaussian_cov_window(cls,self.SN,tracers,z_indx,self.do_xi,Win,Bmode_mf=-1)
-#             elif self.use_window and self.xi_win_approx:
-#                 bf=-1
-#                 G1324,G1423=self.cov_utils.xi_gaussian_cov_window_approx(cls,self.SN,tracers,z_indx,self.do_xi,Win['cov'][tracers][z_indx],self.WT,WT_kwargs,bf)
             else:
-                if not self.xi_win_approx:
-                    G1324,G1423=self.cov_utils.gaussian_cov(cls,self.SN,tracers,z_indx,self.do_xi,self.f_sky,Bmode_mf=-1)
-                else:
-                    G1324=0
-                    G1423=0
+                G1324,G1423=self.cov_utils.gaussian_cov(cls,self.SN,tracers,z_indx,self.do_xi,self.f_sky,Bmode_mf=-1)
+                
             cov_cl_G=G1324+G1423
         else:
             cov_cl_G=cov_cl['G1324']+cov_cl['G1423'] #FIXME: needs Bmode for shear
@@ -661,32 +660,33 @@ class Skylens():
             bf=1
             if np.all(np.array(tracers)=='shear') and not s1_s2==s1_s2_cross: #cross between xi+ and xi-
                 bf=-1
-#             try:
+
             cov_xi['G']=self.cov_utils.xi_gaussian_cov_window_approx(cls,self.SN,tracers,z_indx,self.do_xi,Win,self.WT,WT_kwargs,bf)
-#             except Exception as err:
-#                 print('error', err, tracers, z_indx,Win['cov'][tracers].keys())
-#                 crash
+
         else:
             th0,cov_xi['G']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
                                                       s1_s2_cross=s1_s2_cross,
+                                                          wig_d1=wig_d1,
+                                                          wig_d2=wig_d2,
                                                       cl_cov=cov_cl_G)
+        if not self.use_binned_l:
+            cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=self.xi_bin_utils[s1_s2])
 
-
-        cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=self.xi_bin_utils[s1_s2])
-        #binning is cheap
-
-#         cov_xi['final']=cov_xi['G']
         cov_xi['SSC']=0
         cov_xi['Tri']=0
 
         if self.SSV_cov:
             th0,cov_xi['SSC']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
                                                             s1_s2_cross=s1_s2_cross,
+                                                            wig_d1=wig_d1,
+                                                          wig_d2=wig_d2,
                                                             cl_cov=cov_cl['SSC'])
             cov_xi['SSC']=self.binning.bin_2d(cov=cov_xi['SSC'],bin_utils=self.xi_bin_utils[s1_s2])
         if self.Tri_cov:
             th0,cov_xi['Tri']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
                                                             s1_s2_cross=s1_s2_cross,
+                                                            wig_d1=wig_d1,
+                                                          wig_d2=wig_d2,
                                                             cl_cov=cov_cl['Tri'])
             cov_xi['Tri']=self.binning.bin_2d(cov=cov_xi['Tri'],bin_utils=self.xi_bin_utils[s1_s2])
 
@@ -708,7 +708,7 @@ class Skylens():
             xi=xi*Win['cl'][corr][indxs]['xi']
 
         xi_b=xi
-        if self.bin_xi and not self.use_binned_theta:
+        if self.bin_xi and not self.use_binned_theta and not self.use_binned_l: #wig_d is binned when use_binned_l
             xi_b=self.binning.bin_1d(xi=xi,bin_utils=self.xi_bin_utils[s1_s2])
         
         if self.use_window or self.xi_win_approx:
@@ -752,7 +752,7 @@ class Skylens():
                     xi[corr][s1_s2][indx]=delayed(self.get_xi)(cls=cl,corr=corr,indxs=indx,
                                                         s1_s2=s1_s2,Win=self.Win.Win)
 
-        print('Done xi graph',get_size(cl)/1.e6)
+        print('Done xi graph',get_size(cl)/1.e6,)#get_size_pickle(self.xi_cov))
         if self.do_cov:
             corrs_iter=[(corrs[i],corrs[j]) for i in np.arange(len(corrs)) for j in np.arange(i,len(corrs))]
             cov_indxs={}
@@ -781,7 +781,7 @@ class Skylens():
                     for im2 in np.arange(start2,len(s1_s2s_2)):
                         s1_s2_cross=s1_s2s_2[im2]
                         #cov_xi[corr][s1_s2+s1_s2_cross]=dask.bag.from_sequence(cov_cl).map(self.xi_cov,
-                        cov_xi[corr][s1_s2+s1_s2_cross]={indxs:delayed(self.xi_cov)(indxs,
+                        cov_xi[corr][s1_s2+s1_s2_cross]={indxs:delayed(self.xi_cov)(indxs,cov_cl=None, #cov_cl[indxs],
                                                                                         cls=cl,s1_s2=s1_s2,
                                                                                         s1_s2_cross=s1_s2_cross,#clr=clr,
                                                                                         Win_cov=Win_cov,

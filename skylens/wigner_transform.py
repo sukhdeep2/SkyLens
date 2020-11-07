@@ -82,7 +82,10 @@ class wigner_transform():
         return self.theta[s1_s2],w
 
     def projected_covariance(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
+                             wig_d1=None,wig_d2=None,
                             taper=False,**kwargs):
+        if wig_d1 is not None:
+            return wig_d1@np.diag(cl_cov)@wig_d2
         if s1_s2_cross is None:
             s1_s2_cross=s1_s2
         #when cl_cov can be written as vector, eg. gaussian covariance
@@ -94,7 +97,10 @@ class wigner_transform():
         return self.theta[s1_s2],cov
 
     def projected_covariance2(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
+                              wig_d1=None,wig_d2=None,
                                 taper=False,**kwargs):
+        if wig_d1 is not None:
+            return wig_d1@cl_cov@wig_d2
         #when cl_cov is a 2-d matrix
         if s1_s2_cross is None:
             s1_s2_cross=s1_s2

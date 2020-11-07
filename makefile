@@ -1,9 +1,8 @@
-build:
-	python setup.py build
-
 install:
 	make clean
 	python setup.py install
+build:
+	python setup.py build
 clean:
 	rm -rf build/*
 	rm -rf *egg*
