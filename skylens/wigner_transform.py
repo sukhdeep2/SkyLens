@@ -14,13 +14,13 @@ class wigner_transform():
         self.grad_l=np.gradient(l)
         self.norm=(2*l+1.)/(4.*np.pi) 
         self.wig_d={}
-#         self.theta={}
+        self.theta={}
         self.s1_s2s=s1_s2
-        self.theta=theta
+#         self.theta=theta
         for (m1,m2) in s1_s2:
             self.wig_d[(m1,m2)]=wigner_d_parallel(m1,m2,theta,self.l,ncpu=ncpu)
 #             self.wig_d[(m1,m2)]=wigner_d_recur(m1,m2,theta,self.l)
-#             self.theta[(m1,m2)]=theta #FIXME: Ugly
+            self.theta[(m1,m2)]=theta #FIXME: Ugly
             self.wig_d_smoothing(s1_s2=(m1,m2))
 
     def reset_theta_l(self,theta=None,l=None):
@@ -38,8 +38,8 @@ class wigner_transform():
             return
         bessel_order=np.absolute(s1_s2[0]-s1_s2[1])
         zeros=jn_zeros(bessel_order,max(self.wig_d_taper_order_low,self.wig_d_taper_order_high))
-        l_max_low=zeros[self.wig_d_taper_order_low-1]/self.theta#[s1_s2]
-        l_max_high=zeros[self.wig_d_taper_order_high-1]/self.theta#[s1_s2]
+        l_max_low=zeros[self.wig_d_taper_order_low-1]/self.theta[s1_s2]
+        l_max_high=zeros[self.wig_d_taper_order_high-1]/self.theta[s1_s2]
         if self.wig_d_taper_order_high==0:
             l_max_high[:]=self.l.max()
         l_max_low[l_max_low>self.l.max()]=self.l.max()
@@ -98,7 +98,7 @@ class wigner_transform():
             w=np.dot(self.wig_d[s1_s2]*self.grad_l*self.norm,cl2)
         else:
             w=np.dot(wig_d,cl)
-        return self.theta,w
+        return self.theta[s1_s2],w
 
     def projected_covariance(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
                              wig_d1=None,wig_d2=None,
@@ -113,7 +113,7 @@ class wigner_transform():
                     self.wig_d[s1_s2_cross]*np.sqrt(self.norm),optimize=True)
         #FIXME: Check normalization
         #FIXME: need to allow user to input wigner matrices.
-        return self.theta,cov
+        return self.theta[s1_s2],cov
 
     def projected_covariance2(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
                               wig_d1=None,wig_d2=None,
@@ -131,7 +131,7 @@ class wigner_transform():
 #         cov=np.dot(self.wig_d[s1_s2]*self.grad_l*np.sqrt(self.norm),np.dot(self.wig_d[s1_s2_cross]*np.sqrt(self.norm),cl_cov2).T)
         # cov*=self.norm
         #FIXME: Check normalization
-        return self.theta,cov
+        return self.theta[s1_s2],cov
 
     def taper(self,l=[],large_k_lower=10,large_k_upper=100,low_k_lower=0,low_k_upper=1.e-5):
         #FIXME there is no check on change in taper_kwargs
@@ -160,4 +160,4 @@ class wigner_transform():
                         self.wig_d[s1_s2]*cl1*cl2*cl3)
         skew*=self.norm
         #FIXME: Check normalization
-        return self.theta,skew
+        return self.theta[s1_s2],skew
