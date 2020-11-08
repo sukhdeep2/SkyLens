@@ -2,25 +2,25 @@ from scipy.special import jn, jn_zeros,jv
 from scipy.interpolate import interp1d,interp2d,RectBivariateSpline
 from scipy.optimize import fsolve
 from skylens.wigner_functions import *
+from scipy.special import jn, jn_zeros,jv
 import numpy as np
 import itertools
 
 class wigner_transform():
-    def __init__(self,theta=[],l=[],s1_s2=[(0,0)],logger=None,ncpu=None,**kwargs):
+    def __init__(self,theta=[],l=[],s1_s2=[(0,0)],logger=None,ncpu=None,wig_d_taper_order_low=6,wig_d_taper_order_high=8,**kwargs):
+        self.__dict__.update(locals())
         self.name='Wigner'
         self.logger=logger
-        self.l=l
         self.grad_l=np.gradient(l)
         self.norm=(2*l+1.)/(4.*np.pi) 
         self.wig_d={}
-        # self.wig_3j={}
-        self.s1_s2s=s1_s2
-        self.theta={}
-        # self.theta=theta
+#         self.theta={}
+        self.theta=theta
         for (m1,m2) in s1_s2:
             self.wig_d[(m1,m2)]=wigner_d_parallel(m1,m2,theta,self.l,ncpu=ncpu)
 #             self.wig_d[(m1,m2)]=wigner_d_recur(m1,m2,theta,self.l)
-            self.theta[(m1,m2)]=theta #FIXME: Ugly
+#             self.theta[(m1,m2)]=theta #FIXME: Ugly
+            self.wig_d_smoothing(s1_s2=(m1,m2))
 
     def reset_theta_l(self,theta=None,l=None):
         """
@@ -31,7 +31,25 @@ class wigner_transform():
         if l is None:
             l=self.l
         self.__init__(theta=theta,l=l,s1_s2=self.s1_s2s,logger=self.logger)
-
+    
+    def wig_d_smoothing(self,s1_s2):
+        if self.wig_d_taper_order_low==0:
+            return
+        bessel_order=np.absolute(s1_s2[0]-s1_s2[1])
+        zeros=jn_zeros(bessel_order,max(self.wig_d_taper_order_low,self.wig_d_taper_order_high))
+        l_max_low=zeros[self.wig_d_taper_order_low-1]/self.theta#[s1_s2]
+        l_max_high=zeros[self.wig_d_taper_order_high-1]/self.theta#[s1_s2]
+        if self.wig_d_taper_order_high==0:
+            l_max_high[:]=self.l.max()
+        l_max_low[l_max_low>self.l.max()]=self.l.max()
+        l_max_high[l_max_high>self.l.max()]=self.l.max()
+        taper_f=np.cos((self.l[None,:]-l_max_low[:,None])/(l_max_high[:,None]-l_max_low[:,None])*np.pi/2.)
+        x=self.l[None,:]>=l_max_low[:,None]
+        y=self.l[None,:]>l_max_high[:,None]
+        taper_f[~x]=1
+        taper_f[y]=0
+        self.wig_d[s1_s2]=self.wig_d[s1_s2]*taper_f
+    
     def cl_grid(self,l_cl=[],cl=[],taper=False,**kwargs):
         """
         Interpolate a given C_ell onto the grid of ells for which WT is intialized. 
@@ -79,7 +97,7 @@ class wigner_transform():
             w=np.dot(self.wig_d[s1_s2]*self.grad_l*self.norm,cl2)
         else:
             w=np.dot(wig_d,cl)
-        return self.theta[s1_s2],w
+        return self.theta,w
 
     def projected_covariance(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
                              wig_d1=None,wig_d2=None,
@@ -94,7 +112,7 @@ class wigner_transform():
                     self.wig_d[s1_s2_cross]*np.sqrt(self.norm),optimize=True)
         #FIXME: Check normalization
         #FIXME: need to allow user to input wigner matrices.
-        return self.theta[s1_s2],cov
+        return self.theta,cov
 
     def projected_covariance2(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
                               wig_d1=None,wig_d2=None,
@@ -112,7 +130,7 @@ class wigner_transform():
 #         cov=np.dot(self.wig_d[s1_s2]*self.grad_l*np.sqrt(self.norm),np.dot(self.wig_d[s1_s2_cross]*np.sqrt(self.norm),cl_cov2).T)
         # cov*=self.norm
         #FIXME: Check normalization
-        return self.theta[s1_s2],cov
+        return self.theta,cov
 
     def taper(self,l=[],large_k_lower=10,large_k_upper=100,low_k_lower=0,low_k_upper=1.e-5):
         #FIXME there is no check on change in taper_kwargs
@@ -141,4 +159,4 @@ class wigner_transform():
                         self.wig_d[s1_s2]*cl1*cl2*cl3)
         skew*=self.norm
         #FIXME: Check normalization
-        return self.theta[s1_s2],skew
+        return self.theta,skew
