@@ -576,6 +576,7 @@ def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigm
         z_bins[i]['AI']=0
         z_bins[i]['AI_z']=0
         z_bins[i]['mag_fact']=0
+        z_bins[i]['shear_m_bias']=0
     z_bins['n_bins']=nz_bins
     z_bins['nz']=nz
     z_bins['zmax']=zmax

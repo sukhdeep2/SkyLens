@@ -43,14 +43,14 @@ class hankel_transform():
             theta=zeros/l_max
             if min(theta)>theta_min:
                 l_max=min(zeros)/theta_min
-                print('changed l_max to %s to cover theta_min. j_nu=%s',l_max,j_nu)
+                print('changed l_max to cover theta_min. j_nu=',l_max,j_nu)
                 continue
             elif max(theta)<theta_max:
                 n_zeros+=n_zeros_step
-                print('j-nu=%s  not enough zeros to cover theta_max, increasing by %s to %s',j_nu,n_zeros_step,n_zeros)
+                print(' not enough zeros to cover theta_max, increasing by ',j_nu,n_zeros_step,n_zeros)
             elif min(l)>l_min:
                 n_zeros+=n_zeros_step
-                print('j-nu=%s not enough zeros to cover l_min, increasing by %s to %s',j_nu,n_zeros_step,n_zeros)
+                print(' not enough zeros to cover l_min, increasing by ',j_nu,n_zeros_step,n_zeros)
             else:
                 break
         theta_min2=theta[theta<=theta_min][-1]
@@ -129,6 +129,7 @@ class hankel_transform():
 
     def projected_covariance2(self,l_cl=[],cl_cov=[],s1_s2=[],taper=False,**kwargs):
         #when cl_cov is a 2-d matrix
+        return self.projected_covariance(l_cl=l_cl,cl_cov=np.diag(cl_cov),s1_s2=s1_s2,taper=taper)
         cl_cov2=cl_cov#self._cl_cov_grid(l_cl=l_cl,cl_cov=cl_cov,s1_s2=s1_s2,taper=taper,**kwargs)
         cov=np.dot(self.J[s1_s2],np.dot(self.J[s1_s2]/self.J_nu1[s1_s2]**2,cl_cov2).T)
         cov*=(2.*self.l_max[s1_s2]**2/self.zeros[s1_s2][-1]**2)/(2*np.pi)
