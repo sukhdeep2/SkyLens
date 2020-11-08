@@ -15,6 +15,7 @@ class wigner_transform():
         self.norm=(2*l+1.)/(4.*np.pi) 
         self.wig_d={}
 #         self.theta={}
+        self.s1_s2s=s1_s2
         self.theta=theta
         for (m1,m2) in s1_s2:
             self.wig_d[(m1,m2)]=wigner_d_parallel(m1,m2,theta,self.l,ncpu=ncpu)
