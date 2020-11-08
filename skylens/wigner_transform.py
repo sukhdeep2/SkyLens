@@ -34,8 +34,10 @@ class wigner_transform():
         self.__init__(theta=theta,l=l,s1_s2=self.s1_s2s,logger=self.logger)
     
     def wig_d_smoothing(self,s1_s2):
-        if self.wig_d_taper_order_low==0:
+        if self.wig_d_taper_order_low<=0:
             return
+        if self.wig_d_taper_order_high<=0:
+            self.wig_d_taper_order_high=self.wig_d_taper_order_low+2
         bessel_order=np.absolute(s1_s2[0]-s1_s2[1])
         zeros=jn_zeros(bessel_order,max(self.wig_d_taper_order_low,self.wig_d_taper_order_high))
         l_max_low=zeros[self.wig_d_taper_order_low-1]/self.theta[s1_s2]
@@ -48,7 +50,7 @@ class wigner_transform():
         l_max_high[l_max_high>self.l.max()]=self.l.max()
         taper_f=np.cos((self.l[None,:]-l_max_low[:,None])/(l_max_high[:,None]-l_max_low[:,None])*np.pi/2.)
         x=self.l[None,:]>=l_max_low[:,None]
-        y=self.l[None,:]>l_max_high[:,None]
+        y=self.l[None,:]>=l_max_high[:,None]
         taper_f[~x]=1
         taper_f[y]=0
         self.wig_d[s1_s2]=self.wig_d[s1_s2]*taper_f
