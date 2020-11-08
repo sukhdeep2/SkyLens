@@ -39,6 +39,8 @@ class wigner_transform():
         bessel_order=np.absolute(s1_s2[0]-s1_s2[1])
         zeros=jn_zeros(bessel_order,max(self.wig_d_taper_order_low,self.wig_d_taper_order_high))
         l_max_low=zeros[self.wig_d_taper_order_low-1]/self.theta[s1_s2]
+        if l_max_low.max()>self.l.max():
+            print('Wigner ell max too low for theta_min. Recommendation based on first few zeros of bessel ',s1_s2,' :',zeros[:5]/self.theta[s1_s2].min())
         l_max_high=zeros[self.wig_d_taper_order_high-1]/self.theta[s1_s2]
         if self.wig_d_taper_order_high==0:
             l_max_high[:]=self.l.max()
