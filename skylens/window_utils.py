@@ -28,6 +28,7 @@ class window_utils():
                 do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,WT=None,xi_bin_utils=None,do_xi=False,
                 store_win=False,Win=None,wigner_files=None,step=None,xi_win_approx=False,
                 cov_indxs=None,client=None,scheduler_info=None,wigner_step=None,
+                 kappa_b_xi=None,bin_theta_window=False,
                 kappa_class0=None,kappa_class_b=None,bin_window=True,do_pseudo_cl=True):
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.binning=binning()
@@ -50,7 +51,7 @@ class window_utils():
         self.c_ell0=None
         self.c_ell_b=None
 #         self.xi_bin_utils=kappa_class0.xi_bin_utils
-        del self.kappa_class0,self.kappa_class_b#,self.z_bins
+        del self.kappa_class0,self.kappa_class_b,self.kappa_b_xi#,self.z_bins
         if bin_window:
             self.binnings=binning()
             self.cl_bin_utils=kappa_class0.cl_bin_utils
@@ -62,7 +63,11 @@ class window_utils():
                 self.c_ell_b=kappa_class_b.cl_tomo()['cl']
             else:
                 self.c_ell_b=kappa_class0.cl_tomo()['cl_b']
-                
+        self.xi0=None
+        self.xi_b=None
+        if bin_theta_window:
+            self.xi0=kappa_class0.xi_tomo()['xi']
+            self.xi_b=kappa_b_xi.xi_tomo()['xi']
         if self.Win is None and self.use_window and self.do_pseudo_cl: #pseudo_cl window
             if self.do_xi:
                 print('Warning: window for xi is different from cl.')
@@ -465,7 +470,7 @@ class window_utils():
         else:
             return 0
 
-    def get_window_power_cov(self,corr_indxs,c_ell0=None,c_ell_b=None):#corr1=None,corr2=None,indxs1=None,indxs2=None):
+    def get_window_power_cov(self,corr_indxs,c_ell0=None,c_ell_b=None,xi0=None,xi_b=None):#corr1=None,corr2=None,indxs1=None,indxs2=None):
         """
         Compute window power spectra what will be used in the covariance calculations. 
         For covariances, we have four windows. Pairs of them are first multiplied together and
@@ -615,6 +620,7 @@ class window_utils():
 
         win['xi']={1324:{},1423:{}}
         win['xi_b']={1324:{},1423:{}}
+        win['xi_b_th']={1324:{},1423:{}}
         if self.do_xi:
             for k in win[1324].keys():
                 th,win['xi'][1324][k]=self.WT.projected_covariance(l_cl=self.window_l,s1_s2=(0,0),cl_cov=win[1324][k])
@@ -622,6 +628,41 @@ class window_utils():
             for k in win[1423].keys():
                 th,win['xi'][1423][k]=self.WT.projected_covariance(l_cl=self.window_l,s1_s2=(0,0),cl_cov=win[1423][k])
                 win['xi_b'][1423][k]=self.binning.bin_2d(cov=win['xi'][1423][k],bin_utils=self.xi_bin_utils[(0,0)])
+            win['xi_b_th']={1324:{k:{} for k in win[1324].keys()},1423:{k:{} for k in win[1423].keys()}}
+            if self.bin_theta_window:
+                for s1 in self.s1_s2s[corr1]:
+                    for s2 in self.s1_s2s[corr2]:
+                        bin_wt_xi={}
+                        bin_wt_xi['xi12']=xi0[corr1][s1][indxs1]
+                        bin_wt_xi['xi34']=xi0[corr2][s2][indxs2]
+                        bin_wt_xi['xi_b12']=xi_b[corr1][s1][indxs1]
+                        bin_wt_xi['xi_b34']=xi_b[corr2][s2][indxs2]
+
+#                 bin_wt_xi={}
+#                 bin_wt_xi['xi12']={s:xi0[(corr[0],corr[1])][s][(indxs[1],indxs[2])]for s in xi0[(corr[0],corr[2])].keys()}
+#                 bin_wt_xi['xi34']={s:xi0[(corr[2],corr[3])][s][(indxs[2],indxs[3])]for s in xi0[(corr[0],corr[2])].keys()}
+#                 bin_wt_xi['xi13']={s:xi0[(corr[0],corr[2])][s][(indxs[0],indxs[2])] for s in xi0[(corr[0],corr[2])].keys()}
+#                 bin_wt_xi['xi24']={s:xi0[(corr[1],corr[3])][s][(indxs[1],indxs[3])] for s in xi0[(corr[1],corr[3])].keys()}
+#                 bin_wt_xi['xi14']={s:xi0[(corr[0],corr[3])][s][(indxs[0],indxs[3])]for s in xi0[(corr[0],corr[3])].keys()}
+#                 bin_wt_xi['xi23']={s:xi0[(corr[1],corr[2])][s][(indxs[1],indxs[2])] for s in xi0[(corr[1],corr[2])].keys()}
+
+#                 bin_wt_xi['xi_b13']={s:xi_b[(corr[0],corr[2])][s][(indxs[0],indxs[2])]for s in xi0[(corr[0],corr[2])].keys()}
+#                 bin_wt_xi['xi_b24']={s:xi_b[(corr[1],corr[3])][s][(indxs[1],indxs[3])] for s in xi0[(corr[1],corr[3])].keys()}
+#                 bin_wt_xi['xi_b14']={s:xi_b[(corr[0],corr[3])][s][(indxs[0],indxs[3])]for s in xi0[(corr[0],corr[3])].keys()}
+#                 bin_wt_xi['xi_b23']={s:xi_b[(corr[1],corr[2])][s][(indxs[1],indxs[2])] for s in xi0[(corr[1],corr[2])].keys()}
+                
+                        bin_wt_xi1324={'wt0':np.sqrt(bin_wt_xi['xi12']*bin_wt_xi['xi34'])} 
+                        bin_wt_xi1324['wt_b']=1./np.sqrt(bin_wt_xi['xi_b12']*bin_wt_xi['xi_b34'])
+                        bin_wt_xi1423=bin_wt_xi1324 #{'wt0':np.sqrt(win['bin_wt']['cl14']*win['bin_wt']['cl23'])} 
+#                         bin_wt_xi1423['wt_b']=1./np.sqrt(win['bin_wt']['cl_b14']*win['bin_wt']['cl_b23'])
+                        win['xi_b_th'][1324]['bin_wt_xi1324']=bin_wt_xi1324
+                        win['xi_b_th'][1423]['bin_wt_xi1423']=bin_wt_xi1423
+                        for k in win[1324].keys():
+                            win['xi_b_th'][1324][k][s1+s2]=self.binnings.bin_2d_coupling(M=win['xi'][1324][k],bin_utils=self.xi_bin_utils[s1],
+                            partial_bin_side=None,lm=None,lm_step=None,wt0=bin_wt_xi1324['wt0'],wt_b=bin_wt_xi1324['wt_b'],cov=False)
+                        for k in win[1423].keys():
+                            win['xi_b_th'][1423][k][s1+s2]=self.binnings.bin_2d_coupling(M=win['xi'][1423][k],bin_utils=self.xi_bin_utils[s1],
+                            partial_bin_side=None,lm=None,lm_step=None,wt0=bin_wt_xi1423['wt0'],wt_b=bin_wt_xi1423['wt_b'],cov=False)
 
         win['W_pm']=W_pm
         win['s1s2']=s1s2s
@@ -852,9 +893,9 @@ class window_utils():
                 self.cov_keys+=[corr+indx for indx in self.cov_indxs[corr]]
                 self.cov_bag=dask.bag.from_sequence(self.cov_keys,npartitions=npartitions)
                 if use_bag:
-                    self.Win_cov=self.cov_bag.map(self.get_window_power_cov,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)
+                    self.Win_cov=self.cov_bag.map(self.get_window_power_cov,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,xi0=self.xi0,xi_b=self.xi_b)
                 else:
-                    self.Win_cov=[delayed(self.get_window_power_cov)(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b) for ck in self.cov_keys]
+                    self.Win_cov=[delayed(self.get_window_power_cov)(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,xi0=self.xi0,xi_b=self.xi_b) for ck in self.cov_keys]
                 # ^ is super slow for very large number of covariances. ^^ helps because dask effectively bunches up delayed.
                 # ^ is better for smaller computes. ^^ for very large ones.
                 # FIXME: We can probably implement custom partitions, bunching up covariances from same tracers to make things more efficient.

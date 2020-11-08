@@ -25,7 +25,7 @@ class hankel_transform():
         self.zeros={}
         self.m1_m2s=m1_m2
         if len(m1_m2)>1:
-            self.logger.warning('cross covariance not implemented with Hankel Transform. m1_m2s: %s',m1_m2)
+            print('cross covariance not implemented with Hankel Transform. m1_m2s: %s',m1_m2)
         for i in m1_m2:
             self.l[i],self.l_max[i],self.theta[i],self.J[i],self.J_nu1[i],self.zeros[i]=self.get_k_r_j(
                                                    j_nu=np.absolute(i[1]-i[0]),
@@ -43,14 +43,14 @@ class hankel_transform():
             theta=zeros/l_max
             if min(theta)>theta_min:
                 l_max=min(zeros)/theta_min
-                self.logger.info ('changed l_max to %s to cover theta_min. j_nu=%s',l_max,j_nu)
+#                 self.logger.info ('changed l_max to %s to cover theta_min. j_nu=%s',l_max,j_nu)
                 continue
             elif max(theta)<theta_max:
                 n_zeros+=n_zeros_step
-                self.logger.info ('j-nu=%s  not enough zeros to cover theta_max, increasing by %s to %s',j_nu,n_zeros_step,n_zeros)
+#                 self.logger.info ('j-nu=%s  not enough zeros to cover theta_max, increasing by %s to %s',j_nu,n_zeros_step,n_zeros)
             elif min(l)>l_min:
                 n_zeros+=n_zeros_step
-                self.logger.info ('j-nu=%s not enough zeros to cover l_min, increasing by %s to %s',j_nu,n_zeros_step,n_zeros)
+#                 self.logger.info ('j-nu=%s not enough zeros to cover l_min, increasing by %s to %s',j_nu,n_zeros_step,n_zeros)
             else:
                 break
         theta_min2=theta[theta<=theta_min][-1]
@@ -59,7 +59,7 @@ class hankel_transform():
         x*=theta>=theta_min2
         theta=theta[x]
         if prune_theta!=0:
-            self.logger.info('pruning theta, log_space:%s n_f:%s',prune_log_space,prune_theta)
+#             self.logger.info('pruning theta, log_space:%s n_f:%s',prune_log_space,prune_theta)
             N=len(theta)
             if prune_log_space:
                 idx=np.unique(np.int64(np.logspace(0,np.log10(N-1),N/prune_theta)))#pruning can be worse than prune_theta factor due to repeated numbers when logspace number are convereted to int.
@@ -68,9 +68,9 @@ class hankel_transform():
                 idx=np.arange(0,N-1,step=prune_theta)
             idx=np.append(idx,[N-1])
             theta=theta[idx]
-            self.logger.info ('pruned theta:%s',len(theta))
+#             self.logger.info ('pruned theta:%s',len(theta))
         theta=np.unique(theta)
-        self.logger.info ('nr:%s',len(theta))
+#         self.logger.info ('nr:%s',len(theta))
         J=jn(j_nu,np.outer(theta,l))
         J_nu1=jn(j_nu+1,zeros)
         return l,l_max,theta,J,J_nu1,zeros

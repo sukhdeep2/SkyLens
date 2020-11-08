@@ -308,6 +308,9 @@ class Covariance_utils():
                         th,G_t=WT.projected_covariance2(cl_cov=G_t,**WT_kwargs)
                         if not use_binned_theta:
                             G_t*=Win['xi'][corr_i][k]
+                        else:
+                            s=WT_kwargs['s1_s2']+WT_kwargs['s1_s2_cross']
+                            G_t=Win['xi_b_th'][corr_i][k][s]@G_t
                         G_t/=Norm
                         if a_EB>0:
                             G_t*=Bmode_mf #need to -1 for xi+/- cross covariance

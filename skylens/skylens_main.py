@@ -100,9 +100,10 @@ class Skylens():
                         f_sky=f_sky,corr_indxs=self.stack_indxs,z_bins=self.tracer_utils.z_win,
                         window_lmax=self.window_lmax,Win=Win,WT=self.WT,do_xi=self.do_xi,
                         xi_win_approx=self.xi_win_approx,do_pseudo_cl=self.do_pseudo_cl,
-                        kappa_class0=self.kappa0,kappa_class_b=self.kappa_b,wigner_step=wigner_step,
+                        kappa_class0=self.kappa0,kappa_class_b=self.kappa_b,kappa_b_xi=self.kappa_b_xi,
+                        wigner_step=wigner_step,
                         xi_bin_utils=self.xi_bin_utils,store_win=store_win,wigner_files=wigner_files,
-                        bin_window=self.use_binned_l)
+                        bin_window=self.use_binned_l,bin_theta_window=self.use_binned_theta)
         self.set_WT_binned()
         self.bin_window=self.Win.bin_window
         self.set_binned_measure(None,clean_up=True)
@@ -213,6 +214,7 @@ class Skylens():
         else:
             self.kappa_b=self
             self.kappa0=self
+            self.kappa_b_xi=None
 
     def set_corr_indxs(self,corr_indxs=None,stack_indxs=None):
         """
@@ -316,10 +318,12 @@ class Skylens():
             return 
         WT=self.WT
         self.WT_binned={corr:{} for corr in self.corrs} #intialized later.
+        self.WT_binned_cov={corr:{} for corr in self.corrs}
         if self.do_xi and (self.use_binned_l or self.use_binned_theta):
             for corr in self.corrs:
                 s1_s2s=self.s1_s2s[corr]
                 self.WT_binned[corr]={s1_s2s[im]:{} for im in np.arange(len(s1_s2s))}
+                self.WT_binned_cov[corr]={s1_s2s[im]:{} for im in np.arange(len(s1_s2s))}
                 for indxs in self.corr_indxs[corr]:    
                     cl0=self.c_ell0[corr][indxs].compute()
                     cl_b=self.c_ell_b[corr][indxs].compute()
@@ -333,6 +337,16 @@ class Skylens():
                                                             wt0=cl0,wt_b=1./cl_b,bin_utils_cl=self.cl_bin_utils,
                                                             bin_utils_xi=self.xi_bin_utils[s1_s2],
                                                             win_xi=win_xi,
+                                                            use_binned_theta=self.use_binned_theta)
+                        if self.do_cov:
+                            if win_xi is None:
+                                self.WT_binned_cov[corr][s1_s2][indxs]=self.WT_binned[corr][s1_s2][indxs]
+                            else:
+                                self.WT_binned_cov[corr][s1_s2][indxs]=self.binning.bin_2d_WT(
+                                                            wig_mat=self.WT.wig_d[s1_s2]*self.WT.grad_l*self.WT.norm,
+                                                            wt0=cl0,wt_b=1./cl_b,bin_utils_cl=self.cl_bin_utils,
+                                                            bin_utils_xi=self.xi_bin_utils[s1_s2],
+                                                            win_xi=None,
                                                             use_binned_theta=self.use_binned_theta)
                         
 
@@ -656,8 +670,8 @@ class Skylens():
         wig_d1=None
         wig_d2=None
         if self.use_binned_l:
-            wig_d1=self.WT_binned[corr1][s1_s2][indxs_1]
-            wig_d2=self.WT_binned[corr2][s1_s2_cross][indxs_2]
+            wig_d1=self.WT_binned_cov[corr1][s1_s2][indxs_1]
+            wig_d2=self.WT_binned_cov[corr2][s1_s2_cross][indxs_2]
 
         Win=None
         if self.use_window and self.store_win:
@@ -691,10 +705,10 @@ class Skylens():
                                                           cl_cov=cov_cl_G)
         if not self.use_binned_theta:
             cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=self.xi_bin_utils[s1_s2])
-        else:
-            if self.use_window and self.xi_win_approx: #FIXME: This is only an approximation. We need something better.
-                cov_xi['G']/=np.outer(Win_cl[corr1][indxs_1]['xi_b'],Win_cl[corr2][indxs_2]['xi_b'])
-                cov_xi['G']*=self.binning.bin_2d(cov=Win['xi'][1324]['clcl'],bin_utils=self.xi_bin_utils[s1_s2])
+#         else:
+#             if self.use_window and self.xi_win_approx: #FIXME: This is only an approximation. We need something better.
+#                 cov_xi['G']/=np.outer(Win_cl[corr1][indxs_1]['xi_b'],Win_cl[corr2][indxs_2]['xi_b'])
+#                 cov_xi['G']*=self.binning.bin_2d(cov=Win['xi'][1324]['clcl'],bin_utils=self.xi_bin_utils[s1_s2])
                 
         cov_xi['SSC']=0
         cov_xi['Tri']=0
@@ -716,7 +730,7 @@ class Skylens():
 
         cov_xi['final']=cov_xi['G']+cov_xi['SSC']+cov_xi['Tri']
         #         if self.use_window: #pseudo_cl:
-        if self.use_window and self.xi_win_approx and not self.use_binned_theta:
+        if self.use_window and self.xi_win_approx:
             cov_xi['G']/=(Win_cl[corr1][indxs_1]['xi_b']*Win_cl[corr2][indxs_2]['xi_b'])
             cov_xi['final']/=(Win_cl[corr1][indxs_1]['xi_b']*Win_cl[corr2][indxs_2]['xi_b'])
 
