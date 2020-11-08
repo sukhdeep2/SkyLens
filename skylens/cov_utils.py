@@ -267,7 +267,7 @@ class Covariance_utils():
             
         return G1324,G1423
 
-    def xi_gaussian_cov_window_approx(self,cls,SN,tracers,z_indx,do_xi,Win,WT,WT_kwargs,Bmode_mf=1):
+    def xi_gaussian_cov_window_approx(self,cls,SN,tracers,z_indx,do_xi,Win,WT,WT_kwargs,use_binned_theta,Bmode_mf=1):
         """
         This returns correlation function gaussian covariance. Here window is assumed to decouple from the
         covariance and the product of the two is taken.
@@ -306,7 +306,8 @@ class Covariance_utils():
                         if k=='NN': 
                             G_t=np.outer(SN2[c1],SN2[c2])
                         th,G_t=WT.projected_covariance2(cl_cov=G_t,**WT_kwargs)
-                        G_t*=Win['xi'][corr_i][k]
+                        if not use_binned_theta:
+                            G_t*=Win['xi'][corr_i][k]
                         G_t/=Norm
                         if a_EB>0:
                             G_t*=Bmode_mf #need to -1 for xi+/- cross covariance

@@ -1,6 +1,7 @@
 install:
 	make clean
 	python setup.py install
+	make clean
 build:
 	python setup.py build
 clean:

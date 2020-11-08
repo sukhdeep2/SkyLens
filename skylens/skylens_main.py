@@ -67,7 +67,6 @@ class Skylens():
         self.window_l=np.arange(self.window_lmax+1) if window_l is None else window_l
 
         self.set_WT_spins()
-        self.set_WT_binned()
 
         self.z_bins=self.tracer_utils.z_bins
         del self.zs_bins,self.zg_bins,self.zk_bins
@@ -104,8 +103,10 @@ class Skylens():
                         kappa_class0=self.kappa0,kappa_class_b=self.kappa_b,wigner_step=wigner_step,
                         xi_bin_utils=self.xi_bin_utils,store_win=store_win,wigner_files=wigner_files,
                         bin_window=self.use_binned_l)
+        self.set_WT_binned()
         self.bin_window=self.Win.bin_window
         self.set_binned_measure(None,clean_up=True)
+        
         if clean_tracer_window:
             self.tracer_utils.clean_z_window()
         
@@ -187,7 +188,7 @@ class Skylens():
             inp_args['client']=self.client
             inp_args2['client']=self.client
             self.kappa0=Skylens(**inp_args)  #to get unbinned c_ell and xi
-
+#             self.kappa0.bin_xi=False #we want to get xi_bin_utils
             inp_args2['l']=self.lb
             inp_args2['name']='S_b'
             inp_args2['l_bins']=None
@@ -324,10 +325,15 @@ class Skylens():
                     cl_b=self.c_ell_b[corr][indxs].compute()
                     for im in np.arange(len(s1_s2s)):
                         s1_s2=s1_s2s[im]
+                        win_xi=None
+                        if self.use_window and self.xi_win_approx:
+                            win_xi=self.Win.Win['cl'][corr][indxs]['xi']#this will not work for covariance
                         self.WT_binned[corr][s1_s2][indxs]=self.binning.bin_2d_WT(
                                                             wig_mat=self.WT.wig_d[s1_s2]*self.WT.grad_l*self.WT.norm,
-                                                                wt0=cl0,wt_b=1./cl_b,bin_utils_cl=self.cl_bin_utils,
-                                                                bin_utils_xi=self.xi_bin_utils[s1_s2])
+                                                            wt0=cl0,wt_b=1./cl_b,bin_utils_cl=self.cl_bin_utils,
+                                                            bin_utils_xi=self.xi_bin_utils[s1_s2],
+                                                            win_xi=win_xi,
+                                                            use_binned_theta=self.use_binned_theta)
                         
 
     def update_zbins(self,z_bins={},tracer='shear'):
@@ -671,22 +677,25 @@ class Skylens():
 
 
         if self.use_window and self.xi_win_approx: 
-            WT_kwargs={'l_cl':self.l,'s1_s2':s1_s2,'s1_s2_cross':s1_s2_cross}
+            WT_kwargs={'l_cl':self.l,'s1_s2':s1_s2,'s1_s2_cross':s1_s2_cross,'wig_d1':wig_d1,'wig_d2':wig_d2}
             bf=1
             if np.all(np.array(tracers)=='shear') and not s1_s2==s1_s2_cross: #cross between xi+ and xi-
                 bf=-1
 
-            cov_xi['G']=self.cov_utils.xi_gaussian_cov_window_approx(cls,self.SN,tracers,z_indx,self.do_xi,Win,self.WT,WT_kwargs,bf)
-
+            cov_xi['G']=self.cov_utils.xi_gaussian_cov_window_approx(cls,self.SN,tracers,z_indx,self.do_xi,Win,self.WT,WT_kwargs,self.use_binned_theta,bf)
         else:
             th0,cov_xi['G']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
-                                                      s1_s2_cross=s1_s2_cross,
+                                                          s1_s2_cross=s1_s2_cross,
                                                           wig_d1=wig_d1,
                                                           wig_d2=wig_d2,
-                                                      cl_cov=cov_cl_G)
-        if not self.use_binned_l:
+                                                          cl_cov=cov_cl_G)
+        if not self.use_binned_theta:
             cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=self.xi_bin_utils[s1_s2])
-
+        else:
+            if self.use_window and self.xi_win_approx: #FIXME: This is only an approximation. We need something better.
+                cov_xi['G']/=np.outer(Win_cl[corr1][indxs_1]['xi_b'],Win_cl[corr2][indxs_2]['xi_b'])
+                cov_xi['G']*=self.binning.bin_2d(cov=Win['xi'][1324]['clcl'],bin_utils=self.xi_bin_utils[s1_s2])
+                
         cov_xi['SSC']=0
         cov_xi['Tri']=0
 
@@ -707,7 +716,7 @@ class Skylens():
 
         cov_xi['final']=cov_xi['G']+cov_xi['SSC']+cov_xi['Tri']
         #         if self.use_window: #pseudo_cl:
-        if self.use_window and self.xi_win_approx:
+        if self.use_window and self.xi_win_approx and not self.use_binned_theta:
             cov_xi['G']/=(Win_cl[corr1][indxs_1]['xi_b']*Win_cl[corr2][indxs_2]['xi_b'])
             cov_xi['final']/=(Win_cl[corr1][indxs_1]['xi_b']*Win_cl[corr2][indxs_2]['xi_b'])
 
@@ -719,14 +728,15 @@ class Skylens():
         if self.use_binned_l or self.use_binned_theta:
             wig_m=self.WT_binned[corr][s1_s2][indxs]
         th,xi=self.WT.projected_correlation(l_cl=self.l,s1_s2=s1_s2,cl=cl,wig_d=wig_m)
-        if self.use_window and self.xi_win_approx: 
-            xi=xi*Win['cl'][corr][indxs]['xi']
-
         xi_b=xi
-        if self.bin_xi and not self.use_binned_theta and not self.use_binned_l: #wig_d is binned when use_binned_l
+        
+        if self.bin_xi and not self.use_binned_theta: #wig_d is binned when use_binned_l
+                                                                                #FIXME: Need window correction when use_binned_l
+            if self.use_window and self.xi_win_approx: 
+                xi=xi*Win['cl'][corr][indxs]['xi']
             xi_b=self.binning.bin_1d(xi=xi,bin_utils=self.xi_bin_utils[s1_s2])
         
-        if self.use_window or self.xi_win_approx:
+        if self.use_window and self.xi_win_approx:
             xi_b/=(Win['cl'][corr][indxs]['xi_b'])
         return xi_b
 
@@ -784,7 +794,7 @@ class Skylens():
 
                 Win_cov=None
                 Win_cl=None
-                if self.use_window or self.xi_win_approx:
+                if self.use_window:
                     if not self.store_win:
                         Win_cov=self.Win.Win['cov'][corr]
                     Win_cl=self.Win.Win['cl']

@@ -96,7 +96,7 @@ class binning():
         return cov_b
 
     def bin_2d_WT(self,wig_mat=[],bin_utils_xi=None,bin_utils_cl=None,
-                wt_b=None,wt0=None): 
+                wt_b=None,wt0=None,use_binned_theta=False,win_xi=None): 
         if bin_utils_cl is not None:
             binning_mat_cl=bin_utils_cl['binning_mat']
             if wt_b is None:
@@ -114,10 +114,12 @@ class binning():
             wm=wig_mat
         
         wig_mat_b=wm
-        if bin_utils_xi is not None:
+        if bin_utils_xi is not None and use_binned_theta:
             binning_mat_xi=bin_utils_xi['binning_mat']
             
             rdr=bin_utils_xi['r_dr']
+            if win_xi is not None:
+                rdr=bin_utils_xi['r_dr']*win_xi
             binning_mat_xi=binning_mat_xi*rdr[:,None]/bin_utils_xi['norm'][None,:]
 
             wig_mat_b=binning_mat_xi.T@wm

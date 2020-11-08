@@ -49,6 +49,7 @@ class window_utils():
 
         self.c_ell0=None
         self.c_ell_b=None
+#         self.xi_bin_utils=kappa_class0.xi_bin_utils
         del self.kappa_class0,self.kappa_class_b#,self.z_bins
         if bin_window:
             self.binnings=binning()
@@ -70,7 +71,7 @@ class window_utils():
                 self.set_store_window(corrs=self.corrs,corr_indxs=self.corr_indxs,client=None)
             else:
                 self.set_window_graph(corrs=self.corrs,corr_indxs=self.corr_indxs,client=None)
-        elif self.do_xi and xi_win_approx:# and self.use_window:
+        elif self.do_xi and xi_win_approx and self.use_window:
             self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
             self.Win=delayed(self.combine_coupling_xi_cov)(self.Win_cl,self.Win_cov)
             print('Got xi win graph',self.Win,self.Win_cl,self.Win_cov)
@@ -275,8 +276,7 @@ class window_utils():
         win['W_pm']=W_pm
         win['s1s2']=s1s2
         if self.do_xi:
-            th,win['xi']=self.WT.projected_correlation(l_cl=self.window_l,s1_s2=(0,0),cl=win[12]['cl'])
-            win['xi']=1+win['xi']
+            th,win['xi']=self.WT.projected_correlation(l_cl=self.window_l,s1_s2=(0,0),cl=win[12]['cl'])#this is ~f_sky
             win['xi_b']=self.binning.bin_1d(xi=win['xi'],bin_utils=self.xi_bin_utils[(0,0)])
 
         win['M']={} #self.coupling_matrix_large(win['cl'], s1s2,wig_3j_2=wig_3j_2,W_pm=W_pm)*(2*self.l[:,None]+1) #FIXME: check ordering

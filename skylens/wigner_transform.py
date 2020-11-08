@@ -85,7 +85,7 @@ class wigner_transform():
                              wig_d1=None,wig_d2=None,
                             taper=False,**kwargs):
         if wig_d1 is not None:
-            return wig_d1@np.diag(cl_cov)@wig_d2
+            return self.theta[s1_s2],wig_d1@np.diag(cl_cov)@wig_d2
         if s1_s2_cross is None:
             s1_s2_cross=s1_s2
         #when cl_cov can be written as vector, eg. gaussian covariance
@@ -100,7 +100,8 @@ class wigner_transform():
                               wig_d1=None,wig_d2=None,
                                 taper=False,**kwargs):
         if wig_d1 is not None:
-            return wig_d1@cl_cov@wig_d2
+            print(wig_d1.shape,cl_cov.shape)
+            return self.theta[s1_s2],wig_d1@cl_cov@wig_d2.T
         #when cl_cov is a 2-d matrix
         if s1_s2_cross is None:
             s1_s2_cross=s1_s2
