@@ -77,7 +77,7 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None):
     
     return zs,p_zs
 
-def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False,scheduler_info=None):
+def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False,scheduler_info=None,mask=None):
     w_lmax=3*nside-1
     l0=np.arange(3*nside-1,dtype='int')
     corr=('galaxy','galaxy')
@@ -89,9 +89,10 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
     npix0=hp.nside2npix(nside)
 
     npix=np.int(npix0*f_sky)
-    mask=np.zeros(npix0,dtype='bool')
-#     mask[int(npix):]=0
-    mask[mask_start_pix:mask_start_pix+int(npix)]=1
+    if mask is None:
+        mask=np.zeros(npix0,dtype='bool')
+        #     mask[int(npix):]=0
+        mask[mask_start_pix:mask_start_pix+int(npix)]=1
 
     cl_map0=hp.ma(np.ones(npix0))
     cl_map0[~mask]=hp.UNSEEN

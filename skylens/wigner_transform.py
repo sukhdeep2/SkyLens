@@ -7,7 +7,7 @@ import numpy as np
 import itertools
 
 class wigner_transform():
-    def __init__(self,theta=[],l=[],s1_s2=[(0,0)],logger=None,ncpu=None,wig_d_taper_order_low=6,wig_d_taper_order_high=8,**kwargs):
+    def __init__(self,theta=[],l=[],s1_s2=[(0,0)],logger=None,ncpu=None,wig_d_taper_order_low=16,wig_d_taper_order_high=20,**kwargs):
         self.__dict__.update(locals())
         self.name='Wigner'
         self.logger=logger

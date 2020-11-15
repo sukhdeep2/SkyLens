@@ -38,7 +38,7 @@ from dask.distributed import Client  # we already had this above
 
 import argparse
 
-test_run=True
+test_run=False
 parser = argparse.ArgumentParser()
 parser.add_argument("--cw", "-cw",type=int, help="use complicated window")
 parser.add_argument("--uw", "-uw",type=int, help="use unit window")

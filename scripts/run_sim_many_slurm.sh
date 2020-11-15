@@ -9,7 +9,7 @@
 ##SBATCH --ntasks-per-node=2
 #SBATCH --mem=128G
 #SBATCH -A phy200040p
-#SBATCH --array=1-4
+#SBATCH --array=1-2
 
 ID=$SLURM_ARRAY_JOB_ID
 
@@ -20,8 +20,8 @@ home='/verafs/scratch/phy200040p/sukhdeep/project/skylens/scripts/'
 
 cd $home
 
-use_complicated_windows=( 0 1 )
-unit_windows=( 0 ) #( 0 1 )
+use_complicated_windows=( 0  )
+unit_windows=( 1 ) #( 0 1 )
 
 lognormals=( 0 )  #( 0 1 )
 do_blendings=( 0 ) #( 0 1 ) 
