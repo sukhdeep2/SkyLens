@@ -58,16 +58,19 @@ class Angular_power_spectra():
         self.dz=np.gradient(self.z)
 
     def angular_power_z(self,z=None,pk_params=None,cosmo_h=None,
-                    cosmo_params=None):
+                    cosmo_params=None,pk_lock=None):
         """
              This function outputs p(l=k/chi,z) / chi(z)^2, where z is the lens redshifts.
              The shape of the output is l,nz, where nz is the number of z bins.
         """
-        
+        if pk_params is None:
+            pk_params=self.PS.pk_params
         if self.clz is not None:
             if pk_params ==self.clz['pk_params'] and cosmo_params==self.clz['cosmo_params']:
 #                 print('angular_power_z: Pk same as before, not recomputing')
-                return # same as last calculation
+                return self.clz # same as last calculation
+        
+        self.PS.set_cosmology(cosmo_params=cosmo_params,cosmo_h=cosmo_h)
         
         if cosmo_h is None:
             cosmo_h=self.PS.cosmo_h
@@ -78,7 +81,7 @@ class Angular_power_spectra():
         nz=len(z)
         nl=len(l)
 
-        self.PS.get_pk(z=z,pk_params=pk_params,cosmo_params=cosmo_params)
+        self.PS.get_pk(z=z,pk_params=pk_params,cosmo_params=cosmo_params,pk_lock=pk_lock)
         cls=np.zeros((nz,nl),dtype='float32')#*u.Mpc#**2
 
         Rls=None #pk response functions, used for SSV calculations
@@ -112,10 +115,11 @@ class Angular_power_spectra():
 
             #cl*=2./np.pi #comparison with CAMB requires this.
         self.clz={'cls':cls,'l':l,'cH':cH,'dchi':cH*self.dz,'chi':chi,'dz':self.dz,
-                 'cosmo_params':cosmo_params,'pk_params':pk_params}
+                 'cosmo_params':self.PS.cosmo_params,'pk_params':pk_params,'cl_f':self.cl_f}
         if self.SSV_cov:
 #             self.cov_utils.sigma_win_calc(cls_lin=cls_lin)
             self.clz.update({'clsR':cls*Rls,'clsRK':cls*RKls,'cls_lin':cls_lin})
+        return self.clz
             
     def reset(self):
         self.clz=None

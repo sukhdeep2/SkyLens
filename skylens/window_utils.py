@@ -65,7 +65,7 @@ class window_utils():
                 self.c_ell_b=kappa_class0.cl_tomo()['cl_b']
         self.xi0=None
         self.xi_b=None
-        if bin_theta_window:
+        if bin_theta_window and self.do_xi:
             self.xi0=kappa_class0.xi_tomo()['xi']
             self.xi_b=kappa_b_xi.xi_tomo()['xi']
         if self.Win is None and self.use_window and self.do_pseudo_cl: #pseudo_cl window
@@ -76,14 +76,20 @@ class window_utils():
                 self.set_store_window(corrs=self.corrs,corr_indxs=self.corr_indxs,client=None)
             else:
                 self.set_window_graph(corrs=self.corrs,corr_indxs=self.corr_indxs,client=None)
-        elif self.do_xi and xi_win_approx and self.use_window:
-            self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
+        elif self.Win is None and self.do_xi and xi_win_approx and self.use_window:
+            self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=None)
             self.Win=delayed(self.combine_coupling_xi_cov)(self.Win_cl,self.Win_cov)
             print('Got xi win graph',self.Win,self.Win_cl,self.Win_cov)
             if self.store_win:
-                if client is None:
+                if client is None and self.scheduler_info is None:
+                    client=get_client()
+                elif client is None and self.scheduler_info is not None:
                     client=get_client(address=self.scheduler_info['address'])
                 self.Win=client.compute(self.Win).result()
+#                 client.cancel(self.Win_cl)
+#                 client.cancel(self.Win_cov)
+#                 del self.Win_cl,self.Win_cov
+                
 #             self.cleanup()
 
     def wig3j_step_read(self,m=0,lm=None):
@@ -542,62 +548,63 @@ class window_utils():
 
         win[1324]={}
         win[1423]={}
-        win[1324]['clcl']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin3['window']),
-                                 map2=self.multiply_window(z_bin2['window'],z_bin4['window']),
-                                 lmax=self.window_lmax
-                        )[self.window_l]
-
-        if corr[0]==corr[2] and indxs[0]==indxs[2]: #noise X cl
-            win[1324]['Ncl']=hp.anafast(map1=z_bin1['window'],
-                                 map2=self.multiply_window(z_bin2['window'],z_bin4['window']),
-                                 lmax=self.window_lmax
-                        )[self.window_l]
-        if corr[1]==corr[3] and indxs[1]==indxs[3]:#noise X cl
-            win[1324]['clN']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin3['window']),
-                                 map2=z_bin2['window'],
-                                 lmax=self.window_lmax
-                        )[self.window_l]
-        if corr[0]==corr[2] and indxs[0]==indxs[2] and corr[1]==corr[3] and indxs[1]==indxs[3]: #noise X noise
-            win[1324]['NN']=hp.anafast(map1=z_bin1['window'],
-                                 map2=z_bin2['window'],
-                                 lmax=self.window_lmax
-                        )[self.window_l]
-
-        win[1423]['clcl']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin4['window']),
-                                 map2=self.multiply_window(z_bin2['window'],z_bin3['window']),
-                                 lmax=self.window_lmax
+        if self.do_pseudo_cl:
+            win[1324]['clcl']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin3['window']),
+                                     map2=self.multiply_window(z_bin2['window'],z_bin4['window']),
+                                     lmax=self.window_lmax
                             )[self.window_l]
 
-        if corr[0]==corr[3] and indxs[0]==indxs[3]: #noise14 X cl
-            win[1423]['Ncl']=hp.anafast(map1=z_bin1['window'],
-                                 map2=self.multiply_window(z_bin2['window'],z_bin3['window']),
-                                 lmax=self.window_lmax
-                        )[self.window_l]
-        if corr[1]==corr[2] and indxs[1]==indxs[2]:#noise23 X cl
-            win[1423]['clN']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin4['window']),
-                                 map2=z_bin2['window'],
-                                 lmax=self.window_lmax
-                        )[self.window_l]
-        if corr[0]==corr[3] and indxs[0]==indxs[3] and corr[1]==corr[2] and indxs[1]==indxs[2]: #noise X noise
-            win[1423]['NN']=hp.anafast(map1=z_bin1['window'],
-                                 map2=z_bin2['window'],
-                                 lmax=self.window_lmax
-                        )[self.window_l]
+            if corr[0]==corr[2] and indxs[0]==indxs[2]: #noise X cl
+                win[1324]['Ncl']=hp.anafast(map1=z_bin1['window'],
+                                     map2=self.multiply_window(z_bin2['window'],z_bin4['window']),
+                                     lmax=self.window_lmax
+                            )[self.window_l]
+            if corr[1]==corr[3] and indxs[1]==indxs[3]:#noise X cl
+                win[1324]['clN']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin3['window']),
+                                     map2=z_bin2['window'],
+                                     lmax=self.window_lmax
+                            )[self.window_l]
+            if corr[0]==corr[2] and indxs[0]==indxs[2] and corr[1]==corr[3] and indxs[1]==indxs[3]: #noise X noise
+                win[1324]['NN']=hp.anafast(map1=z_bin1['window'],
+                                     map2=z_bin2['window'],
+                                     lmax=self.window_lmax
+                            )[self.window_l]
+
+            win[1423]['clcl']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin4['window']),
+                                     map2=self.multiply_window(z_bin2['window'],z_bin3['window']),
+                                     lmax=self.window_lmax
+                                )[self.window_l]
+
+            if corr[0]==corr[3] and indxs[0]==indxs[3]: #noise14 X cl
+                win[1423]['Ncl']=hp.anafast(map1=z_bin1['window'],
+                                     map2=self.multiply_window(z_bin2['window'],z_bin3['window']),
+                                     lmax=self.window_lmax
+                            )[self.window_l]
+            if corr[1]==corr[2] and indxs[1]==indxs[2]:#noise23 X cl
+                win[1423]['clN']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin4['window']),
+                                     map2=z_bin2['window'],
+                                     lmax=self.window_lmax
+                            )[self.window_l]
+            if corr[0]==corr[3] and indxs[0]==indxs[3] and corr[1]==corr[2] and indxs[1]==indxs[2]: #noise X noise
+                win[1423]['NN']=hp.anafast(map1=z_bin1['window'],
+                                     map2=z_bin2['window'],
+                                     lmax=self.window_lmax
+                            )[self.window_l]
 
 
-        win['binning_util']=None
-        win['bin_wt']=None
-        if self.bin_window:  #FIXME: this will be used to get an approximation, because we donot save unbinned covariance
-            win['bin_wt']={}
-            win['bin_wt']['cl13']=c_ell0[(corr[0],corr[2])][(indxs[0],indxs[2])]
-            win['bin_wt']['cl24']=c_ell0[(corr[1],corr[3])][(indxs[1],indxs[3])] 
-            win['bin_wt']['cl14']=c_ell0[(corr[0],corr[3])][(indxs[0],indxs[3])]
-            win['bin_wt']['cl23']=c_ell0[(corr[1],corr[2])][(indxs[1],indxs[2])] 
+            win['binning_util']=None
+            win['bin_wt']=None
+            if self.bin_window:  #FIXME: this will be used to get an approximation, because we donot save unbinned covariance
+                win['bin_wt']={}
+                win['bin_wt']['cl13']=c_ell0[(corr[0],corr[2])][(indxs[0],indxs[2])]
+                win['bin_wt']['cl24']=c_ell0[(corr[1],corr[3])][(indxs[1],indxs[3])] 
+                win['bin_wt']['cl14']=c_ell0[(corr[0],corr[3])][(indxs[0],indxs[3])]
+                win['bin_wt']['cl23']=c_ell0[(corr[1],corr[2])][(indxs[1],indxs[2])] 
 
-            win['bin_wt']['cl_b13']=c_ell_b[(corr[0],corr[2])][(indxs[0],indxs[2])]
-            win['bin_wt']['cl_b24']=c_ell_b[(corr[1],corr[3])][(indxs[1],indxs[3])] 
-            win['bin_wt']['cl_b14']=c_ell_b[(corr[0],corr[3])][(indxs[0],indxs[3])]
-            win['bin_wt']['cl_b23']=c_ell_b[(corr[1],corr[2])][(indxs[1],indxs[2])] 
+                win['bin_wt']['cl_b13']=c_ell_b[(corr[0],corr[2])][(indxs[0],indxs[2])]
+                win['bin_wt']['cl_b24']=c_ell_b[(corr[1],corr[3])][(indxs[1],indxs[3])] 
+                win['bin_wt']['cl_b14']=c_ell_b[(corr[0],corr[3])][(indxs[0],indxs[3])]
+                win['bin_wt']['cl_b23']=c_ell_b[(corr[1],corr[2])][(indxs[1],indxs[2])] 
             
         win['f_sky12'],mask12=self.mask_comb(z_bin1['window'],z_bin2['window'],
                                      )#For SSC
@@ -618,25 +625,65 @@ class window_utils():
         for k in win[1423].keys():
             win['M'][1423][k]={wp:{} for wp in W_pm[1423]}
 
-        win['xi']={1324:{},1423:{}}
-        win['xi_b']={1324:{},1423:{}}
-        win['xi_b_th']={1324:{},1423:{}}
+        win['xi']={12:{},34:{}}
+        win['xi_b']={12:{},34:{}}
+        win['xi_b_th']={12:{},34:{}}
+        cl12={}
+        cl34={}
         if self.do_xi:
-            for k in win[1324].keys():
-                th,win['xi'][1324][k]=self.WT.projected_covariance(l_cl=self.window_l,s1_s2=(0,0),cl_cov=win[1324][k])
-                win['xi_b'][1324][k]=self.binning.bin_2d(cov=win['xi'][1324][k],bin_utils=self.xi_bin_utils[(0,0)])
-            for k in win[1423].keys():
-                th,win['xi'][1423][k]=self.WT.projected_covariance(l_cl=self.window_l,s1_s2=(0,0),cl_cov=win[1423][k])
-                win['xi_b'][1423][k]=self.binning.bin_2d(cov=win['xi'][1423][k],bin_utils=self.xi_bin_utils[(0,0)])
-            win['xi_b_th']={1324:{k:{} for k in win[1324].keys()},1423:{k:{} for k in win[1423].keys()}}
-            if self.bin_theta_window:
-                for s1 in self.s1_s2s[corr1]:
-                    for s2 in self.s1_s2s[corr2]:
-                        bin_wt_xi={}
-                        bin_wt_xi['xi12']=xi0[corr1][s1][indxs1]
-                        bin_wt_xi['xi34']=xi0[corr2][s2][indxs2]
-                        bin_wt_xi['xi_b12']=xi_b[corr1][s1][indxs1]
-                        bin_wt_xi['xi_b34']=xi_b[corr2][s2][indxs2]
+                k='clcl'
+                cl12[k]=hp.anafast(map1=z_bin1['window'],map2=z_bin2['window'],lmax=self.window_lmax
+                        )[self.window_l]
+                cl34[k]=hp.anafast(map1=z_bin3['window'],map2=z_bin4['window'],lmax=self.window_lmax
+                        )[self.window_l]
+                if corr[0]==corr[2] and indxs[0]==indxs[2]: #noise X cl
+                    k='Ncl'
+                    m1=np.sqrt(z_bin1['window'])
+                    m3=np.sqrt(z_bin3['window'])
+                    m1[z_bin1['window']==hp.UNSEEN]=hp.UNSEEN
+                    m3[z_bin3['window']==hp.UNSEEN]=hp.UNSEEN
+                    cl12[k]=hp.anafast(map1=m1,map2=z_bin2['window'],lmax=self.window_lmax
+                            )[self.window_l]
+                    cl34[k]=hp.anafast(map1=m3,map2=z_bin4['window'],lmax=self.window_lmax
+                            )[self.window_l]
+                if corr[1]==corr[3] and indxs[1]==indxs[3]:#noise X cl
+                    k='clN'
+                    m2=np.sqrt(z_bin2['window'])
+                    m4=np.sqrt(z_bin4['window'])
+                    m2[z_bin2['window']==hp.UNSEEN]=hp.UNSEEN
+                    m4[z_bin4['window']==hp.UNSEEN]=hp.UNSEEN
+                    cl12[k]=hp.anafast(map1=m2,map2=z_bin1['window'],lmax=self.window_lmax
+                            )[self.window_l]
+                    cl34[k]=hp.anafast(map1=m4,map2=z_bin3['window'],lmax=self.window_lmax
+                            )[self.window_l]
+                if corr[0]==corr[2] and indxs[0]==indxs[2] and corr[1]==corr[3] and indxs[1]==indxs[3]: #noise X noise
+                    k='NN'
+                    m2=np.sqrt(z_bin2['window'])
+                    m4=np.sqrt(z_bin4['window'])
+                    m1=np.sqrt(z_bin1['window'])
+                    m3=np.sqrt(z_bin3['window'])
+                    m1[z_bin1['window']==hp.UNSEEN]=hp.UNSEEN
+                    m3[z_bin3['window']==hp.UNSEEN]=hp.UNSEEN
+                    m2[z_bin2['window']==hp.UNSEEN]=hp.UNSEEN
+                    m4[z_bin4['window']==hp.UNSEEN]=hp.UNSEEN
+                    cl12[k]=hp.anafast(map1=m2,map2=m1,lmax=self.window_lmax
+                            )[self.window_l]
+                    cl34[k]=hp.anafast(map1=m4,map2=m3,lmax=self.window_lmax
+                            )[self.window_l]
+                for k in cl12.keys():
+                    th,win['xi'][12][k]=self.WT.projected_correlation(l_cl=self.window_l,s1_s2=(0,0),cl=cl12[k])
+                    th,win['xi'][34][k]=self.WT.projected_correlation(l_cl=self.window_l,s1_s2=(0,0),cl=cl34[k])
+                    if self.bin_theta_window:
+                        win['xi'][12][k]=self.binning.bin_1d(xi=win['xi'][12][k],bin_utils=self.xi_bin_utils[(0,0)])
+                        win['xi'][34][k]=self.binning.bin_1d(xi=win['xi'][34][k],bin_utils=self.xi_bin_utils[(0,0)])
+#             if self.bin_theta_window:
+#                 for s1 in self.s1_s2s[corr1]:
+#                     for s2 in self.s1_s2s[corr2]:
+#                         bin_wt_xi={}
+#                         bin_wt_xi['xi12']=xi0[corr1][s1][indxs1]
+#                         bin_wt_xi['xi34']=xi0[corr2][s2][indxs2]
+#                         bin_wt_xi['xi_b12']=xi_b[corr1][s1][indxs1]
+#                         bin_wt_xi['xi_b34']=xi_b[corr2][s2][indxs2]
 
 #                 bin_wt_xi={}
 #                 bin_wt_xi['xi12']={s:xi0[(corr[0],corr[1])][s][(indxs[1],indxs[2])]for s in xi0[(corr[0],corr[2])].keys()}
@@ -651,18 +698,18 @@ class window_utils():
 #                 bin_wt_xi['xi_b14']={s:xi_b[(corr[0],corr[3])][s][(indxs[0],indxs[3])]for s in xi0[(corr[0],corr[3])].keys()}
 #                 bin_wt_xi['xi_b23']={s:xi_b[(corr[1],corr[2])][s][(indxs[1],indxs[2])] for s in xi0[(corr[1],corr[2])].keys()}
                 
-                        bin_wt_xi1324={'wt0':np.sqrt(bin_wt_xi['xi12']*bin_wt_xi['xi34'])} 
-                        bin_wt_xi1324['wt_b']=1./np.sqrt(bin_wt_xi['xi_b12']*bin_wt_xi['xi_b34'])
-                        bin_wt_xi1423=bin_wt_xi1324 #{'wt0':np.sqrt(win['bin_wt']['cl14']*win['bin_wt']['cl23'])} 
-#                         bin_wt_xi1423['wt_b']=1./np.sqrt(win['bin_wt']['cl_b14']*win['bin_wt']['cl_b23'])
-                        win['xi_b_th'][1324]['bin_wt_xi1324']=bin_wt_xi1324
-                        win['xi_b_th'][1423]['bin_wt_xi1423']=bin_wt_xi1423
-                        for k in win[1324].keys():
-                            win['xi_b_th'][1324][k][s1+s2]=self.binnings.bin_2d_coupling(M=win['xi'][1324][k],bin_utils=self.xi_bin_utils[s1],
-                            partial_bin_side=None,lm=None,lm_step=None,wt0=bin_wt_xi1324['wt0'],wt_b=bin_wt_xi1324['wt_b'],cov=False)
-                        for k in win[1423].keys():
-                            win['xi_b_th'][1423][k][s1+s2]=self.binnings.bin_2d_coupling(M=win['xi'][1423][k],bin_utils=self.xi_bin_utils[s1],
-                            partial_bin_side=None,lm=None,lm_step=None,wt0=bin_wt_xi1423['wt0'],wt_b=bin_wt_xi1423['wt_b'],cov=False)
+#                         bin_wt_xi1324={'wt0':np.sqrt(bin_wt_xi['xi12']*bin_wt_xi['xi34'])} 
+#                         bin_wt_xi1324['wt_b']=1./np.sqrt(bin_wt_xi['xi_b12']*bin_wt_xi['xi_b34'])
+#                         bin_wt_xi1423=bin_wt_xi1324 #{'wt0':np.sqrt(win['bin_wt']['cl14']*win['bin_wt']['cl23'])} 
+# #                         bin_wt_xi1423['wt_b']=1./np.sqrt(win['bin_wt']['cl_b14']*win['bin_wt']['cl_b23'])
+#                         win['xi_b_th'][1324]['bin_wt_xi1324']=bin_wt_xi1324
+#                         win['xi_b_th'][1423]['bin_wt_xi1423']=bin_wt_xi1423
+#                         for k in win[1324].keys():
+#                             win['xi_b_th'][1324][k][s1+s2]=self.binnings.bin_2d_coupling(M=win['xi'][1324][k],bin_utils=self.xi_bin_utils[s1],
+#                             partial_bin_side=None,lm=None,lm_step=None,wt0=bin_wt_xi1324['wt0'],wt_b=bin_wt_xi1324['wt_b'],cov=False)
+#                         for k in win[1423].keys():
+#                             win['xi_b_th'][1423][k][s1+s2]=self.binnings.bin_2d_coupling(M=win['xi'][1423][k],bin_utils=self.xi_bin_utils[s1],
+#                             partial_bin_side=None,lm=None,lm_step=None,wt0=bin_wt_xi1423['wt0'],wt_b=bin_wt_xi1423['wt_b'],cov=False)
 
         win['W_pm']=W_pm
         win['s1s2']=s1s2s
@@ -927,7 +974,10 @@ class window_utils():
         to get the final graph.
         """
         if self.store_win and client is None:
-            client=get_client(address=self.scheduler_info['address']) #this seems to be the correct thing to do
+            if self.scheduler_info is not None:
+                client=get_client(address=self.scheduler_info['address']) #this seems to be the correct thing to do
+            else:
+                client=get_client() #this seems to be the correct thing to do
         print('setting windows, coupling matrices ',client,client.scheduler_info())
         
         self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
@@ -977,7 +1027,9 @@ class window_utils():
                    del self.mf_pm[lm]
                    gc.collect()
                 print('done lm',lm,time.time()-t1)
-                    
+            client.cancel(self.Win_cl)
+            client.cancel(self.Win_cov)# persists need to be cleared from memory as well. Otherwise client can hang when restarting, exiting.
+
             self.Win=delayed(self.combine_coupling_cl_cov)(self.Win_cl_lm,self.Win_cov_lm)
             self.Win_cl=delayed(self.combine_coupling_cl)(self.Win_cl_lm)
             

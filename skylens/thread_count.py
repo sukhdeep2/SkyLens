@@ -33,7 +33,17 @@ def get_size(obj, seen=None): #https://stackoverflow.com/questions/449560/how-do
             size += sum([get_size(i, seen) for i in obj])
         return size
     
-    
 def get_size_pickle(obj):
     yy=pickle.dumps(obj)
-    return np.around(sys.getsizeof(yy)/1.e6,decimals=2)
+    return np.around(sys.getsizeof(yy)/1.e6,decimals=3)
+
+def chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    lst2=[]
+    for i in range(0, len(lst), n):
+#         yield lst[i:i + n]
+        lst2+=[lst[i:i + n]]
+    return lst2
+
+def pickle_deepcopy(obj):
+       return pickle.loads(pickle.dumps(obj, -1))

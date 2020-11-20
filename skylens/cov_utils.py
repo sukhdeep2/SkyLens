@@ -18,7 +18,7 @@ sky_area=np.pi*4/(d2r)**2 #in degrees
 class Covariance_utils():
     def __init__(self,f_sky=0,l=None,logger=None,l_cut_jnu=None,do_sample_variance=True,
                  use_window=True,window_l=None,window_file=None,wig_3j=None, do_xi=False,
-                 use_binned_l=False
+                 use_binned_l=False,xi_SN_analytical=False
                 ):
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.binning=binning()
@@ -138,7 +138,7 @@ class Covariance_utils():
         CV2[23]=cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f
         return CV2
 
-    def gaussian_cov_window(self,cls,SN,tracers,z_indx,do_xi,Win,Bmode_mf=1,bin_window=False,bin_utils=None,binned_l=False):
+    def cl_gaussian_cov_window(self,cls,SN,tracers,z_indx,do_xi,Win,Bmode_mf=1,bin_window=False,bin_utils=None,binned_l=False):
         """
         Computes the power spectrum gaussian covariance, with proper factors of window. We have separate function for the 
         case when window is not supplied.
@@ -207,7 +207,7 @@ class Covariance_utils():
         CV2[23]=cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f*sv_f[23]
         return CV2
             
-    def gaussian_cov(self,cls,SN,tracers,z_indx,do_xi,f_sky,Bmode_mf=1): #no-window covariance
+    def cl_gaussian_cov(self,cls,SN,tracers,z_indx,do_xi,f_sky,Bmode_mf=1): #no-window covariance
         """
         Gaussian covariance for the case when no window is supplied and only f_sky is used.
         """
@@ -267,11 +267,76 @@ class Covariance_utils():
             
         return G1324,G1423
 
-    def xi_gaussian_cov_window_approx(self,cls,SN,tracers,z_indx,do_xi,Win,WT,WT_kwargs,use_binned_theta,Bmode_mf=1):
-        """
-        This returns correlation function gaussian covariance. Here window is assumed to decouple from the
-        covariance and the product of the two is taken.
-        """
+    def xi_gaussian_cov(self,cls,SN,tracers,z_indx,do_xi,Win,WT,WT_kwargs,use_binned_theta,Bmode_mf=1):
+        #FIXME: Need to implement the case when we are only using bin centers.
+        if Win is None:
+            return self.xi_gaussian_cov_no_win(cls,SN,tracers,z_indx,do_xi,Win,WT,WT_kwargs,use_binned_theta,Bmode_mf)
+        SN2=self.get_SN(SN,tracers,z_indx)
+        CV=self.get_CV_cl(cls,tracers,z_indx)
+        CV_B=self.get_CV_B_cl(cls,tracers,z_indx)
+        
+        G={1324:0,1423:0}
+        cv_indxs={1324:(13,24),1423:(14,23)}
+        
+        Norm=np.pi*4
+        
+        add_EB=1
+        if self.do_xi and np.all(np.array(tracers)=='shear'):
+            add_EB+=1
+        
+        if Win is None:
+            if isinstance(self.f_sky,float):
+                fs1324=self.f_sky
+                fs0=self.f_sky**2
+                fs1423=self.f_sky
+            else:
+                fs1324=f_sky[tracers][z_indx]
+                fs0=f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
+                fs1423=f_sky[tracers][z_indx]
+            Norm=Norm*fs0/fs1324
+
+        
+        for corr_i in [1324,1423]:
+            W_pm=Win['W_pm'][corr_i]
+            c1=cv_indxs[corr_i][0]
+            c2=cv_indxs[corr_i][1]
+
+            for k in Win['xi'][12].keys():
+                for wp in W_pm:
+                    CV2=CV
+                    for a_EB in np.arange(add_EB):
+                        if wp<0 or a_EB>0:
+                            CV2=CV_B
+                        if k=='clcl': 
+#                             G_t=np.outer(CV2[c1],CV2[c2])
+                            G_t=CV2[c1]*CV2[c2]
+                        elif k=='Ncl': 
+#                             G_t=np.outer(SN2[c1],CV2[c2])
+                            G_t=SN2[c1]*CV2[c2]
+                        elif k=='clN': 
+#                             G_t=np.outer(CV2[c1],SN2[c2])
+                            G_t=CV2[c1]*SN2[c2]
+                        elif k=='NN' and not self.xi_SN_analytical: 
+#                             G_t=np.outer(SN2[c1],SN2[c2])
+                            G_t=SN2[c1]*SN2[c2]
+                        if k=='NN' and self.xi_SN_analytical:
+                            if not use_binned_theta:
+                                G_t=np.diag(SN2[c1][0]*SN2[c2][0]/WT.theta[WT_kwargs['s1_s2']]) #Fixme: wont' work with binned_theta
+                            else:
+                                G_t=np.diag(SN2[c1][0]*SN2[c2][0]/WT.theta_bins_center/WT.delta_theta_bins) 
+                        else:
+#                             th,G_t=WT.projected_covariance2(cl_cov=G_t,**WT_kwargs)
+                            th,G_t=WT.projected_covariance(cl_cov=G_t,**WT_kwargs)
+                        if Win is not None:
+                            G_t*=np.outer(Win['xi'][12][k],Win['xi'][34][k])
+                        G_t/=Norm
+
+                        if a_EB>0:
+                            G_t*=Bmode_mf #need to -1 for xi+/- cross covariance
+                        G[corr_i]+=G_t
+        return G[1324]+G[1423]
+
+    def xi_gaussian_cov_no_win(self,cls,SN,tracers,z_indx,do_xi,Win,WT,WT_kwargs,use_binned_theta,Bmode_mf=1):
         #FIXME: Need to implement the case when we are only using bin centers.
         SN2=self.get_SN(SN,tracers,z_indx)
         CV=self.get_CV_cl(cls,tracers,z_indx)
@@ -285,35 +350,55 @@ class Covariance_utils():
         add_EB=1
         if self.do_xi and np.all(np.array(tracers)=='shear'):
             add_EB+=1
-            
+        
+        if isinstance(self.f_sky,float):
+            fs1324=self.f_sky
+            fs0=self.f_sky**2
+            fs1423=self.f_sky
+        else:
+            fs1324=f_sky[tracers][z_indx]
+            fs0=f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
+            fs1423=f_sky[tracers][z_indx]
+        Norm=Norm*fs0/fs1324
+
+        G_t=0
+        G_t_SN=0
         for corr_i in [1324,1423]:
-            W_pm=Win['W_pm'][corr_i]
             c1=cv_indxs[corr_i][0]
             c2=cv_indxs[corr_i][1]
 
-            for k in Win['M'][corr_i].keys():
-                for wp in W_pm:
-                    CV2=CV
-                    for a_EB in np.arange(add_EB):
-                        if wp<0 or a_EB>0:
-                            CV2=CV_B
-                        if k=='clcl': 
-                            G_t=np.outer(CV2[c1],CV2[c2])
-                        if k=='Ncl': 
-                            G_t=np.outer(SN2[c1],CV2[c2])
-                        if k=='clN': 
-                            G_t=np.outer(CV2[c1],SN2[c2])
-                        if k=='NN': 
-                            G_t=np.outer(SN2[c1],SN2[c2])
-                        th,G_t=WT.projected_covariance2(cl_cov=G_t,**WT_kwargs)
+            for k in ['clcl','NN','Ncl','clN']:
+                CV2=CV
+                G_t_SNi=0
+                for a_EB in np.arange(add_EB):
+                    if a_EB>0:
+                        CV2=CV_B
+                    if k=='clcl': 
+                        G_ti=CV2[c1]*CV2[c2]
+                    elif k=='Ncl': 
+                        G_ti=SN2[c1]*CV2[c2]
+                    elif k=='clN': 
+                        G_ti=CV2[c1]*SN2[c2]
+                    elif k=='NN' and not self.xi_SN_analytical: 
+                        G_ti=SN2[c1]*SN2[c2]
+                    if k=='NN' and self.xi_SN_analytical:
                         if not use_binned_theta:
-                            G_t*=Win['xi'][corr_i][k]
+                                G_t_SNi=SN2[c1][-1]*SN2[c2][-1]/(WT.theta[WT_kwargs['s1_s2']])#Fixme: wont' work with binned_theta
                         else:
-                            s=WT_kwargs['s1_s2']+WT_kwargs['s1_s2_cross']
-                            G_t=Win['xi_b_th'][corr_i][k][s]@G_t
-                        G_t/=Norm
-                        if a_EB>0:
-                            G_t*=Bmode_mf #need to -1 for xi+/- cross covariance
-                        G[corr_i]+=G_t
+                                G_t_SNi=SN2[c1][-1]*SN2[c2][-1]/WT.theta_bins_center/WT.delta_theta_bins
 
+                    if a_EB>0:
+                        G_ti*=Bmode_mf #need to -1 for xi+/- cross covariance
+                        G_t_SNi*=Bmode_mf #need to -1 for xi+/- cross covariance
+                    G_t+=G_ti
+                    G_t_SN+=G_t_SNi
+        
+        th,G_t=WT.projected_covariance(cl_cov=G_t,**WT_kwargs)
+        print('cov utils xi_gaussina_cov',G_t.shape)
+        if np.any(G_t_SN!=0):
+            G_t+=np.diag(G_t_SN)
+        G_t/=Norm
+        if a_EB>0:
+            G_t*=Bmode_mf #need to -1 for xi+/- cross covariance
+        G[corr_i]+=G_t
         return G[1324]+G[1423]

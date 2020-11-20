@@ -23,6 +23,11 @@ class wigner_transform():
             self.theta[(m1,m2)]=theta #FIXME: Ugly
             self.wig_d_smoothing(s1_s2=(m1,m2))
 
+    def set_binned_theta(self,theta_bins=[]):
+        self.theta_bins=theta_bins
+        self.theta_bins_center=0.5*(theta_bins[1:]+theta_bins[:-1])
+        self.delta_theta_bins=theta_bins[1:]-theta_bins[:-1]
+        
     def reset_theta_l(self,theta=None,l=None):
         """
         In case theta ell values are changed. This can happen when we implement the binning scheme.
@@ -108,7 +113,7 @@ class wigner_transform():
                              wig_d1=None,wig_d2=None,
                             taper=False,**kwargs):
         if wig_d1 is not None:
-            return self.theta[s1_s2],wig_d1@np.diag(cl_cov)@wig_d2
+            return self.theta[s1_s2],wig_d1@np.diag(cl_cov)@wig_d2.T
         if s1_s2_cross is None:
             s1_s2_cross=s1_s2
         #when cl_cov can be written as vector, eg. gaussian covariance
@@ -165,3 +170,10 @@ class wigner_transform():
         skew*=self.norm
         #FIXME: Check normalization
         return self.theta[s1_s2],skew
+
+def projected_correlation(norm=1,cl=[],wig_d=None):
+    """
+    Get the projected correlation function from given c_ell.
+    """
+    w=np.dot(wig_d*norm,cl) #for binned wig_d norm is already applied. Otherwise it is (2*l+1)/4pi * dl
+    return w

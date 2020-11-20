@@ -14,6 +14,7 @@ except:
     Class=None
 sys.path.insert(0,'./')
 
+from dask.distributed import Lock
 import numpy as np
 from scipy.interpolate import interp1d
 from astropy.cosmology import Planck15 as cosmo
@@ -21,7 +22,8 @@ from astropy import units as u
 from scipy.integrate import quad as scipy_int1d
 import pandas as pd
 from scipy import interpolate
-
+import copy
+import time
 
 cosmo_h=cosmo.clone(H0=100)
 #c=c.to(u.km/u.second)
@@ -30,7 +32,7 @@ cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817
                 'Ase9':2.2,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
                 'w':-1,'wa':0})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
-pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':2000,'scenario':'dmo','pk_func':'camb_pk_too_many_z'}# 'pk_func':'class_pk'}
+pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':2000,'scenario':'dmo','pk_func':'camb_pk_too_many_z'} #class_pk
 
 # baryonic scenario option:
 # "owls_AGN","owls_DBLIMFV1618","owls_NOSN","owls_NOSN_NOZCOOL","owls_NOZCOOL","owls_REF","owls_WDENS"
@@ -84,6 +86,7 @@ class Power_Spectra():
                  silence_camb=True,SSV_cov=False,scenario=None,
                  logger=None):
         self.__dict__.update(locals()) #assign all input args to the class as properties
+        self.name='PS'
         self.cosmo_h=cosmo.clone(H0=100)
         self.set_cosmology(cosmo_params=cosmo_params)
         pk_func=pk_params.get('pk_func')
@@ -96,32 +99,76 @@ class Power_Spectra():
             pk_params['nk'])
 
     
+    def cosmo_w0_wa(self,cosmo=None,w0=-1,wa=0):
+        attrs=['H0','Om0', 'Ode0','Tcmb0', 'Neff', 'm_nu', 'Ob0']
+        args={}
+        args['w0']=w0
+        args['wa']=wa
+        for a in attrs:
+            args[a]=getattr(cosmo,a)
+        cosmo_w=astropy.cosmology.w0waCDM(**args)
+        return cosmo_w
+
+    
     def set_cosmology(self,cosmo_params=None,cosmo_h=None):
         if cosmo_params is None or cosmo_params==self.cosmo_params:
             return
         self.cosmo_params.update(cosmo_params)
         m_nu=cosmo.m_nu.value
         m_nu[-1]=cosmo_params['mnu']
-        m_nu*=cosmo.m_nu.units
+        m_nu*=cosmo.m_nu.unit
         self.cosmo=self.cosmo.clone(H0=cosmo_params['h']*100,Ob0=cosmo_params['Omb'],Om0=cosmo_params['Om'],
-                                   mnu=m_nu,Ok0=cosmo_params['Omk'])
-        self.cosmo_h=cosmo.clone(H0=100)
+                                   m_nu=m_nu)#Ok0=cosmo_params['Omk'])
+        if cosmo_params.get('w0') is not None:
+            if cosmo_params.get('wa') is None:
+                cosmo_params['wa']=0
+            if cosmo_params['w0']!=-1 or cosmo_params['wa']!=0:
+                self.cosmo=self.cosmo_w0_wa(cosmo=self.cosmo,w0=cosmo_param['w0'],wa=cosmo_param['wa'])
+        self.cosmo_h=self.cosmo.clone(H0=100)
 
     
-    def get_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
+    def get_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False,pk_lock=None):
         pk_func=self.pk_func
-
         if pk_params is not None:
             if pk_params.get('pk_func'):
                 pk_func=getattr(self,pk_params['pk_func'])
+        if pk_lock is not None:
+            ri=np.random.uniform(0.5,4,size=1)[0]
+            time.sleep(0.2*ri) #prevents threads from deadlocking while trying to acquire the lock
+            while pk_lock.locked():
+                time.sleep(0.1*ri)
+            print('getting pk lock',pk_lock.locked())
+            try:
+                pk_lock.acquire(timeout="5s") #FIXME: this leads to deadlocks. Using randoms in sleep helps, but doesn't come with any gurantees.
+            except Exception as err:
+                print('pk_lock.acquire error',err)
+                return self.get_pk(z,cosmo_params=cosmo_params,pk_params=pk_params,return_s8=return_s8,pk_lock=pk_lock)
+            print('got pk lock',pk_lock.locked())
+        outp=pk_func(z,cosmo_params=cosmo_params,
+                    pk_params=pk_params,return_s8=return_s8)
+        if pk_lock is not None:
+            ntries=0
+            while pk_lock.locked():
+                ntries+=1
+                try:
+                    pk_lock.release()
+                    print('released pk lock',pk_lock.locked())
+                except Exception as err:
+                    print('release pk lock error',pk_lock.locked(),err)
+                    if ntries>10 and pk_lock.locked():
+                        raise Exception('pk_lock is stuck ',err)
+                    
         if return_s8:
-            self.pk,self.kh,self.s8=pk_func(z,cosmo_params=cosmo_params,
-                            pk_params=pk_params,return_s8=return_s8)
+                self.pk,self.kh,self.s8=outp
         else:
-            self.pk,self.kh=pk_func(z,cosmo_params=cosmo_params,
-                            pk_params=pk_params,return_s8=return_s8)
+                self.pk,self.kh=outp
         if self.SSV_cov:
-            self.get_SSV_terms(z,cosmo_params=cosmo_params,
+            if pk_lock is not None:
+                with pk_lock:
+                    self.get_SSV_terms(z,cosmo_params=cosmo_params,
+                            pk_params=pk_params)
+            else:
+                self.get_SSV_terms(z,cosmo_params=cosmo_params,
                             pk_params=pk_params)
 
     def get_SSV_terms(self,z,cosmo_params=None,pk_params=None):
@@ -184,6 +231,7 @@ class Power_Spectra():
         if pk_params is None:
             pk_params=self.pk_params
 
+#         camb=copy.deepcopy(camb)
         pars = camb.CAMBparams()
         h=cosmo_params['h']
 
@@ -216,7 +264,7 @@ class Power_Spectra():
         else:
             pars.NonLinear = model.NonLinear_none
 
-        results = camb.get_results(pars) #This is the time consuming part.. pk add little more (~5%).. others are negligible.
+        results = camb.get_results(pars) #This is the time consuming part.. pk add little more (~5%).. others are negligible.... error when run in parallel??
 
         kh, z2, pk =results.get_matter_power_spectrum(minkh=pk_params['kmin'],
                                                         maxkh=pk_params['kmax'],

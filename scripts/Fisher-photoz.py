@@ -25,9 +25,9 @@ import argparse
 from dask_mpi import initialize as dask_initialize
 from distributed import Client
 
-debug=False
-if debug:
-    import faulthandler; faulthandler.enable()
+debug=True
+# if debug:
+import faulthandler; faulthandler.enable()
     #in case getting some weird seg fault, run as python -Xfaulthandler run_sim_jk.py
     # problem is likely to be in some package
 
@@ -114,7 +114,7 @@ if SSV_cov:
 from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
 worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
-
+# dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler
 if Scheduler_file is None:
 #     dask_initialize(nthreads=27,local_directory=dask_dir)
 #     client = Client()
@@ -131,7 +131,7 @@ else:
 scheduler_info=client.scheduler_info()
 scheduler_info['file']=Scheduler_file
 print('client: ',client,dask_dir,scheduler_info)
-# dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler
+
 
 def cosmo_w0_wa(cosmo=None,w0=-1,wa=0):
     attrs=['H0','Om0', 'Ode0','Tcmb0', 'Neff', 'm_nu', 'Ob0']
@@ -145,16 +145,17 @@ def cosmo_w0_wa(cosmo=None,w0=-1,wa=0):
 cosmo_w0_wa(cosmo=cosmo)
 
 def cosmo_h_set(cosmo=None,cosmo_params={}):
-    if cosmo_params['wa']!=0:
-        cosmo=cosmo_w0_wa(cosmo=cosmo,w0=cosmo_params['w'],wa=cosmo_params['wa'])
     cosmo2=cosmo.clone(H0=cosmo_params['h']*100,
-                        Om0=cosmo_params['Om'],
-                       Ob0=cosmo_params['Omb'],
+                    Om0=cosmo_params['Om'],
+                   Ob0=cosmo_params['Omb'],
 #                        Odm0=cosmo_params['Omd'],
 #                        Ok0=cosmo_params['Omk'],
 #                        w=cosmo_params['w'],
-                       m_nu=[0,0,cosmo_params['mnu']]*units.eV
-                    )
+                   m_nu=[0,0,cosmo_params['mnu']]*units.eV
+                )
+    if cosmo_params['wa']!=0:
+        cosmo2=cosmo_w0_wa(cosmo=cosmo2,w0=cosmo_params['w'],wa=cosmo_params['wa'])
+    return cosmo2
 
 def get_x_var(x0=None,dx_max=0.01,do_log=False,Nx=2):
     Dx=np.linspace((1-dx_max),(1+dx_max),Nx)
@@ -176,12 +177,15 @@ def get_x_var(x0=None,dx_max=0.01,do_log=False,Nx=2):
 
 
 def fish_cosmo_model(p='As',Nx=2,dx_max=0.01,do_log=False,kappa_class=None,do_cov=False,z_bins_kwargs={}):
+    t0=time.time()
     x0=cosmo_fid[p]
-
+    zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)        
+    z_bins={'shear':zs_bins_comb,'galaxy':zl_bins_comb}
     models={}
     covs={}
     x_vars,x_grad=get_x_var(x0=x0,dx_max=dx_max,do_log=do_log,Nx=Nx)
     print(p,x_vars)
+    Ang_PS=copy.deepcopy(kappa_class.Ang_PS)
     for i in np.arange(Nx):
         cosmo_t=copy.deepcopy(cosmo_fid)#.copy()
 
@@ -195,15 +199,17 @@ def fish_cosmo_model(p='As',Nx=2,dx_max=0.01,do_log=False,kappa_class=None,do_co
             x_vars[i]=kappa_class.Ang_PS.PS.s8
 #                 print(x_vars[p][i],s80,cosmo_t['s8'])
         cosmo_h2=cosmo_h_set(cosmo=cosmo,cosmo_params=cosmo_t)
-        cl0G=kappa_class.cl_tomo(cosmo_params=cosmo_t,cosmo_h=cosmo_h2)#,stack_corr_indxs=z_bins_kwargs['corr_indxs'])
-        cl_t=cl0G['stack'].compute()
-        models[i]=cl_t['pcl_b']
-        covs[i]=cl_t['cov']
+        cl0G=kappa_class.tomo_short(cosmo_params=cosmo_t,cosmo_h=cosmo_h2,z_bins=z_bins,Ang_PS=Ang_PS)#,stack_corr_indxs=z_bins_kwargs['corr_indxs'])
+        models[i]=cl0G
+#         cl_t=cl0G['stack'].compute()
+#         models[i]=cl_t['pcl_b']
+#         covs[i]=cl_t['cov']
         if not np.all(np.isfinite(models[i])):
             print('nan crash',p,x_vars,cosmo_t,)
             print(models[i],models[i][~np.isfinite(models[i])],np.where(~np.isfinite(models[i])))
             crash
 #         kappa_class.Ang_PS.reset()
+    print(p,'done',time.time()-t0)
     return models,covs,x_vars,x_grad
 
 def pz_update(z_bins={},bin_indx=None,z_indx=None,pz_new=None):
@@ -237,6 +243,7 @@ def set_zbin_sigma(zs_bins={},zsigma_frac=1,bin_id=0):
     return zp_sigma
     
 def fish_z_model(p='pz_b_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,do_log=False,z_bins_kwargs0={}):
+    t1=time.time()
     z_bins_kwargs=copy.deepcopy(z_bins_kwargs0)#.copy()
     zs_bins=z_bins_kwargs['zs_bins']
     zs_bins_missed=z_bins_kwargs['zs_bins_missed']
@@ -267,14 +274,14 @@ def fish_z_model(p='pz_b_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,do_
     covs={}
     print(p,x_vars)
     for i in np.arange(Nx):
-        z_bins_kwargs=copy.deepcopy(z_bins_kwargs0)
         zs_bins_i=z_bins_kwargs['zs_bins']
         zl_bins_i=z_bins_kwargs['zl_bins']
         zsm_bins_i=z_bins_kwargs['zs_bins_missed']
         if 'pz_B' in p:
-            bias=set_zbin_bias0(zs_bins=zs_bins,bias=x_vars[i])
+            crash
+            bias=set_zbin_bias0(zs_bins=zs_bins_i,bias=x_vars[i])
             zs_bins_kwargs['z_bias']=bias
-            zs_bins_i=lsst_source_tomo_bins(**zs_bins_kwargs)
+            zs_bins_i=lsst_source_tomo_bins(**zs_bins_kwargs)#wrong
         elif 'pz_b_s' in p:
             bin_id=np.int(p[-1])
             if 'pz_b_sm' in p:
@@ -293,26 +300,38 @@ def fish_z_model(p='pz_b_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,do_
             zl_bins_i=pz_update(z_bins=zl_bins_i,bin_indx=bin_id,z_indx=z_id,pz_new=x_vars[i])
 
         elif 'sig' in p:
+            crash
             bin_id=np.int(p[-1])
-            zp_sigma=set_zbin_sigma(zs_bins=zs_bins,zsigma_frac=x_vars[i],bin_id=0)
+            zp_sigma=set_zbin_sigma(zs_bins=zs_bins_i,zsigma_frac=x_vars[i],bin_id=0)
             zs_bins_kwargs['z_sigma']=zp_sigma
-            zs_bins_i=lsst_source_tomo_bins(**zs_bins_kwargs)
+            zs_bins_i=lsst_source_tomo_bins(**zs_bins_kwargs)#wrong
+#         print(p,'doing z',time.time()-t1)
+#         t1=time.time()
         zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)        
-        kappa_class.update_zbins(z_bins=zs_bins_comb,tracer='shear')
-        kappa_class.update_zbins(z_bins=zl_bins_comb,tracer='galaxy')
-        cl0G=kappa_class.cl_tomo(stack_corr_indxs=z_bins_kwargs0['corr_indxs'])
-        cl_t=cl0G['stack'].compute()
-        models[i]=cl_t['pcl_b']
-        covs[i]=cl_t['cov']
+        z_bins={'shear':zs_bins_comb,'galaxy':zl_bins_comb}
+#         kappa_class.update_zbins(z_bins=zs_bins_comb,tracer='shear')
+#         kappa_class.update_zbins(z_bins=zl_bins_comb,tracer='galaxy')
+#         print(p,'z done',time.time()-t1)
+#         t1=time.time()
+        cl0G=kappa_class.tomo_short(stack_corr_indxs=z_bins_kwargs0['corr_indxs'],z_bins=z_bins)
+#         print(p,'graph done',time.time()-t1)
+#         t1=time.time()
+        cl_t=cl0G
+#         cl_t=client.compute(cl0G['stack']).result()
+#         cl_t=client.compute(cl0G['pseudo_cl_b']).result()
+#         print(p,'compute done',time.time()-t1,cl_t)
+        models[i]=cl_t#['pcl_b']
+        covs[i]=None #cl_t['cov']
 
-    zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs0)        
-    kappa_class.update_zbins(z_bins=zs_bins_comb,tracer='shear')
-    kappa_class.update_zbins(z_bins=zl_bins_comb,tracer='galaxy')
+#     zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs0)        
+#     kappa_class.update_zbins(z_bins=zs_bins_comb,tracer='shear')
+#     kappa_class.update_zbins(z_bins=zl_bins_comb,tracer='galaxy')
+    print(p,'done',time.time()-t1)
     return models,covs,x_vars,x_grad
 
 def fish_galaxy_model(p='g_b_l_1_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,do_log=False,
                       z_bins_kwargs0={}):
-    
+    t0=time.time()
     z_bins_kwargs=copy.deepcopy(z_bins_kwargs0)#.copy()
     zs_bins=z_bins_kwargs['zs_bins']
     zs_bins_missed=z_bins_kwargs['zs_bins_missed']
@@ -381,7 +400,7 @@ def fish_galaxy_model(p='g_b_l_1_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=Fal
     
     print(p,x_vars)
     for i in np.arange(Nx):
-        z_bins_kwargs=copy.deepcopy(z_bins_kwargs0)
+#         z_bins_kwargs=copy.deepcopy(z_bins_kwargs0)
         zs_bins=z_bins_kwargs['zs_bins']
         zl_bins=z_bins_kwargs['zl_bins']
         zlD_bins=z_bins_kwargs['zlD_bins']
@@ -439,24 +458,27 @@ def fish_galaxy_model(p='g_b_l_1_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=Fal
                         zst_bins[bin_indx][p_n]=x_vars[i]
             
         zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)        
-        kappa_class.update_zbins(z_bins=zs_bins_comb,tracer='shear')
-        kappa_class.update_zbins(z_bins=zl_bins_comb,tracer='galaxy')
-        cl0G=kappa_class.cl_tomo(stack_corr_indxs=z_bins_kwargs0['corr_indxs'])
-        cl_t=cl0G['stack'].compute()
-        models[i]=cl_t['pcl_b']
-        covs[i]=cl_t['cov']
+        z_bins={'shear':zs_bins_comb,'galaxy':zl_bins_comb}
+#         kappa_class.update_zbins(z_bins=zs_bins_comb,tracer='shear')
+#         kappa_class.update_zbins(z_bins=zl_bins_comb,tracer='galaxy')
+        cl0G=kappa_class.tomo_short(stack_corr_indxs=z_bins_kwargs0['corr_indxs'],z_bins=z_bins)
+        models[i]=cl0G
+#         cl_t=cl0G['stack'].compute()
+#         models[i]=cl_t['pcl_b']
+#         covs[i]=cl_t['cov']
 #         kappa_class.Ang_PS.reset()#FIXME
 
     
-    zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs0)        
-    kappa_class.update_zbins(z_bins=zs_bins_comb,tracer='shear')
-    kappa_class.update_zbins(z_bins=zl_bins_comb,tracer='galaxy')
+#     zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs0)        
+#     kappa_class.update_zbins(z_bins=zs_bins_comb,tracer='shear')
+#     kappa_class.update_zbins(z_bins=zl_bins_comb,tracer='galaxy')
+    print(p,'done',time.time()-t0)
     return models,covs,x_vars,x_grad    
 
 
 def fish_shear_model(p='s_m_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,do_log=False,
                       z_bins_kwargs0={}):
-    
+    t0=time.time()
     z_bins_kwargs=copy.deepcopy(z_bins_kwargs0)#.copy()
     zs_bins=z_bins_kwargs['zs_bins']
     zs_bins_missed=z_bins_kwargs['zs_bins_missed']
@@ -487,7 +509,7 @@ def fish_shear_model(p='s_m_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,
     
     print(p,x_vars)
     for i in np.arange(Nx):
-        z_bins_kwargs=copy.deepcopy(z_bins_kwargs0)
+#         z_bins_kwargs=copy.deepcopy(z_bins_kwargs0)
         zs_bins=z_bins_kwargs['zs_bins']
         zl_bins=z_bins_kwargs['zl_bins']
         zlD_bins=z_bins_kwargs['zlD_bins']
@@ -499,17 +521,20 @@ def fish_shear_model(p='s_m_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,
         else:
             zs_bins[bin_indx][p_n]=x_vars[i]
             
-        zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)        
-        kappa_class.update_zbins(z_bins=zs_bins_comb,tracer='shear')
-        kappa_class.update_zbins(z_bins=zl_bins_comb,tracer='galaxy')
-        cl0G=kappa_class.cl_tomo(stack_corr_indxs=z_bins_kwargs0['corr_indxs'])
-        cl_t=cl0G['stack'].compute()
-        models[i]=cl_t['pcl_b']
-        covs[i]=cl_t['cov']
+        zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)     
+        z_bins={'shear':zs_bins_comb,'galaxy':zl_bins_comb}
+#         kappa_class.update_zbins(z_bins=zs_bins_comb,tracer='shear')
+#         kappa_class.update_zbins(z_bins=zl_bins_comb,tracer='galaxy')
+        cl0G=kappa_class.cl_tomo_short(stack_corr_indxs=z_bins_kwargs0['corr_indxs'],z_bins=z_bins)
+        models[i]=cl0G
+#         cl_t=cl0G['stack'].compute()
+#         models[i]=cl_t['pcl_b']
+#         covs[i]=cl_t['cov']
     
-    zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs0)        
-    kappa_class.update_zbins(z_bins=zs_bins_comb,tracer='shear')
-    kappa_class.update_zbins(z_bins=zl_bins_comb,tracer='galaxy')
+#     zs_bins_comb,zl_bins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs0)        
+#     kappa_class.update_zbins(z_bins=zs_bins_comb,tracer='shear')
+#     kappa_class.update_zbins(z_bins=zl_bins_comb,tracer='galaxy')
+    print(p,'done',time.time()-t0)
     return models,covs,x_vars,x_grad    
 
 
@@ -565,15 +590,15 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
         clS=cl0G['stack'].compute()
 #     cl_t=client.submit(cl0G['stack'])
     cl0=clS['pcl_b']
-    t2=time.time()
-    print('fisher_calc cl0G done',cl0G['cov'],t2-t1)
-#     cl_shear=delayed(kappa_class.stack_dat)(dat={'cov':cl0G['cov'],'pcl_b':cl0G['pseudo_cl_b'],'est':'pcl_b'},corrs=[corr_ll],
-#                                            corr_indxs=z_bins_kwargs['corr_indxs'])
-#     cl_shear=cl_shear.compute()
-# #     cl_t=client.submit(cl0G['stack'])
-#     t3=time.time()
-#     print('shear stack',t3-t1)
     
+    zk=['zs_bins','zl_bins','zlD_bins','zs_bins_missed','zs_bins_train','corr_indxs']
+    cc=[]
+    for k in z_bins_kwargs['corr_indxs'].keys():
+        cc+=z_bins_kwargs['corr_indxs'][k]
+    z_bins_kwargs2={k:z_bins_kwargs[k] for k in zk}
+    t2=time.time()
+    print('fisher_calc cl0G done',cl0G['cov'],t2-t1,len(cc))#get_size_pickle(kappa_class),get_size_pickle(z_bins_kwargs2))
+    del cc
     cosmo_fid=copy.deepcopy(kappa_class.Ang_PS.PS.cosmo_params)#.copy()
     cosmo_h=kappa_class.Ang_PS.PS.cosmo_h.clone()
     cov=clS['cov']
@@ -593,9 +618,12 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
     x_grads={}
     t=time.time()
     gc.disable()
+    outp={}
+    t0=time.time()
     for p in cosmo_params:
-        models[p],covs[p],x_vars[p],x_grads[p]=fish_cosmo_model(p=p,Nx=Nx,dx_max=dx_max,do_log=do_log,
-                                                     kappa_class=kappa_class,do_cov=do_cov,z_bins_kwargs=z_bins_kwargs)
+#         models[p],covs[p],x_vars[p],x_grads[p]=fish_cosmo_model(p=p,Nx=Nx,dx_max=dx_max,do_log=do_log,
+        outp[p]=delayed(fish_cosmo_model)(p=p,Nx=Nx,dx_max=dx_max,do_log=do_log,
+                                                     kappa_class=kappa_class,do_cov=do_cov,z_bins_kwargs=z_bins_kwargs2)
         t1=time.time()
         print(p,'time: ',t1-t)
         t=t1
@@ -603,9 +631,10 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
     gc.collect()
     gc.disable()
     for p in z_params:
-        models[p],covs[p],x_vars[p],x_grads[p]=fish_z_model(p=p,Nx=Nx,dx_max=dx_max,
+#         models[p],covs[p],x_vars[p],x_grads[p]=fish_z_model(p=p,Nx=Nx,dx_max=dx_max,
+        outp[p]=delayed(fish_z_model)(p=p,Nx=Nx,dx_max=dx_max,
                                                  kappa_class=kappa_class,
-                                                 do_cov=do_cov,z_bins_kwargs0=z_bins_kwargs)
+                                                 do_cov=do_cov,z_bins_kwargs0=z_bins_kwargs2)
         t1=time.time()
         print(p,'time: ',t1-t)
         t=t1
@@ -614,12 +643,13 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
     gc.disable()
 
     for p in galaxy_params:
-        models[p],covs[p],x_vars[p],x_grads[p]=fish_galaxy_model(p=p,Nx=Nx,dx_max=dx_max,
+#         models[p],covs[p],x_vars[p],x_grads[p]=fish_galaxy_model(p=p,Nx=Nx,dx_max=dx_max,
+        outp[p]=delayed(fish_galaxy_model)(p=p,Nx=Nx,dx_max=dx_max,
                                                  kappa_class=kappa_class,
-                                                 do_cov=do_cov,z_bins_kwargs0=z_bins_kwargs)
-        if models[p]=={}:
-            x=params_all!=p
-            params_all=params_all[x]
+                                                 do_cov=do_cov,z_bins_kwargs0=z_bins_kwargs2)
+#         if models[p]=={}:
+#             x=params_all!=p
+#             params_all=params_all[x]
         t1=time.time()
         print(p,'time: ',t1-t)
         t=t1
@@ -628,12 +658,13 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
     gc.disable()
     
     for p in shear_params:
-        models[p],covs[p],x_vars[p],x_grads[p]=fish_shear_model(p=p,Nx=Nx,dx_max=dx_max,
+#         models[p],covs[p],x_vars[p],x_grads[p]=fish_shear_model(p=p,Nx=Nx,dx_max=dx_max,
+        outp[p]=delayed(fish_shear_model)(p=p,Nx=Nx,dx_max=dx_max,
                                                  kappa_class=kappa_class,
-                                                 do_cov=do_cov,z_bins_kwargs0=z_bins_kwargs)
-        if models[p]=={}:
-            x=params_all!=p
-            params_all=params_all[x]
+                                                 do_cov=do_cov,z_bins_kwargs0=z_bins_kwargs2)
+#         if models[p]=={}:
+#             x=params_all!=p
+#             params_all=params_all[x]
         t1=time.time()
         print(p,'time: ',t1-t)
         t=t1
@@ -642,7 +673,8 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
     gc.disable()
 
     for p in baryon_params:
-        models[p],covs[p],x_vars[p],x_grads[p]=fish_baryon_model(p=p,Nx=Nx,dx_max=dx_max,
+#         models[p],covs[p],x_vars[p],x_grads[p]=
+        outp[p]=delayed(fish_baryon_model)(p=p,Nx=Nx,dx_max=dx_max,
                                                  kappa_class=kappa_class,clS=cl_shear,cl0=cl0,
                                                  do_cov=do_cov,NmarQ=baryon_PCA_nQ)
         t1=time.time()
@@ -653,8 +685,16 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
     
     ndim=len(params_all)
     print(ndim,params_all)
-    
+    outp=client.compute(outp).result()
+    print(p,'all done time: ',time.time()-t0)
+    params_missing=[]
     for p in params_all:
+        models[p],covs[p],x_vars[p],x_grads[p]=outp[p]
+        if models[p]=={}:
+#             x=params_all!=p
+#             params_all=params_all[x]
+            params_missing+=[p]
+            continue
         model_derivs[p]=np.gradient(np.array([models[p][i] for i in np.arange(Nx)]),axis=0).T
         model_derivs[p]/=x_grads[p]
         model_derivs[p]=model_derivs[p][:,np.int(Nx/2)]
@@ -668,6 +708,11 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
             cov_derivs[p]/=x_grads[p]
 #             print(cov_derivs[p].shape,x_grad.shape)
             cov_derivs[p]=cov_derivs[p][:,:,np.int(Nx/2)]
+    
+    for p in params_missing:
+        x=params_all!=p
+        params_all=params_all[x]
+    ndim=len(params_all)
     
     if sparse_cov:
         cov=cov.todense()
@@ -689,6 +734,7 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
     out={}
     out['cov_p_inv']=np.copy(cov_p_inv)
     out['params_all']=params_all
+    out['params_missing']=params_missing
     if priors is not None:
         out=fish_apply_priors(fish=out,priors=priors)
 #         i2=0
@@ -1261,9 +1307,7 @@ if use_window:
 
 cosmo_fid=kappa_class.Ang_PS.PS.cosmo_params.copy()
 
-cosmo_params=np.atleast_1d(['Ase9','Om','w','wa'])
-# if test:
-#     cosmo_params=np.atleast_1d(['Ase9']) #,'Om','w','wa'])
+cosmo_params=np.atleast_1d(['Ase9'])#,'Om','w','wa'])
 
 baryon_params=['Q{i}'.format(i=i) for i in np.arange(bary_nQ)]
 pz_params=['pz_b_s_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['zs_bins']['n_bins'])]

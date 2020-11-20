@@ -153,6 +153,10 @@ class binning():
         return mat_int
 
 
+def bin_1d(xi=[],bin_utils=None):
+    xi_b=np.dot(xi*bin_utils['r_dr'],bin_utils['binning_mat'])
+    xi_b/=bin_utils['norm']
+    return xi_b
 
 
 #more basic binning code for testing.
