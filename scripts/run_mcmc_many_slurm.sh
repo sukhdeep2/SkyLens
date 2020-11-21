@@ -16,8 +16,9 @@ ID=$SLURM_ARRAY_JOB_ID
 total_job=$SLURM_ARRAY_TASK_COUNT
 job_id=$SLURM_ARRAY_TASK_ID
 
-home='/verafs/scratch/phy200040p/sukhdeep/project/skylens/scripts/'
-
+#home='/verafs/scratch/phy200040p/sukhdeep/project/skylens/scripts/'
+home='/media/data/repos/skylens/scripts/'
+temp_home=$home'../temp/'
 cd $home
 
 fix_cosmos=( 1 0 )
@@ -25,7 +26,7 @@ do_xis=( 0 1 )
 bin_ls=( 1 0 )
 
 
-tmp_file="/verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/""$ID""$job_id"".tmp"
+tmp_file=$temp_home"/dask/""$ID""$job_id"".tmp"
 
 echo 0 > $tmp_file
 
@@ -50,7 +51,7 @@ do
                 exit
             fi
 #                         ./dask-vera2.sh &
-               CSCRATCH='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/scheduler_'${SLURM_ARRAY_JOB_ID}${SLURM_ARRAY_TASK_ID}'/'
+               CSCRATCH=$temp_home'/dask/scheduler_'${SLURM_ARRAY_JOB_ID}${SLURM_ARRAY_TASK_ID}'/'
                rm -rf $CSCRATCH
                mkdir $CSCRATCH
                killall python
@@ -69,7 +70,7 @@ do
                 echo '==============================================================' #>>$log_file
                 echo 'begining::' $(date) #>>$log_file 
 
-                python -Xfaulthandler MCMC_emcee.py  --do_xi=$do_xi --bin_l=$bin_l --fix_cosmo=$fix_cosmo --dask_dir=$CSCRATCH #--scheduler=$SCHEFILE #|cat>>$log_file
+                python3 -Xfaulthandler MCMC_emcee.py  --do_xi=$do_xi --bin_l=$bin_l --fix_cosmo=$fix_cosmo --dask_dir=$CSCRATCH #--scheduler=$SCHEFILE #|cat>>$log_file
 
                 echo 'Finished::' $(date) #>>$log_file                                                                                                                                                                    
                 echo '================================================' #>>$log_file          

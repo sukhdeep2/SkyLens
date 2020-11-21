@@ -374,7 +374,8 @@ outp['zbins']=zs_bin1
 outp['cov_inv']=cov_inv
 outp['params_order']=params_order
 
-file_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/imaster/'
+#file_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/imaster/'
+file_home='/media/data/repos/skylens/temp/tests/imaster/'
 if do_xi:
     fname_out='xi_{nz}_bl{bl}_bth{bth}_nw{nw}_ns{ns}_camb{fc}.pkl'.format(nz=zs_bin1['n_bins'],bl=np.int(use_binned_l),
                                                                           bth=np.int(use_binned_theta),ns=nsteps,nw=nwalkers,fc=int(fix_cosmo))
