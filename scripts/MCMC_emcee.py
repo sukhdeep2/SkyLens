@@ -14,7 +14,7 @@ from dask.distributed import Client
 
 import argparse
 
-test_run=True
+test_run=False
 parser = argparse.ArgumentParser()
 parser.add_argument("--do_xi", "-do_xi",type=int, help="")
 parser.add_argument("--fix_cosmo", "-fc",type=int, help="use unit window")
@@ -64,7 +64,7 @@ worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_
 if Scheduler_file is None:
 #     dask_initialize(nthreads=27,local_directory=dask_dir)
 #     client = Client()
-    LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu,
+    LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu*2,
                     local_directory=dask_dir, **worker_kwargs,
                     #scheduler_port=12234,
                     dashboard_address=8801
@@ -79,7 +79,7 @@ scheduler_info=client.scheduler_info()
 scheduler_info['file']=Scheduler_file
 print('client: ',client)#,dask_dir,scheduler_info)
 
-lock = Lock(name="Why_Camb_Why",client=client)
+lock = None #Lock(name="Why_Camb_Why",client=client)
 #We get segmentation fault if camb is not under lock and multiple instances are called (tested on single node).
 # Why camb is called, multiple instances run, but they all rely on same underlying fortran objects and there are race conditions.
 # I tried pickling camb, but Camb cannot be pickled because it's a fortran wrapper and pickle doesn't really know what to do with it. deepcopy throws same error too.
@@ -178,21 +178,21 @@ else:
 
 print('Got data and cov')
 Win=kappa0.Win.Win
-del kappa0
+# del kappa0
 do_cov=False
-
-kappa0=Skylens(zs_bins=zs_bin,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zs_bin,
-               use_window=use_window,Tri_cov=Tri_cov,
-               use_binned_l=use_binned_l,wigner_files=wigner_files,
-               SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=0.35,
-               store_win=store_win,window_lmax=window_lmax,
-               sparse_cov=True,corrs=corrs,
-               do_xi=do_xi,bin_xi=bin_xi,theta_bins=th_bins,WT=WT,
-                use_binned_theta=use_binned_theta,
-                nz_PS=100,do_pseudo_cl=do_pseudo_cl,xi_win_approx=True,
-                xi_SN_analytical=xi_SN_analytical,power_spectra_kwargs=power_spectra_kwargs,
-               Win=Win,scheduler_info=scheduler_info
-               )
+kappa0.do_cov=False
+# kappa0=Skylens(zs_bins=zs_bin,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zs_bin,
+#                use_window=use_window,Tri_cov=Tri_cov,
+#                use_binned_l=use_binned_l,wigner_files=wigner_files,
+#                SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=0.35,
+#                store_win=store_win,window_lmax=window_lmax,
+#                sparse_cov=True,corrs=corrs,
+#                do_xi=do_xi,bin_xi=bin_xi,theta_bins=th_bins,WT=WT,
+#                 use_binned_theta=use_binned_theta,
+#                 nz_PS=100,do_pseudo_cl=do_pseudo_cl,xi_win_approx=True,
+#                 xi_SN_analytical=xi_SN_analytical,power_spectra_kwargs=power_spectra_kwargs,
+#                Win=Win,scheduler_info=scheduler_info
+#                )
 
 cosmo_fid=kappa0.Ang_PS.PS.cosmo_params
 
@@ -219,8 +219,7 @@ for k in del_k:
             del zs_bin1[i][k]
 
 def get_priors(params):#assume flat priors for now
-    x=np.any(params>priors_max,axis=1)
-    x*=np.any(params<priors_min,axis=1)
+    x=np.logical_or(np.any(params>priors_max,axis=1),np.any(params<priors_min,axis=1))
     p=np.zeros(len(params))
     p[x]=-np.inf
     return p
@@ -232,17 +231,14 @@ def assign_zparams(zbins={},p_name='',p_value=None):
     zbins[bin_indx][p_n]=p_value
     return zbins
 
-def get_model(params,data,kappa0,z_bins,log_prior,pk_lock,indx):
-#     t1=time.time()
-    print('get_model',params,log_prior)
-    if not np.isfinite(log_prior):
-        return np.zeros_like(data)
-#     kappa=copy.deepcopy(kappa0)
+def get_Ang_PS(params,data,kappa0,z_bins,log_prior,pk_lock,indx):
+#     print('get_Ang_PS',indx,params,log_prior)
     kappa=kappa0
     cosmo_params=copy.deepcopy(cosmo_fid)
     Ang_PS=copy.deepcopy(kappa.Ang_PS)
+    if not np.isfinite(log_prior):
+        return cosmo_params,Ang_PS,z_bins
     zbins=copy.deepcopy(z_bins)
-#     t2=time.time()
     i=0
     for p in params_order:
         if cosmo_params.get(p) is not None:
@@ -251,11 +247,17 @@ def get_model(params,data,kappa0,z_bins,log_prior,pk_lock,indx):
             zbins=assign_zparams(zbins=zbins,p_name=p,p_value=params[i])
         i+=1
     zbins={'galaxy':zbins,'shear':zbins}
-#     t3=time.time()
-    model=kappa.tomo_short(cosmo_params=cosmo_params,z_bins=zbins,Ang_PS=Ang_PS,pk_lock=pk_lock)
-#     print('get_model',indx,time.time()-t1,t2-t1,t3-t2)
-    return model
+    Ang_PS.angular_power_z(cosmo_params=cosmo_params)
+#     model=kappa.tomo_short(cosmo_params=cosmo_params,z_bins=zbins,Ang_PS=Ang_PS,pk_lock=pk_lock)
+    return cosmo_params,Ang_PS,zbins
 
+def get_model(params,data,kappa0,z_bins,log_prior,indx,Ang_PS):
+#     print('get_model',indx,params,log_prior)
+    if not np.isfinite(log_prior):
+        return np.zeros_like(data)
+    model=kappa0.tomo_short(cosmo_params=params,z_bins=z_bins,Ang_PS=Ang_PS)#,pk_lock=pk_lock)
+    return model
+    
 def chi_sq(params,data,cov_inv,kappa0,z_bins,pk_lock):
     t1=time.time()
     params=np.atleast_2d(params)
@@ -267,10 +269,15 @@ def chi_sq(params,data,cov_inv,kappa0,z_bins,pk_lock):
 #     print(models.shape)
     models={}
     for i in np.arange(n_params):
-        models[i]=delayed(get_model)(params[i],data,kappa0,z_bins,log_priors[i],pk_lock,i)
+        cp,ap,zb=get_Ang_PS(params[i],data,kappa0,z_bins,log_priors[i],pk_lock,i)
+        models[i]=delayed(get_model)(cp,data,kappa0,zb,log_priors[i],i,ap)#pk_lock
+        models[i]=client.compute(models[i])
+    models=np.array([models[i].result() for i in np.arange(n_params)])
+    print(models.shape)
 #         models[i]=get_model(params[i],data,kappa0,z_bins,log_priors[i],i)
-    models=client.compute(models).result()
-    models=np.array(list(models.values())) #fixme: check to ensure ordering
+#     models=client.gather(models).result()
+#     print(models)
+#     models=np.array(list(models.values())) #fixme: check to ensure ordering
     loss=data-models
     chisq=np.zeros(n_params)-np.inf
     for i in np.arange(n_params):
