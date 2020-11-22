@@ -30,6 +30,7 @@ class window_utils():
                 cov_indxs=None,client=None,scheduler_info=None,wigner_step=None,
                  kappa_b_xi=None,bin_theta_window=False,
                 kappa_class0=None,kappa_class_b=None,bin_window=True,do_pseudo_cl=True):
+
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.binning=binning()
         
@@ -37,7 +38,6 @@ class window_utils():
         nwl=len(self.window_l)*1.0
         
         self.MF=(2*self.l[:,None]+1)# this is multiplied with coupling matrices, before binning.
-
 
         self.step=wigner_step
         if step is None:
@@ -51,7 +51,7 @@ class window_utils():
         self.c_ell0=None
         self.c_ell_b=None
 #         self.xi_bin_utils=kappa_class0.xi_bin_utils
-        del self.kappa_class0,self.kappa_class_b,self.kappa_b_xi#,self.z_bins
+        del self.kappa_class0,self.kappa_class_b,self.kappa_b_xi,self.z_bins
         if bin_window:
             self.binnings=binning()
             self.cl_bin_utils=kappa_class0.cl_bin_utils
@@ -68,6 +68,8 @@ class window_utils():
         if bin_theta_window and self.do_xi:
             self.xi0=kappa_class0.xi_tomo()['xi']
             self.xi_b=kappa_b_xi.xi_tomo()['xi']
+        if self.Win is None and self.use_window:
+            self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=None,z_bins=z_bins)
         if self.Win is None and self.use_window and self.do_pseudo_cl: #pseudo_cl window
             if self.do_xi:
                 print('Warning: window for xi is different from cl.')
@@ -77,21 +79,37 @@ class window_utils():
             else:
                 self.set_window_graph(corrs=self.corrs,corr_indxs=self.corr_indxs,client=None)
         elif self.Win is None and self.do_xi and xi_win_approx and self.use_window:
-            self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=None)
             self.Win=delayed(self.combine_coupling_xi_cov)(self.Win_cl,self.Win_cov)
-            print('Got xi win graph',self.Win,self.Win_cl,self.Win_cov)
+            print('Got xi win graph')
             if self.store_win:
                 if client is None and self.scheduler_info is None:
                     client=get_client()
                 elif client is None and self.scheduler_info is not None:
                     client=get_client(address=self.scheduler_info['address'])
                 self.Win=client.compute(self.Win).result()
-#                 client.cancel(self.Win_cl)
-#                 client.cancel(self.Win_cov)
-#                 del self.Win_cl,self.Win_cov
+
+                client.cancel(self.Win_cl)
+                client.cancel(self.Win_cov)
+                del self.Win_cl,self.Win_cov
                 
 #             self.cleanup()
+        self.scatter_win()
 
+    def scatter_win(self):
+        if self.Win is None or not self.store_win or not isinstance(self.Win, dict):
+            return 
+        if self.scheduler_info is None:
+            client=get_client()
+        else:
+            client=get_client(address=self.scheduler_info['address'])
+        for k1 in self.Win.keys(): #cl or cov
+            if not isinstance(self.Win[k1], dict):
+                continue
+            for k2 in self.Win[k1].keys(): #corr
+#                 for k3 in self.Win[k1][k2].keys(): #indxs
+                    self.Win[k1][k2]=client.scatter(self.Win[k1][k2])#lowest level is automatically scattered
+        return 
+    
     def wig3j_step_read(self,m=0,lm=None):
         """
         wigner matrices are large. so we read them ste by step
@@ -238,7 +256,7 @@ class window_utils():
         fsky=(~x).mean()
         return fsky,W#.astype('int16')
 
-    def get_window_power_cl(self,corr_indxs,c_ell0=None,c_ell_b=None):#corr={},indxs={}):
+    def get_window_power_cl(self,corr_indxs,c_ell0=None,c_ell_b=None,z_bin1=None,z_bin2=None):#corr={},indxs={}):
         """
         Get the cross power spectra of windows given two tracers.
         Note that noise and signal have different windows and power spectra for both 
@@ -262,8 +280,8 @@ class window_utils():
             W_pm=0 #for xi estimators, there is no +/-. Note that this will result in wrong thing for pseudo-C_ell.
                     #FIXME: hence pseudo-C_ell and xi together are not supported right now
 
-        z_bin1=self.z_bins[corr[0]][indxs[0]]
-        z_bin2=self.z_bins[corr[1]][indxs[1]]
+#         z_bin1=self.z_bins[corr[0]][indxs[0]]
+#         z_bin2=self.z_bins[corr[1]][indxs[1]]
 
         win[12]={} #to keep some naming uniformity with the covariance window
         win[12]['cl']=hp.anafast(map1=z_bin1['window'],map2=z_bin2['window'],
@@ -476,7 +494,7 @@ class window_utils():
         else:
             return 0
 
-    def get_window_power_cov(self,corr_indxs,c_ell0=None,c_ell_b=None,xi0=None,xi_b=None):#corr1=None,corr2=None,indxs1=None,indxs2=None):
+    def get_window_power_cov(self,corr_indxs,c_ell0=None,c_ell_b=None,xi0=None,xi_b=None,z_bins={}):#corr1=None,corr2=None,indxs1=None,indxs2=None):
         """
         Compute window power spectra what will be used in the covariance calculations. 
         For covariances, we have four windows. Pairs of them are first multiplied together and
@@ -540,11 +558,15 @@ class window_utils():
         W_pm={} #W +/- factors based on spin
         W_pm[1324]=get_window_spins(cov_indxs=[(0,2),(1,3)])
         W_pm[1423]=get_window_spins(cov_indxs=[(0,3),(1,2)])
-
-        z_bin1=self.z_bins[corr[0]][indxs[0]]
-        z_bin2=self.z_bins[corr[1]][indxs[1]]
-        z_bin3=self.z_bins[corr[2]][indxs[2]]
-        z_bin4=self.z_bins[corr[3]][indxs[3]]
+        
+        z_bin1=z_bins[0]
+        z_bin2=z_bins[1]
+        z_bin3=z_bins[2]
+        z_bin4=z_bins[3]
+#         z_bin1=self.z_bins[corr[0]][indxs[0]]
+#         z_bin2=self.z_bins[corr[1]][indxs[1]]
+#         z_bin3=self.z_bins[corr[2]][indxs[2]]
+#         z_bin4=self.z_bins[corr[3]][indxs[3]]
 
         win[1324]={}
         win[1423]={}
@@ -914,7 +936,7 @@ class window_utils():
         return result0 #{corr_indxs:result0}
 
     
-    def set_window_cl(self,corrs=None,corr_indxs=None,client=None,npartitions=100,use_bag=True):
+    def set_window_cl(self,corrs=None,corr_indxs=None,client=None,npartitions=100,use_bag=True,z_bins=None):
         """
         This function sets the graph for computing power spectra of windows 
         for both C_ell and covariance matrices.
@@ -929,10 +951,13 @@ class window_utils():
 #         yy2=pickle.dumps(self.get_window_power_cov)
         print('cl bags doing',time.time()-t1, get_size_pickle(self.get_window_power_cov))#,get_size_pickle(self.z_bins))
         if use_bag:
-            self.Win_cl=self.cl_bag.map(self.get_window_power_cl,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)#this can be slow... https://stackoverflow.com/questions/64559993/what-happens-during-dask-client-map-call
+            z_bin1=dask.bag.from_sequence( [z_bins[ck[0]][ck[2]] for ck in self.cl_keys ],npartitions=npartitions)
+            z_bin2=dask.bag.from_sequence( [z_bins[ck[1]][ck[3]] for ck in self.cl_keys ],npartitions=npartitions)
+            self.Win_cl=self.cl_bag.map(self.get_window_power_cl,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,z_bin1=z_bin1,z_bin2=z_bin2,)
+#this can be slow... https://stackoverflow.com/questions/64559993/what-happens-during-dask-client-map-call
         else:
-            self.Win_cl=[delayed(self.get_window_power_cl)(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b) for ck in self.cl_keys]
-        print('cl bags done',self.Win_cl,time.time()-t1)
+            self.Win_cl=[delayed(self.get_window_power_cl)(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,z_bin1=z_bins[ck[0]][ck[2]],z_bin2=z_bins[ck[1]][ck[3]]) for ck in self.cl_keys]
+        print('cl bags done',time.time()-t1)
         self.cov_keys=[]
         self.Win_cov=None
         if self.do_cov:
@@ -940,17 +965,33 @@ class window_utils():
                 self.cov_keys+=[corr+indx for indx in self.cov_indxs[corr]]
                 self.cov_bag=dask.bag.from_sequence(self.cov_keys,npartitions=npartitions)
                 if use_bag:
-                    self.Win_cov=self.cov_bag.map(self.get_window_power_cov,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,xi0=self.xi0,xi_b=self.xi_b)
+                    z_bin4=dask.bag.from_sequence([ {0:z_bins[ck[0]][ck[4]],
+                              1:z_bins[ck[1]][ck[5]],
+                              2:z_bins[ck[2]][ck[6]],
+                              3:z_bins[ck[3]][ck[7]]}
+                            for ck in self.cov_keys],npartitions=npartitions)
+                    self.Win_cov=self.cov_bag.map(self.get_window_power_cov,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,xi0=self.xi0,xi_b=self.xi_b,
+                                                 z_bins=z_bin4)
                 else:
-                    self.Win_cov=[delayed(self.get_window_power_cov)(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,xi0=self.xi0,xi_b=self.xi_b) for ck in self.cov_keys]
+                    self.Win_cov=[delayed(self.get_window_power_cov)(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,xi0=self.xi0,xi_b=self.xi_b,
+                                                                    z_bins={0:z_bins[ck[0]][ck[4]],
+                                                                            1:z_bins[ck[1]][ck[5]],
+                                                                            2:z_bins[ck[2]][ck[6]],
+                                                                            3:z_bins[ck[3]][ck[7]]},
+                                                                    ) for ck in self.cov_keys]
                 # ^ is super slow for very large number of covariances. ^^ helps because dask effectively bunches up delayed.
                 # ^ is better for smaller computes. ^^ for very large ones.
                 # FIXME: We can probably implement custom partitions, bunching up covariances from same tracers to make things more efficient.
                 # Custom partitions will likely require serialization of functions, so unlikely to help with dask map issue.
         print('cl+cov bags done',len(self.cl_keys),len(self.cov_keys),time.time()-t1)
-        if self.store_win and client is not None:
-           self.Win_cl=client.persist(self.Win_cl)
-           if self.do_cov:
+        if self.store_win:
+            if client is None: #and client is not None:
+                if self.scheduler_info is not None:
+                    client=get_client(address=self.scheduler_info['address'])
+                else:
+                    return
+            self.Win_cl=client.persist(self.Win_cl)
+            if self.do_cov:
                self.Win_cov=client.persist(self.Win_cov)
 
     def combine_coupling_cl_cov(self,win_cl_lm,win_cov_lm):
@@ -980,7 +1021,7 @@ class window_utils():
                 client=get_client() #this seems to be the correct thing to do
         print('setting windows, coupling matrices ',client,client.scheduler_info())
         
-        self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
+#         self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client)
         print('got window cls, now to coupling matrices.',len(self.cl_keys),len(self.cov_keys),self.Win_cl )
         
         self.Win={'cl':{}}
@@ -1022,7 +1063,9 @@ class window_utils():
 
                    if self.do_cov:
                        self.Win_cov_lm[lm]=self.Win_lm[lm]['cov']
-
+                    
+                   client.cancel(self.wig_3j_2[lm])
+                   client.cancel(self.mf_pm[lm])
                    del self.wig_3j_2[lm]
                    del self.mf_pm[lm]
                    gc.collect()
@@ -1031,10 +1074,10 @@ class window_utils():
             client.cancel(self.Win_cov)# persists need to be cleared from memory as well. Otherwise client can hang when restarting, exiting.
 
             self.Win=delayed(self.combine_coupling_cl_cov)(self.Win_cl_lm,self.Win_cov_lm)
-            self.Win_cl=delayed(self.combine_coupling_cl)(self.Win_cl_lm)
+#             self.Win_cl=delayed(self.combine_coupling_cl)(self.Win_cl_lm)
             
-            if self.do_cov:
-                self.Win_cov=delayed(self.combine_coupling_cov)(self.Win_cov_lm)
+#             if self.do_cov:
+#                 self.Win_cov=delayed(self.combine_coupling_cov)(self.Win_cov_lm)
             print('done combine lm graph',time.time()-t1)
 
         if self.store_win:
@@ -1069,7 +1112,7 @@ class window_utils():
         """
         print('setting windows graph only, coupling matrices ',client)
         
-        self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client,npartitions=npartitions,use_bag=False)
+#         self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=client,npartitions=npartitions,use_bag=False)
         print('got window cls, now to coupling matrices.',len(self.cl_keys),len(self.cov_keys))#,self.Win_cl )
         
         self.Win={'cl':{}}

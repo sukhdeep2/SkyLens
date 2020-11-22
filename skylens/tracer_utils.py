@@ -12,6 +12,7 @@ from scipy.interpolate import interp1d
 from scipy.integrate import quad as scipy_int1d
 from scipy.special import loggamma
 from dask import delayed
+from dask.distributed import Client,get_client
 
 d2r=np.pi/180.
 c=c.to(u.km/u.second)
@@ -20,7 +21,7 @@ H100=100*(u.km/u.second/u.Mpc)
 
 class Tracer_utils():
     def __init__(self,zs_bins=None,zg_bins=None,zk_bins=None,logger=None,l=None,
-                ):
+                scheduler_info=None):
         self.logger=logger
         self.l=l
         #Gravitaional const to get Rho crit in right units
@@ -28,7 +29,7 @@ class Tracer_utils():
         self.G2*=8*np.pi/3.
     
         self.SN={}
-
+        self.scheduler_info=scheduler_info
         self.n_bins={}
         self.z_bins={}
         self.spin={'galaxy':0,'kappa':0,'shear':2}
@@ -37,9 +38,10 @@ class Tracer_utils():
         self.set_zbins(z_bins=zg_bins,tracer='galaxy')
         self.set_zbins(z_bins=zk_bins,tracer='kappa')
         self.tracers=list(self.z_bins.keys())
-        self.set_z_window()
         if not self.tracers==[]:
             self.set_z_PS_max()
+        self.set_z_window()
+        self.scatter_z_bins()
         
     def set_z_PS_max(self):
         """
@@ -58,8 +60,21 @@ class Tracer_utils():
             self.n_bins[tracer]=self.z_bins[tracer]['n_bins']
             self.set_noise(tracer=tracer)
     
+    def scatter_z_bins(self):
+        if self.scheduler_info is None:
+            return
+        client=get_client(address=self.scheduler_info['address'])
+        for tracer in self.tracers:
+            nb=self.z_bins[tracer]['n_bins']
+            self.z_bins[tracer]=client.scatter(self.z_bins[tracer])
+            self.z_bins[tracer]['n_bins']=nb
+#             for i in np.arange(self.n_bins[tracer]):
+#                 self.z_bins[tracer][i]=client.scatter(self.z_bins[tracer][i])
+        
     def set_z_window(self,):
         self.z_win={}
+        if self.scheduler_info is not None:
+            client=get_client(address=self.scheduler_info['address'])
         for tracer in self.tracers:
             self.z_win[tracer]={}
             for i in np.arange(self.n_bins[tracer]):
@@ -67,10 +82,16 @@ class Tracer_utils():
                 for k in self.z_bins[tracer][i].keys():
                     if 'window' in k:
                         self.z_win[tracer][i][k]=self.z_bins[tracer][i][k]
+                if self.scheduler_info is not None:
+                    self.z_win[tracer][i]=client.scatter(self.z_win[tracer][i])
                 for k in self.z_win[tracer][i].keys():
                     del self.z_bins[tracer][i][k]
                     
     def clean_z_window(self,):
+        if self.scheduler_info is not None:
+            client=get_client(address=self.scheduler_info['address'])
+            for tracer in self.tracers:
+                client.cancel(self.z_win[tracer])
         self.z_win=None
 #         del self.z_win
         
@@ -84,7 +105,6 @@ class Tracer_utils():
         z_bins=self.get_z_bins(tracer=tracer)
         n_bins=z_bins['n_bins']
         self.SN[tracer]=np.zeros((len(self.l),n_bins,n_bins)) #if self.do_cov else None
-
         for i in np.arange(n_bins):
             self.SN[tracer][:,i,i]+=z_bins['SN'][tracer][:,i,i]
     
@@ -97,11 +117,13 @@ class Tracer_utils():
                 self.z_bins[tracer][i]['kernel']=None
                 self.z_bins[tracer][i]['kernel_int']=None
 
-    def set_kernels(self,cosmo_h=None,zl=None,tracer=None,z_bins=None,delayed_compute=True):
+    def set_kernels(self,Ang_PS=None,tracer=None,z_bins=None,delayed_compute=True):
         """
         Set the tracer kernels. This includes the local kernel, e.g. galaxy density, IA and also the lensing 
         kernel. Galaxies have magnification bias.
         """
+        cosmo_h=Ang_PS.PS.cosmo_h
+        zl=Ang_PS.z
         if z_bins is None:
             z_bins=self.get_z_bins(tracer=tracer)
         n_bins=z_bins['n_bins']
@@ -119,11 +141,12 @@ def set_kernel(l,cosmo_h=None,zl=None,tracer=None,z_bin=None):
     Set the tracer kernels. This includes the local kernel, e.g. galaxy density, IA and also the lensing 
     kernel. Galaxies have magnification bias.
     """
+#     print('set_kernel')
     kernel={}
     kernel=set_lensing_kernel(cosmo_h=cosmo_h,zl=zl,tracer=tracer,z_bin=z_bin,l=l,kernel=kernel)
     kernel=set_galaxy_kernel(cosmo_h=cosmo_h,zl=zl,tracer=tracer,z_bin=z_bin,l=l,kernel=kernel)
     kernel['kernel_int']=kernel['Gkernel_int']+kernel['gkernel_int']
-    del kernel['Gkernel_int'],kernel['gkernel_int']
+#     del kernel['Gkernel_int'],kernel['gkernel_int']
     return kernel
 
 def Rho_crit(cosmo_h=None):

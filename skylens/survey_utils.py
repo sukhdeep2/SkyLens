@@ -97,8 +97,8 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
     cl_map0=hp.ma(np.ones(npix0))
     cl_map0[~mask]=hp.UNSEEN
 
-    zs_bins['window0']=cl_map0
-    zs_bins['window0_alm']=hp.map2alm(cl_map0)
+#     zs_bins['mask']=cl_map0
+#     zs_bins['window0_alm']=hp.map2alm(cl_map0)
 
     if scheduler_info is None:
         client=get_client()
@@ -275,7 +275,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
 
 
     zs_bins['n_bins']=nz_bins #easy to remember the counts
-    zs_bins['z_lens_kernel']=zl_kernel
+#     zs_bins['z_lens_kernel']=zl_kernel
     zs_bins['zmax']=zmax
     zs_bins['zp']=zp
     zs_bins['zs']=zs

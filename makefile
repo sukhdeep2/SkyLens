@@ -1,3 +1,7 @@
+user:
+	make clean
+	python setup.py install --user
+	make clean
 install:
 	make clean
 	python setup.py install

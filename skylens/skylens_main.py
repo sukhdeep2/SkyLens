@@ -59,7 +59,7 @@ class Skylens():
 
         if tracer_utils is None:
             self.tracer_utils=Tracer_utils(zs_bins=zs_bins,zg_bins=zg_bins,zk_bins=zk_bins,
-                                            logger=self.logger,l=self.l)
+                                            logger=self.logger,l=self.l,scheduler_info=scheduler_info)
 
         self.set_corr_indxs(corr_indxs=corr_indxs,stack_indxs=stack_indxs)
         
@@ -75,9 +75,13 @@ class Skylens():
         if cov_utils is None:
             self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,
                                             do_xi=self.do_xi,xi_SN_analytical=xi_SN_analytical,
-                                            do_sample_variance=do_sample_variance,
+                                            do_sample_variance=do_sample_variance,WT=WT,
                                             use_window=use_window,use_binned_l=self.use_binned_l,
-                                            window_l=self.window_l)
+                                            window_l=self.window_l,use_binned_theta=self.use_binned_theta,
+                                            do_cov=do_cov,SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,
+                                            Tri_cov=Tri_cov,sparse_cov=sparse_cov,bin_cl=bin_cl,
+                                            xi_win_approx=xi_win_approx,do_pseudo_cl=do_pseudo_cl,
+                                           cl_bin_utils=self.cl_bin_utils,xi_bin_utils=self.xi_bin_utils,)
 
         if Ang_PS is None:
             self.Ang_PS=Angular_power_spectra(
@@ -89,7 +93,6 @@ class Skylens():
                         #FIXME: Need a dict for these args
         self.set_cl_funcs()
         
-        self.Win={}
         if self.do_xi and not self.xi_win_approx: #FIXME: Since the `aprrox' is actually the correct way, change the notation.
             self.do_pseudo_cl=True #we will use pseudo_cl transform to get correlation functions.
 
@@ -103,16 +106,17 @@ class Skylens():
                         wigner_step=wigner_step,
                         xi_bin_utils=self.xi_bin_utils,store_win=store_win,wigner_files=wigner_files,
                         bin_window=self.use_binned_l,bin_theta_window=self.use_binned_theta)
-        self.set_WT_binned()
         self.bin_window=self.Win.bin_window
+        win=self.Win.Win
+        del self.Win.Win
+        self.Win=win
+        self.set_WT_binned()
         self.set_binned_measure(None,clean_up=True)
         
         if clean_tracer_window:
             self.tracer_utils.clean_z_window()
         
-        print('Window done. Size:',get_size_pickle(self.Win.Win))
-        if self.Tri_cov:
-            self.CTR=cov_matter_tri(k=self.l)
+        print('Window done. Size:',get_size_pickle(self.Win))
         self.clean_setup()
     
     def clean_setup(self):
@@ -205,6 +209,7 @@ class Skylens():
 
             self.kappa0=Skylens(**inp_args)  #to get unbinned c_ell and xi
 #             self.kappa0.bin_xi=False #we want to get xi_bin_utils
+
             inp_args2['l']=self.lb
             inp_args2['name']='S_b'
             inp_args2['l_bins']=None
@@ -297,25 +302,6 @@ class Skylens():
                                     len(corr1_indxs))] for j in np.arange(len(corr2_indxs))] for k in l]
                 self.cov_indxs[corr1+corr2]=cov_indxs_iter
 
-    def set_fsky(self,f_sky): #not used.. see cov_utils
-        """
-        We assume different tracers can have partial
-        overlap, in which case f_sky will be a dictionary with varying values for different two point correlations.
-        This function sets that dictionary if only single f_sky is passed.
-        """
-        self.f_sky=f_sky
-        if np.isscalar(self.f_sky): #this is dict because we allow for partial overlap between different tracers.
-            f_temp=np.copy(self.f_sky)
-            self.f_sky={}
-            for kk in self.corr_indxs.keys():
-#                 n_indx=len(self.corr_indxs[kk])
-                indxs=self.corr_indxs[kk]
-                self.f_sky[kk]={}
-                self.f_sky[kk[::-1]]={}
-                for idx in indxs:
-                    self.f_sky[kk][idx]=f_temp #*np.ones((n_indx,n_indx))
-                    self.f_sky[kk[::-1]][idx[::-1]]=f_temp
-
     def set_WT_spins(self):
         self.s1_s2s={}
         for tracer1 in self.tracer_utils.tracers:#zbin-indexs for cross correlations
@@ -333,14 +319,14 @@ class Skylens():
             return 
         WT=self.WT
         self.WT_binned={corr:{} for corr in self.corrs} #intialized later.
-        self.WT_binned_cov={corr:{} for corr in self.corrs}
+        self.cov_utils.WT_binned_cov={corr:{} for corr in self.corrs}
         if self.use_binned_theta:
             WT.set_binned_theta(theta_bins=self.theta_bins)
         if self.do_xi and (self.use_binned_l or self.use_binned_theta):
             for corr in self.corrs:
                 s1_s2s=self.s1_s2s[corr]
                 self.WT_binned[corr]={s1_s2s[im]:{} for im in np.arange(len(s1_s2s))}
-                self.WT_binned_cov[corr]={s1_s2s[im]:{} for im in np.arange(len(s1_s2s))}
+                self.cov_utils.WT_binned_cov[corr]={s1_s2s[im]:{} for im in np.arange(len(s1_s2s))}
                 for indxs in self.corr_indxs[corr]:    
                     cl0=self.c_ell0[corr][indxs].compute()
                     cl_b=self.c_ell_b[corr][indxs].compute()
@@ -348,7 +334,7 @@ class Skylens():
                         s1_s2=s1_s2s[im]
                         win_xi=None
                         if self.use_window and self.xi_win_approx:
-                            win_xi=self.Win.Win['cl'][corr][indxs]['xi']#this will not work for covariance
+                            win_xi=self.Win['cl'][corr][indxs]['xi']#this will not work for covariance
                         self.WT_binned[corr][s1_s2][indxs]=self.binning.bin_2d_WT(
                                                             wig_mat=self.WT.wig_d[s1_s2]*self.WT.grad_l*self.WT.norm,
                                                             wt0=cl0,wt_b=1./cl_b,bin_utils_cl=self.cl_bin_utils,
@@ -357,9 +343,9 @@ class Skylens():
                                                             use_binned_theta=self.use_binned_theta)
                         if self.do_cov:
                             if win_xi is None:
-                                self.WT_binned_cov[corr][s1_s2][indxs]=self.WT_binned[corr][s1_s2][indxs]
+                                self.cov_utils.WT_binned_cov[corr][s1_s2][indxs]=self.WT_binned[corr][s1_s2][indxs]
                             else:
-                                self.WT_binned_cov[corr][s1_s2][indxs]=self.binning.bin_2d_WT(
+                                self.cov_utils.WT_binned_cov[corr][s1_s2][indxs]=self.binning.bin_2d_WT(
                                                             wig_mat=self.WT.wig_d[s1_s2]*self.WT.grad_l*self.WT.norm,
                                                             wt0=cl0,wt_b=1./cl_b,bin_utils_cl=self.cl_bin_utils,
                                                             bin_utils_xi=self.xi_bin_utils[s1_s2],
@@ -407,120 +393,6 @@ class Skylens():
                 # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
         return cl
 
-    def cov_four_kernels(self,zs_indx=[],tracers=[]):
-        zs1=self.z_bins[tracers[0]][zs_indx[0]]
-        zs2=self.z_bins[tracers[1]][zs_indx[1]]
-        zs3=self.z_bins[tracers[2]][zs_indx[2]]
-        zs4=self.z_bins[tracers[3]][zs_indx[3]]
-#                 sig_cL=zs1['kernel_int']*zs2['kernel_int']*zs3['kernel_int']*zs4['kernel_int']
-        sig_cL=zs1['Gkernel_int']*zs2['Gkernel_int']*zs3['Gkernel_int']*zs4['Gkernel_int']#Only use lensing kernel... not implemented for galaxies (galaxies have magnification, which is included)
-        sig_cL*=self.Ang_PS.clz['dchi']
-        return sig_cL
-    
-    def cl_cov_connected(self,zs_indx,cls=None, tracers=[],Win_cov=None,Win_cl=None):
-        cov={}
-        cov['SSC']=0
-        cov['Tri']=0
-        Win=None
-        if Win_cov is not None:
-            Win=Win_cov#[zs_indx]
-
-        if self.Tri_cov or self.SSV_cov:
-            sig_cL=self.cov_four_kernels(zs_indx=zs_indx,tracers=tracers)
-
-        if self.SSV_cov :
-            clz=self.Ang_PS.clz
-            sigma_win=self.cov_utils.sigma_win_calc(clz=clz,Win=Win,tracers=tracers,zs_indx=zs_indx)
-
-            clr=self.Ang_PS.clz['clsR']
-            if self.tidal_SSV_cov:
-                clr=self.Ang_PS.clz['clsR']+ self.Ang_PS.clz['clsRK']/6.
-
-            sig_F=np.sqrt(sig_cL*sigma_win) #kernel is function of l as well due to spin factors
-            clr=clr*sig_F.T
-            cov['SSC']=np.dot(clr.T,clr)
-
-        if self.Tri_cov:
-            cov['Tri']=self.CTR.cov_tri_zkernel(P=self.Ang_PS.clz['cls'],z_kernel=sig_cL/self.Ang_PS.clz['chi']**2,chi=self.Ang_PS.clz['chi']) #FIXME: check dimensions, get correct factors of length.. chi**2 is guessed from eq. A3 of https://arxiv.org/pdf/1601.05779.pdf ... note that cls here is in units of P(k)/chi**2
-            fs0=self.cov_utils.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]]
-            fs0*=self.cov_utils.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
-            fs0=np.sqrt(fs0)
-#             cov['Tri']/=self.cov_utils.gaussian_cov_norm_2D**2 #Since there is no dirac delta, there should be 2 factor of (2l+1)dl... eq. A3 of https://arxiv.org/pdf/1601.05779.pdf
-            cov['Tri']/=fs0 #(2l+1)f_sky.. we didnot normalize gaussian covariance in trispectrum computation.
-
-        return cov['SSC'],cov['Tri']
-        
-    def cl_cov(self,zs_indx,cls=None, tracers=[],Win_cov=None,Win_cl1=None,Win_cl2=None):
-        """
-            Computes the covariance between any two tomographic power spectra.
-            cls: tomographic cls already computed before calling this function
-            zs_indx: 4-d array, noting the indices of the source bins involved
-            in the tomographic cls for which covariance is computed.
-            For ex. covariance between 12, 56 tomographic cross correlations
-            involve 1,2,5,6 source bins
-        """
-        cov={}
-        cov['z_indx']=zs_indx
-        cov['tracers']=tracers
-        cov['final']=None
-
-        cov['G']=None
-        cov['G1324_B']=None;cov['G1423_B']=None
-        
-        Win=None
-#         if self.use_window and self.store_win:
-#             Win_cov=self.Win.Win['cov'][tracers] 
-# #             Win_cl=self.Win.Win['cl']
-        if Win_cov is not None:
-            Win=Win_cov#[zs_indx]
-
-        if self.use_window and self.do_pseudo_cl:
-            cov['G1324'],cov['G1423']=self.cov_utils.cl_gaussian_cov_window(cls,
-                                            self.SN,tracers,zs_indx,self.do_xi,Win,
-                                            binned_l=self.use_binned_l)#bin_window=self.bin_window,bin_utils=self.cl_bin_utils)
-        else:
-            fs=self.f_sky
-            if self.do_xi and self.xi_win_approx and self.use_window : #in this case we need to use a separate function directly from xi_cov
-                cov['G1324']=0
-                cov['G1423']=0
-            else:
-                cov['G1324'],cov['G1423']=self.cov_utils.cl_gaussian_cov(cls,
-                                            self.SN,tracers,zs_indx,self.do_xi,fs)
-        cov['G']=cov['G1324']+cov['G1423']
-        cov['final']=cov['G']
-        cov['SSC'],cov['Tri']=self.cl_cov_connected(zs_indx,cls=cls, tracers=tracers)#,Win_cov=None,Win_cl=None)
-        if self.use_window and (self.SSV_cov or self.Tri_cov) and self.do_pseudo_cl: #Check: This is from writing p-cl as M@cl... cov(p-cl)=M@cov(cl)@M.T ... separate  M when different p-cl
-            M1=Win_cl1[(tracers[0],tracers[1])][(zs_indx[0],zs_indx[1])]['M'] #12
-            M2=Win_cl2[(tracers[2],tracers[3])][(zs_indx[2],zs_indx[3])]['M'] #34
-            if self.bin_window:
-                for k in ['SSC','Tri']:
-                    cov[k]=self.bin_cl_func(cov=cov[k])
-            cov['final']=cov['G']+ M1@(cov['SSC']+cov['Tri'])@M2.T
-        else:
-            cov['final']=cov['G']+cov['SSC']+cov['Tri']
-
-
-        if not self.do_xi:
-            cov['G1324']=None #save memory
-            cov['G1423']=None
-
-        for k in ['final','G','SSC','Tri']:#no need to bin G1324 and G1423
-            if self.bin_cl:
-                cov[k+'_b']=self.bin_cl_func(cov=cov[k])
-            else:
-                cov[k+'_b']=cov[k]
-            
-            if self.sparse_cov and cov[k+'_b'] is not None:
-                if k!='final':
-                    # print('deleting',k)
-                    cov[k+'_b']=None
-                    continue
-                cov[k+'_b']=sparse.COO(cov[k+'_b'])
-            if not self.do_xi and self.bin_cl:
-                del cov[k]
-
-        return cov
-
     def bin_cl_func(self,cl=None,cov=None):#moved out of class. This is no longer used
         """
             bins the tomographic power spectra
@@ -530,20 +402,12 @@ class Skylens():
             Both bin_cl and bin_cov can be true simulatenously.
         """
         cl_b=None
-        cov_b=None
-#         if self.bin_cl:
         if not cl is None:
             if self.use_binned_l or not self.bin_cl:
                 cl_b=cl*1.
             else:
                 cl_b=self.binning.bin_1d(xi=cl,bin_utils=self.cl_bin_utils)
             return cl_b
-        if not cov is None:
-            if self.use_binned_l or not self.bin_cl:
-                cov_b=cov*1.
-            else:
-                cov_b=self.binning.bin_2d(cov=cov,bin_utils=self.cl_bin_utils)
-            return cov_b
 
     def calc_pseudo_cl(self,cl,Win):# moved outside the class. No used now.
         pcl=cl@Win['M']
@@ -582,24 +446,24 @@ class Skylens():
                         corrs2+=[(tracers[i],tracers[j])]
                         print('added extra corr calc for covariance',corrs2)
 
-        Ang_PS.PS.set_cosmology(cosmo_params=cosmo_params,cosmo_h=cosmo_h)
+        Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,
+                                    cosmo_params=cosmo_params)
+        clz=Ang_PS.clz
+        if self.scheduler_info is not None:
+            client=get_client(address=self.scheduler_info['address'])
+            #clz=client.scatter(Ang_PS.clz)
+            
         if cosmo_h is None:
             cosmo_h=Ang_PS.PS.cosmo_h
 
-        self.SN={}
         kernel={}
-#         if self.do_cov:
-#             kernel=self.z_bins #we use information from z_bins
         for tracer in tracers:
-            kernel[tracer]=self.tracer_utils.set_kernels(cosmo_h=cosmo_h,zl=Ang_PS.z,tracer=tracer,z_bins=z_bins[tracer])
-            self.SN[(tracer,tracer)]=self.tracer_utils.SN[tracer]
+            kernel[tracer]=self.tracer_utils.set_kernels(Ang_PS=Ang_PS,tracer=tracer,z_bins=z_bins[tracer])
+            self.cov_utils.SN[(tracer,tracer)]=self.tracer_utils.SN[tracer]
             if 'galaxy' in tracers:
                 if bias_func is None:
                     bias_func='constant_bias'
                     bias_kwargs={'b1':1,'b2':1}
-
-        Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,
-                                    cosmo_params=cosmo_params)
 
         out={}
         cl={corr:{} for corr in corrs2}
@@ -610,23 +474,23 @@ class Skylens():
         cl_b.update({corr[::-1]:{} for corr in corrs2})
         pcl_b={corr:{} for corr in corrs2}
         pcl_b.update({corr[::-1]:{} for corr in corrs2})
-        
+        print('cl_tomo Ang_PS size',get_size_pickle(Ang_PS.clz),clz,Ang_PS.clz)
         cov={}
         for corr in corrs2:
             corr2=corr[::-1]
             corr_indxs=self.corr_indxs[(corr[0],corr[1])]#+self.cov_indxs
             for (i,j) in corr_indxs:#FIXME: we might want to move to map, like covariance. will be useful to define the tuples in forzenset then.
                 cl[corr][(i,j)]=delayed(self.cl_func[corr])(zbin1=kernel[corr[0]][i],zbin2=kernel[corr[1]][j],
-                                                             corr=corr,cosmo_params=cosmo_params,clz=Ang_PS.clz)#Ang_PS=Ang_PS) 
+                                                             corr=corr,cosmo_params=cosmo_params,clz=clz)#Ang_PS=Ang_PS) 
                 cl_b[corr][(i,j)]=delayed(bin_cl_func)(cl=cl[corr][(i,j)],use_binned_l=self.use_binned_l,bin_cl=self.bin_cl,cl_bin_utils=self.cl_bin_utils)
                 if self.use_window and self.do_pseudo_cl and (i,j) in self.stack_indxs[corr]:
                     if not self.bin_window:
-                        pcl[corr][(i,j)]=delayed(calc_pseudo_cl)(cl[corr][(i,j)],Win=self.Win.Win['cl'][corr][(i,j)])
+                        pcl[corr][(i,j)]=delayed(calc_pseudo_cl)(cl[corr][(i,j)],Win=self.Win['cl'][corr][(i,j)])
                         pcl_b[corr][(i,j)]=delayed(bin_cl_func)(cl=pcl[corr][(i,j)],use_binned_l=self.use_binned_l,bin_cl=self.bin_cl,cl_bin_utils=self.cl_bin_utils)
                     else:
                         pcl[corr][(i,j)]=None
                         pcl_b[corr][(i,j)]=delayed(calc_cl_pseudo_cl)(zbin1=kernel[corr[0]][i],zbin2=kernel[corr[1]][j],
-                                                             corr=corr,cosmo_params=cosmo_params,clz=Ang_PS.clz,Win=self.Win.Win['cl'][corr][(i,j)])
+                                                             corr=corr,cosmo_params=cosmo_params,clz=clz,Win=self.Win['cl'][corr][(i,j)])
 #                         pcl_b[corr][(i,j)]=delayed(calc_pseudo_cl)(None,cl_b[corr][(i,j)],Win=self.Win.Win['cl'][corr][(i,j)])
                 else:
                     pcl[corr][(i,j)]=cl[corr][(i,j)]
@@ -637,10 +501,7 @@ class Skylens():
                 pcl_b[corr2][(j,i)]=pcl_b[corr][(i,j)]#useful in gaussian covariance calculation.
     
         print('cl graph done')
-        if self.do_cov:
-            # t1=time.time()
-            cii_t=0
-            start_j=0
+        if self.do_cov and (self.do_pseudo_cl or not self.do_xi):
             Win_cov=None
             Win_cl=None
             corrs_iter=[(corrs[i],corrs[j]) for i in np.arange(len(corrs)) for j in np.arange(i,len(corrs))]
@@ -660,13 +521,20 @@ class Skylens():
                 cov_indxs[corr1+corr2]=cov_indxs_iter #because in principle we allow stack_indxs to be different than self.stack_indxs
                 
                 if self.use_window:# and not self.store_win:
-                    Win_cov=self.Win.Win['cov'][corr1+corr2] # we only want to pass this if it is a graph. Otherwise, read within function
-                    Win_cl1=self.Win.Win['cl'][corr1]
-                    Win_cl2=self.Win.Win['cl'][corr2]
+                    Win_cov=self.Win['cov'][corr1+corr2] # we only want to pass this if it is a graph. Otherwise, read within function
+                    Win_cl1=self.Win['cl'][corr1]
+                    Win_cl2=self.Win['cl'][corr2]
                 #cov[corr1+corr2]=dask.bag.from_sequence(cov_indxs_iter).map(self.cl_cov,cls=cl,Win_cov=Win_cov,tracers=corr1+corr2,Win_cl=Win_cl)
-                cov[corr1+corr2]={indxs: delayed(self.cl_cov)(indxs,cls=cl,Win_cov=Win_cov[indxs],tracers=corr1+corr2,
-                                                              Win_cl1=Win_cl1[(indxs[0],indxs[1])],
-                                                              Win_cl2=Win_cl2[(indxs[2],indxs[3])])
+                cov[corr1+corr2]={indxs: delayed(self.cov_utils.cl_cov)(indxs,cls=self.get_CV_cl(cl,corr1+corr2,indxs),
+                                                                        Win_cov=Win_cov[indxs],tracers=corr1+corr2,
+                                                                          Win_cl1=Win_cl1[(indxs[0],indxs[1])],
+                                                                          Win_cl2=Win_cl2[(indxs[2],indxs[3])],
+                                                                          sig_cL=self.cov_utils.cov_four_kernels(z_bins={0:kernel[corr1[0]][indxs[0]],
+                                                                                                1:kernel[corr1[1]][indxs[1]],
+                                                                                                2:kernel[corr2[0]][indxs[2]],
+                                                                                                3:kernel[corr2[1]][indxs[3]]},
+                                                                                                 Ang_PS=Ang_PS),#don't want to copy z_bins,
+                                                                           Ang_PS=Ang_PS)
                                          for indxs in cov_indxs_iter}
             cov['cov_indxs']=cov_indxs
 
@@ -678,7 +546,7 @@ class Skylens():
 
     def tomo_short(self,cosmo_h=None,cosmo_params=None,pk_lock=None,
                 corrs=None,bias_kwargs={},bias_func=None,stack_corr_indxs=None,
-                z_bins=None,Ang_PS=None,zkernel=None):
+                z_bins=None,Ang_PS=None,zkernel=None,Win=None):
         """
             
         """
@@ -701,27 +569,29 @@ class Skylens():
         if zkernel is None:
             zkernel={}
             for tracer in tracers:
-                zkernel[tracer]=self.tracer_utils.set_kernels(cosmo_h=cosmo_h,zl=Ang_PS.z,tracer=tracer,z_bins=z_bins[tracer],delayed_compute=False)
+                zkernel[tracer]=self.tracer_utils.set_kernels(Ang_PS=Ang_PS,tracer=tracer,z_bins=z_bins[tracer],delayed_compute=False)
                 if 'galaxy' in tracers:
                     if bias_func is None:
                         bias_func='constant_bias'
                         bias_kwargs={'b1':1,'b2':1}
         if self.do_xi:
-            return self.xi_tomo_short(corrs=corrs,stack_corr_indxs=stack_corr_indxs,zkernel=zkernel,Ang_PS=Ang_PS)
+            return self.xi_tomo_short(corrs=corrs,stack_corr_indxs=stack_corr_indxs,zkernel=zkernel,Ang_PS=Ang_PS,Win=Win)
         else:
-            return self.cl_tomo_short(corrs=corrs,stack_corr_indxs=stack_corr_indxs,zkernel=zkernel,Ang_PS=Ang_PS)
+            return self.cl_tomo_short(corrs=corrs,stack_corr_indxs=stack_corr_indxs,zkernel=zkernel,Ang_PS=Ang_PS,Win=Win)
     
-    def cl_tomo_short(self,corrs=None,stack_corr_indxs=None,Ang_PS=None,zkernel=None,cosmo_params=None):
+    def cl_tomo_short(self,corrs=None,stack_corr_indxs=None,Ang_PS=None,zkernel=None,cosmo_params=None,Win=None):
         """
          Same as cl_tomo, except no delayed is used and it only returns a stacked vector of binned pseudo-cl.
          This function is useful for mcmc where we only need to compute pseudo-cl, and want to reduce the
          dask overheard. You should run a parallel mcmc, where each call to this function is placed inside 
          delayed.
         """
-
+        if Win is None:
+            Win=self.Win
         l=self.l
         out={}
         pcl_b=[] 
+
         for corr in corrs:
             corr_indxs=stack_corr_indxs[corr]#+self.cov_indxs
             for (i,j) in corr_indxs:#FIXME: we might want to move to map, like covariance. will be useful to define the tuples in forzenset then.
@@ -730,125 +600,18 @@ class Skylens():
                         cl=self.cl_func[corr](zbin1=zkernel[corr[0]][i],zbin2=zkernel[corr[1]][j],
                                                              corr=corr,cosmo_params=cosmo_params,clz=Ang_PS.clz)#Ang_PS=Ang_PS) 
 
-                        pcl=calc_pseudo_cl(cl,Win=self.Win.Win['cl'][corr][(i,j)])
+                        pcl=calc_pseudo_cl(cl,Win=Win['cl'][corr][(i,j)])
                         pcl_b+=[bin_cl_func(cl=pcl,use_binned_l=self.use_binned_l,bin_cl=self.bin_cl,cl_bin_utils=self.cl_bin_utils)]
                     else:
                         pcl=None
                         pcl_b+=[calc_cl_pseudo_cl(zbin1=zkernel[corr[0]][i],zbin2=zkernel[corr[1]][j],
-                                                             corr=corr,cosmo_params=cosmo_params,clz=Ang_PS.clz,Win=self.Win.Win['cl'][corr][(i,j)])]
+                                                             corr=corr,cosmo_params=cosmo_params,clz=Ang_PS.clz,Win=Win['cl'][corr][(i,j)])]
                 else:
                     pcl=self.cl_func[corr](zbin1=zkernel[corr[0]][i],zbin2=zkernel[corr[1]][j],
                                                              corr=corr,cosmo_params=cosmo_params,clz=Ang_PS.clz)#Ang_PS=Ang_PS) 
                     pcl_b+=[bin_cl_func(cl=pcl,use_binned_l=self.use_binned_l,bin_cl=self.bin_cl,cl_bin_utils=self.cl_bin_utils)]
         pcl_b=np.concatenate(pcl_b).ravel()
         return pcl_b
-
-    
-    
-    def xi_cov(self,cov_indx,cov_cl=None,cls={},s1_s2=None,s1_s2_cross=None,#clr=None,clrk=None,
-#                indxs_1=[],indxs_2=[],
-               corr1=[],corr2=[], Win_cov=None,Win_cl1=None,Win_cl2=None):
-        """
-            Computes covariance of xi, by performing 2-D hankel transform on covariance of Cl.
-            In current implementation of hankel transform works only for s1_s2=s1_s2_cross.
-            So no cross covariance between xi+ and xi-.
-        """
-
-#         if cov_cl is None:
-#             cov_cl=self.cl_cov_connected(cov_cl_indx,cls=cls,Win_cov=Win_cov,tracers=corr1+corr2,Win_cl=Win_cl)
-#         z_indx=indxs_1+indxs_2
-        z_indx=cov_indx#cov_cl['z_indx']
-        indxs_1=(z_indx[0],z_indx[1])
-        indxs_2=(z_indx[2],z_indx[3])
-#         cov_cl=cov_cl0[z_indx]
-        tracers=corr1+corr2
-        if s1_s2_cross is None:
-            s1_s2_cross=s1_s2
-        cov_xi={}
-
-        if self.WT.name=='Hankel' and s1_s2!=s1_s2_cross:
-            n=len(self.theta_bins)-1
-            cov_xi['final']=np.zeros((n,n))
-            return cov_xi
-
-        SN1324=0
-        SN1423=0
-        wig_d1=None
-        wig_d2=None
-        if self.use_binned_l:
-            wig_d1=self.WT_binned_cov[corr1][s1_s2][indxs_1]
-            wig_d2=self.WT_binned_cov[corr2][s1_s2_cross][indxs_2]
-
-        Win=None
-#         if self.use_window and self.store_win:
-#             Win_cov=self.Win.Win['cov'][tracers]
-        if Win_cov is not None:
-            Win=Win_cov#[z_indx]
-        
-#         if np.all(np.array(tracers)=='shear') and  s1_s2!=s1_s2_cross and not self.xi_win_approx: #cross between xi+ and xi-
-#             if self.use_window:
-#                 G1324,G1423=self.cov_utils.gaussian_cov_window(cls,self.SN,tracers,z_indx,self.do_xi,Win,Bmode_mf=-1)
-#             else:
-#                 G1324,G1423=self.cov_utils.gaussian_cov(cls,self.SN,tracers,z_indx,self.do_xi,self.f_sky,Bmode_mf=-1)
-                
-#             cov_cl_G=G1324+G1423
-#         else:
-#             cov_cl_G=cov_cl['G1324']+cov_cl['G1423']
-
-
-#         if self.use_window and self.xi_win_approx: 
-        WT_kwargs={'l_cl':self.l,'s1_s2':s1_s2,'s1_s2_cross':s1_s2_cross,'wig_d1':wig_d1,'wig_d2':wig_d2}
-        bf=1
-        if np.all(np.array(tracers)=='shear') and not s1_s2==s1_s2_cross: #cross between xi+ and xi-
-            bf=-1
-
-        cov_xi['G']=self.cov_utils.xi_gaussian_cov(cls,self.SN,tracers,z_indx,self.do_xi,Win,self.WT,WT_kwargs,self.use_binned_theta,bf)
-#         else:
-#             th0,cov_xi['G']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
-#                                                           s1_s2_cross=s1_s2_cross,
-#                                                           wig_d1=wig_d1,
-#                                                           wig_d2=wig_d2,
-#                                                           cl_cov=cov_cl_G)
-        if not self.use_binned_theta:
-            cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=self.xi_bin_utils[s1_s2])
-#         else:
-#             if self.use_window and self.xi_win_approx: #FIXME: This is only an approximation. We need something better.
-#                 cov_xi['G']/=np.outer(Win_cl[corr1][indxs_1]['xi_b'],Win_cl[corr2][indxs_2]['xi_b'])
-#                 cov_xi['G']*=self.binning.bin_2d(cov=Win['xi'][1324]['clcl'],bin_utils=self.xi_bin_utils[s1_s2])
-                
-        cov_xi['SSC']=0
-        cov_xi['Tri']=0
-
-        if cov_cl is None:
-            cov_cl=self.cl_cov_connected(cov_indx,cls=cls,Win_cov=Win_cov,tracers=corr1+corr2,Win_cl=None)
-
-        if self.SSV_cov:
-            th0,cov_xi['SSC']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
-                                                            s1_s2_cross=s1_s2_cross,
-                                                            wig_d1=wig_d1,
-                                                          wig_d2=wig_d2,
-                                                            cl_cov=cov_cl['SSC'])
-            cov_xi['SSC']=self.binning.bin_2d(cov=cov_xi['SSC'],bin_utils=self.xi_bin_utils[s1_s2])
-        if self.Tri_cov:
-            th0,cov_xi['Tri']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
-                                                            s1_s2_cross=s1_s2_cross,
-                                                            wig_d1=wig_d1,
-                                                          wig_d2=wig_d2,
-                                                            cl_cov=cov_cl['Tri'])
-            cov_xi['Tri']=self.binning.bin_2d(cov=cov_xi['Tri'],bin_utils=self.xi_bin_utils[s1_s2])
-
-        cov_xi['final']=cov_xi['G']+cov_xi['SSC']+cov_xi['Tri']
-        if self.use_window and self.xi_win_approx:
-            cov_xi['G']/=(Win_cl1['xi_b']*Win_cl2['xi_b'])
-            cov_xi['final']/=(Win_cl1['xi_b']*Win_cl2['xi_b'])
-
-        if self.sparse_cov:
-            for k in ['G','SSC','Tri','final']:
-#                 print('xi_cov',corr1,corr2,indxs_1,indxs_2,cov_xi[k].shape,self.WT.theta[(0,0)].shape)
-                if  np.atleast_1d(cov_xi[k]).ndim>1:
-                    cov_xi[k]=sparse.COO(cov_xi[k])
-
-        return cov_xi
 
     def get_xi(self,cls={},s1_s2=[],corr=None,indxs=None,Win=None):
         cl=cls[corr][indxs] #this should be pseudo-cl when using window
@@ -868,6 +631,17 @@ class Skylens():
             xi_b/=(Win['xi_b'])
         return xi_b
     
+    def get_CV_cl(self,cls,tracers,z_indx):
+        """
+        Get the tracer power spectra, C_ell, for covariance calculations.
+        """
+        CV2={}
+        CV2[13]=cls[(tracers[0],tracers[2])] [(z_indx[0], z_indx[2]) ]
+        CV2[24]=cls[(tracers[1],tracers[3])][(z_indx[1], z_indx[3]) ]
+        CV2[14]=cls[(tracers[0],tracers[3])][(z_indx[0], z_indx[3]) ]
+        CV2[23]=cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]
+        return CV2
+
     def xi_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,pk_func=None,
                 corrs=None):
         """
@@ -894,20 +668,33 @@ class Skylens():
         cov_xi={}
         xi={}
         out={}
-        # for s1_s2 in self.s1_s2s:
+        if self.use_binned_theta:
+            wig_norm=1
+        else:
+            wig_norm=self.WT.norm*self.WT.grad_l
+
         for corr in corrs:
             s1_s2s=self.s1_s2s[corr]
             xi[corr]={}
             for im in np.arange(len(s1_s2s)):
                 s1_s2=s1_s2s[im]
                 xi[corr][s1_s2]={}
+                xi_bin_utils=None
+                if not self.use_binned_theta:
+                    wig_d=self.WT.wig_d[s1_s2]
+                if self.bin_xi:
+                    xi_bin_utils=self.xi_bin_utils[s1_s2]
                 for indx in self.corr_indxs[corr]:
-                    if self.Win.Win is None:
+                    if self.Win is None:
                         win=None
                     else:
-                        win=self.Win.Win['cl'][corr][indx]
-                    xi[corr][s1_s2][indx]=delayed(self.get_xi)(cls=cl,corr=corr,indxs=indx,
-                                                        s1_s2=s1_s2,Win=win)
+                        win=self.Win['cl'][corr][indx]
+                    if self.use_binned_theta:
+                        wig_d=self.WT_binned[corr][s1_s2][indx]
+#                     xi[corr][s1_s2][indx]=delayed(self.get_xi)(cls=cl,corr=corr,indxs=indx,
+#                                                         s1_s2=s1_s2,Win=win)
+                    xi[corr][s1_s2][indx]=delayed(get_xi)(cl=cl[corr][indx],wig_d=wig_d,wig_norm=wig_norm,
+                                         xi_bin_utils=xi_bin_utils,bin_xi=self.bin_xi,use_binned_theta=self.use_binned_theta,Win=win)
 
         print('Done xi graph',get_size(cl)/1.e6,)#get_size_pickle(self.xi_cov))
         if self.do_cov:
@@ -928,9 +715,9 @@ class Skylens():
                 Win_cl=None
                 if self.use_window:
 #                     if not self.store_win:
-                    Win_cov=self.Win.Win['cov'][corr]
-                    Win_cl1=self.Win.Win['cl'][corr1]
-                    Win_cl2=self.Win.Win['cl'][corr2]
+                    Win_cov=self.Win['cov'][corr]
+                    Win_cl1=self.Win['cl'][corr1]
+                    Win_cl2=self.Win['cl'][corr2]
                 for im1 in np.arange(len(s1_s2s_1)):
                     s1_s2=s1_s2s_1[im1]
                     start2=0
@@ -939,14 +726,21 @@ class Skylens():
                     for im2 in np.arange(start2,len(s1_s2s_2)):
                         s1_s2_cross=s1_s2s_2[im2]
                         #cov_xi[corr][s1_s2+s1_s2_cross]=dask.bag.from_sequence(cov_cl).map(self.xi_cov,
-                        cov_xi[corr][s1_s2+s1_s2_cross]={indxs:delayed(self.xi_cov)(indxs,cov_cl=None, #cov_cl[indxs],
-                                                                                        cls=cl,s1_s2=s1_s2,
+                        cov_xi[corr][s1_s2+s1_s2_cross]={indxs:delayed(self.cov_utils.xi_cov)(indxs,cov_cl=None, #cov_cl[indxs],
+                                                                                        cls=self.get_CV_cl(cl,corr1+corr2,indxs),
+                                                                                        s1_s2=s1_s2,
                                                                                         s1_s2_cross=s1_s2_cross,#clr=clr,
                                                                                         Win_cov=Win_cov[indxs],
                                                                                         Win_cl1=Win_cl1[(indxs[0],indxs[1])],
                                                                                         Win_cl2=Win_cl2[(indxs[2],indxs[3])],
-                                                                                        corr1=corr1,corr2=corr2
-                                                                                        )
+                                                                                        corr1=corr1,corr2=corr2,
+                                                                                        sig_cL=self.cov_utils.cov_four_kernels(
+                                                                                                 z_bins={0:self.z_bins[corr1[0]][indxs[0]],
+                                                                                                    1:self.z_bins[corr1[1]][indxs[1]],
+                                                                                                    2:self.z_bins[corr2[0]][indxs[2]],
+                                                                                                    3:self.z_bins[corr2[1]][indxs[3]]},
+                                                                                               Ang_PS=self.Ang_PS),#don't want to copy z_bins
+                                                                                        Ang_PS=self.AnG_PS)
                                                          for indxs in cov_iter}
 
         out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi,'est':'xi'},corrs=corrs)
@@ -955,13 +749,15 @@ class Skylens():
         out['cl']=cls_tomo_nu
         return out
 
-    def xi_tomo_short(self,corrs=None,stack_corr_indxs=None,Ang_PS=None,zkernel=None,cosmo_params=None):
+    def xi_tomo_short(self,corrs=None,stack_corr_indxs=None,Ang_PS=None,zkernel=None,cosmo_params=None,Win=None):
         """
          Same as xi_tomo / cl_tomo_short, except no delayed is used and it only returns a stacked vector of binned xi.
          This function is useful for mcmc where we only need to compute xi, and want to reduce the
          dask overheard. You should run a parallel mcmc, where each call to this function is placed inside 
          delayed.
         """
+        if Win is None:
+            Win=self.Win
         l=self.l
         cl={corr:{}for corr in corrs}
         out={}
@@ -985,12 +781,14 @@ class Skylens():
                 for indx in stack_corr_indxs[corr]:
                     if self.use_binned_theta:
                         wig_d=self.WT_binned[corr][s1_s2][indx]
-                    xi=get_xi(cl=cl[corr][indx],wig_d=wig_d,wig_norm=wig_norm)
                     Win=None
                     if self.use_window:
-                        Win=self.Win.Win['cl'][corr][indx]
-                    xi_bi=bin_xi_func(xi=xi,xi_bin_utils=self.xi_bin_utils[s1_s2],bin_xi=self.bin_xi,use_binned_theta=self.use_binned_theta,Win=Win)
-                    xi_b+=[xi_bi]
+                        Win=Win['cl'][corr][indx]
+
+                    xi=get_xi(cl=cl[corr][indx],wig_d=wig_d,wig_norm=wig_norm,
+                             xi_bin_utils=self.xi_bin_utils[s1_s2],bin_xi=self.bin_xi,use_binned_theta=self.use_binned_theta,Win=Win)
+#                     xi_bi=bin_xi_func(xi=xi,xi_bin_utils=self.xi_bin_utils[s1_s2],bin_xi=self.bin_xi,use_binned_theta=self.use_binned_theta,Win=Win)
+                    xi_b+=[xi]#[xi_bi]
         xi_b=np.concatenate(xi_b).ravel()
         return xi_b
 
@@ -1141,7 +939,7 @@ def calc_cl_pseudo_cl(zbin1={}, zbin2={},corr=('shear','shear'),cosmo_params=Non
     """
     cls=clz['cls']
     f=clz['cl_f']
-    sc=zbin1['kernel_int']*zbin1['kernel_int']
+    sc=zbin1['kernel_int']*zbin2['kernel_int']
     dchi=clz['dchi']
     cl=np.dot(cls.T*sc,dchi)
     pcl=cl@Win['M']
@@ -1163,13 +961,15 @@ def bin_cl_func(cl,use_binned_l=False,bin_cl=False,cl_bin_utils=None):
         cl_b=bin_1d(xi=cl,bin_utils=cl_bin_utils)
     return cl_b
 
-def get_xi(cl=None,wig_d=None,cl_kwargs={},wig_norm=1):
+def get_xi(cl=None,wig_d=None,cl_kwargs={},wig_norm=1,
+          xi_bin_utils=None,bin_xi=None,use_binned_theta=None,Win=None):
 #     if cl is None:
 #         cl=calc_cl(**cl_kwargs)
     xi=projected_correlation(cl=cl,wig_d=wig_d,norm=wig_norm)
-    return xi
+    xib=bin_xi_func(xi=xi,Win=Win,xi_bin_utils=xi_bin_utils,bin_xi=bin_xi,use_binned_theta=use_binned_theta)
+    return xib
 
-def bin_xi_func(xi=[],s1_s2=[],corr=None,indxs=None,Win=None,xi_bin_utils=None,bin_xi=True,use_binned_theta=False):
+def bin_xi_func(xi=[],Win=None,xi_bin_utils=None,bin_xi=True,use_binned_theta=False):
     xi_b=xi
     if bin_xi and not use_binned_theta: #wig_d is binned when use_binned_l#FIXME: Need window correction when use_binned_l
         if Win is not None: 
@@ -1178,14 +978,3 @@ def bin_xi_func(xi=[],s1_s2=[],corr=None,indxs=None,Win=None,xi_bin_utils=None,b
     if Win is not None: #win is applied when binning wig_d in case of use_binned_theta
         xi_b/=(Win['xi_b'])
     return xi_b
-
-
-if __name__ == "__main__":
-    import cProfile
-    import pstats
-
-    import dask,dask.multiprocessing
-    dask.config.set(scheduler='processes')
-    # dask.config.set(scheduler='synchronous')  # overwrite default with single-threaded scheduler..
-                                            # Works as usual single threaded worload. Useful for profiling.
-    # see minimal notebook for example.

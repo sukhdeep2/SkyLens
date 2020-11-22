@@ -14,7 +14,7 @@ from dask.distributed import Client
 
 import argparse
 
-test_run=False
+test_run=True
 parser = argparse.ArgumentParser()
 parser.add_argument("--do_xi", "-do_xi",type=int, help="")
 parser.add_argument("--fix_cosmo", "-fc",type=int, help="use unit window")
@@ -25,9 +25,9 @@ args = parser.parse_args()
 
 args = parser.parse_args()
 
-fix_cosmo=False if not args.fix_cosmo else np.bool(args.fix_cosmo)
-do_xi=True if not args.do_xi else np.bool(args.do_xi)
-use_binned_l=True if not args.bin_l else np.bool(args.bin_l)
+fix_cosmo=True if not args.fix_cosmo else np.bool(args.fix_cosmo)
+do_xi=False if not args.do_xi else np.bool(args.do_xi)
+use_binned_l=False if not args.bin_l else np.bool(args.bin_l)
 
 print('Doing mcmc',fix_cosmo,do_xi,use_binned_l,test_run) #err  True False True True     False True False True
 
@@ -74,7 +74,7 @@ if Scheduler_file is None:
     client=Client(LC)#diagnostics_port=8801,)
     Scheduler_file=client.scheduler_info()['address']
 else:
-    client=Client(scheduler_file=Scheduler_file,processes=True)
+    client=Client(scheduler_file=Scheduler_file,processes=False)
 scheduler_info=client.scheduler_info()
 scheduler_info['file']=Scheduler_file
 print('client: ',client)#,dask_dir,scheduler_info)
@@ -119,8 +119,8 @@ WT=wigner_transform(wig_d_taper_order_low=6,wig_d_taper_order_high=8,**WT_kwargs
 do_cov=True
 
 SSV_cov=False
-tidal_SSV_cov=False
-Tri_cov=True
+tidal_SSV_cov=SSV_cov
+Tri_cov=SSV_cov
 
 use_window=True
 store_win=True
@@ -156,8 +156,9 @@ kappa0=Skylens(zs_bins=zs_bin,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg
                 xi_SN_analytical=xi_SN_analytical,power_spectra_kwargs=power_spectra_kwargs,
                 scheduler_info=scheduler_info
                )
-
-# client.restart()
+print('kappa0 size',get_size_pickle(kappa0))
+print('kappa0.Ang_PS size',get_size_pickle(kappa0.Ang_PS))
+client.restart()
 #xi0t=kappa0.tomo_short()
 if do_xi:
     print('MCMC getting xi0')
@@ -177,22 +178,30 @@ else:
 #     del cl0G
 
 print('Got data and cov')
-Win=kappa0.Win.Win
-# del kappa0
+Win={'cl':kappa0.Win['cl']}
+del kappa0
+
 do_cov=False
-kappa0.do_cov=False
-# kappa0=Skylens(zs_bins=zs_bin,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zs_bin,
-#                use_window=use_window,Tri_cov=Tri_cov,
-#                use_binned_l=use_binned_l,wigner_files=wigner_files,
-#                SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=0.35,
-#                store_win=store_win,window_lmax=window_lmax,
-#                sparse_cov=True,corrs=corrs,
-#                do_xi=do_xi,bin_xi=bin_xi,theta_bins=th_bins,WT=WT,
-#                 use_binned_theta=use_binned_theta,
-#                 nz_PS=100,do_pseudo_cl=do_pseudo_cl,xi_win_approx=True,
-#                 xi_SN_analytical=xi_SN_analytical,power_spectra_kwargs=power_spectra_kwargs,
-#                Win=Win,scheduler_info=scheduler_info
-#                )
+#kappa0.do_cov=False
+kappa0=Skylens(zs_bins=zs_bin,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zs_bin,
+               use_window=use_window,Tri_cov=Tri_cov,
+                use_binned_l=use_binned_l,wigner_files=wigner_files,
+                SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=0.35,
+                store_win=store_win,window_lmax=window_lmax,
+                sparse_cov=True,corrs=corrs,
+                do_xi=do_xi,bin_xi=bin_xi,theta_bins=th_bins,WT=WT,
+                 use_binned_theta=use_binned_theta,
+                 nz_PS=100,do_pseudo_cl=do_pseudo_cl,xi_win_approx=True,
+                 xi_SN_analytical=xi_SN_analytical,power_spectra_kwargs=power_spectra_kwargs,
+                Win=Win,scheduler_info=scheduler_info
+                )
+kappa0.Win={'cl':client.gather(kappa0.Win['cl'])}
+Win=kappa0.Win
+# Win={'cl':{k1: {k2: {k3: client.scatter(Win['cl'][k1][k2][k3])
+#                      for k3 in Win['cl'][k1][k2].keys()} 
+#                 for k2 in Win['cl'][k1].keys()} 
+#            for k1 in Win['cl'].keys()} }
+# print(Win)#['cl'][corr_ll][(0,0)]['M'])
 
 cosmo_fid=kappa0.Ang_PS.PS.cosmo_params
 
@@ -255,7 +264,7 @@ def get_model(params,data,kappa0,z_bins,log_prior,indx,Ang_PS):
 #     print('get_model',indx,params,log_prior)
     if not np.isfinite(log_prior):
         return np.zeros_like(data)
-    model=kappa0.tomo_short(cosmo_params=params,z_bins=z_bins,Ang_PS=Ang_PS)#,pk_lock=pk_lock)
+    model=kappa0.tomo_short(cosmo_params=params,z_bins=z_bins,Ang_PS=Ang_PS,Win=Win)#,pk_lock=pk_lock)
     return model
     
 def chi_sq(params,data,cov_inv,kappa0,z_bins,pk_lock):
@@ -374,8 +383,8 @@ outp['zbins']=zs_bin1
 outp['cov_inv']=cov_inv
 outp['params_order']=params_order
 
-#file_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/imaster/'
-file_home='/media/data/repos/skylens/temp/tests/imaster/'
+file_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/imaster/'
+#file_home='/media/data/repos/skylens/temp/tests/imaster/'
 if do_xi:
     fname_out='xi_{nz}_bl{bl}_bth{bth}_nw{nw}_ns{ns}_camb{fc}.pkl'.format(nz=zs_bin1['n_bins'],bl=np.int(use_binned_l),
                                                                           bth=np.int(use_binned_theta),ns=nsteps,nw=nwalkers,fc=int(fix_cosmo))
