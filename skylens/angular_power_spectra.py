@@ -66,7 +66,7 @@ class Angular_power_spectra():
         if pk_params is None:
             pk_params=self.PS.pk_params
         if self.clz is not None:
-            if pk_params ==self.clz['pk_params'] and cosmo_params==self.clz['cosmo_params']:
+            if pk_params ==self.PS.pk_params and cosmo_params==self.PS.cosmo_params:
 #                 print('angular_power_z: Pk same as before, not recomputing')
                 return self.clz # same as last calculation
         
@@ -115,7 +115,7 @@ class Angular_power_spectra():
 
             #cl*=2./np.pi #comparison with CAMB requires this.
         self.clz={'cls':cls,'l':l,'cH':cH,'dchi':cH*self.dz,'chi':chi,'dz':self.dz,
-                 'cosmo_params':self.PS.cosmo_params,'pk_params':pk_params,'cl_f':self.cl_f}
+                 'cl_f':self.cl_f}
         if self.SSV_cov:
 #             self.cov_utils.sigma_win_calc(cls_lin=cls_lin)
             self.clz.update({'clsR':cls*Rls,'clsRK':cls*RKls,'cls_lin':cls_lin})

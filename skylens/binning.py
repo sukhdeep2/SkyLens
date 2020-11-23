@@ -95,8 +95,10 @@ class binning():
 #         cov_b/=bin_utils['norm_m'][1][:,None]
         return cov_b
 
-    def bin_2d_WT(self,wig_mat=[],bin_utils_xi=None,bin_utils_cl=None,
-                wt_b=None,wt0=None,use_binned_theta=False,win_xi=None): 
+    def bin_2d_WT(self,wig_mat=[],wig_norm=None,bin_utils_xi=None,bin_utils_cl=None,
+                wt_b=None,wt0=None,use_binned_theta=False,win_xi=None):
+
+        wig_mat=wig_mat*wig_norm
         if bin_utils_cl is not None:
             binning_mat_cl=bin_utils_cl['binning_mat']
             if wt_b is None:

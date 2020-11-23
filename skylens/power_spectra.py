@@ -93,6 +93,7 @@ class Power_Spectra():
         pk_func_default=self.camb_pk_too_many_z
         if camb is None:
             pk_func_default=self.class_pk
+        print('power spectra',pk_func)
         self.pk_func=pk_func_default if pk_func is None else getattr(self,pk_func)
         if not pk_params is None:
             self.kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),

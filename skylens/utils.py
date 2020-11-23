@@ -1,5 +1,6 @@
 import sys, os, gc, threading, subprocess,pickle
 import numpy as np
+from dask.distributed import Client,get_client
 # print('pid: ',pid, sys.version)
 def thread_count():
     pid=os.getpid()
@@ -37,6 +38,14 @@ def get_size_pickle(obj):
     yy=pickle.dumps(obj)
     return np.around(sys.getsizeof(yy)/1.e6,decimals=3)
 
+def dict_size_pickle(obj,print_prefact=''): #useful for some memory diagnostics
+    print(print_prefact,'dict full size ',get_size_pickle(obj))
+    for k in obj.keys():
+        if isinstance(obj[k],dict):
+            dict_size_pickle(obj[k])
+        else:
+            print(print_prefact,'dict obj size: ',k, get_size_pickle(dict_size_pickle(obj[k])))
+
 def chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
     lst2=[]
@@ -47,3 +56,19 @@ def chunks(lst, n):
 
 def pickle_deepcopy(obj):
        return pickle.loads(pickle.dumps(obj, -1))
+
+def client_get(scheduler_info=None):
+    if scheduler_info is not None:
+        client=get_client(address=scheduler_info['address'])
+    else:
+        client=get_client()
+    return client
+
+def scatter_dict(dic,scheduler_info=None):
+    client=client_get(scheduler_info=scheduler_info)
+    for k in dic.keys():
+        if isinstance(dic[k],dict):
+            dic[k]=scatter_dict(dic[k],scheduler_info=scheduler_info)
+        else:
+            dic[k]=client.scatter(dic[k])
+    return dic

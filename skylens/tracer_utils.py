@@ -5,6 +5,7 @@ Class with utility functions for defining tracer properties, e.g. redshift kerne
 import os,sys
 import copy
 from skylens import *
+from skylens.utils import *
 from astropy.constants import c,G
 from astropy import units as u
 import numpy as np
@@ -61,12 +62,13 @@ class Tracer_utils():
             self.set_noise(tracer=tracer)
     
     def scatter_z_bins(self):
-        if self.scheduler_info is None:
-            return
-        client=get_client(address=self.scheduler_info['address'])
+#         if self.scheduler_info is None:
+#             return
+#         client=get_client(address=self.scheduler_info['address'])
         for tracer in self.tracers:
             nb=self.z_bins[tracer]['n_bins']
-            self.z_bins[tracer]=client.scatter(self.z_bins[tracer])
+#             self.z_bins[tracer]=client.scatter(self.z_bins[tracer])
+            self.z_bins[tracer]=scatter_dict(self.z_bins[tracer],scheduler_info=self.scheduler_info)
             self.z_bins[tracer]['n_bins']=nb
 #             for i in np.arange(self.n_bins[tracer]):
 #                 self.z_bins[tracer][i]=client.scatter(self.z_bins[tracer][i])

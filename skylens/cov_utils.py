@@ -18,8 +18,8 @@ sky_area=np.pi*4/(d2r)**2 #in degrees
 class Covariance_utils():
     def __init__(self,f_sky=0,l=None,logger=None,l_cut_jnu=None,do_sample_variance=True,
                  use_window=True,window_l=None,window_file=None, do_xi=False,
-                 use_binned_l=False,xi_SN_analytical=False,SN={},WT=None,use_binned_theta=False,
-                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,WT_binned_cov={},
+                 use_binned_l=False,xi_SN_analytical=False,SN={},use_binned_theta=False,
+                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,WT=None, #WT_binned_cov={},
                  Tri_cov=False,sparse_cov=False,cl_bin_utils=None,xi_bin_utils=None,
                  xi_win_approx=True,do_pseudo_cl=True,bin_cl=True
                 ):
@@ -34,12 +34,12 @@ class Covariance_utils():
         self.gaussian_cov_norm=(2.*l+1.)*np.gradient(l) #need Delta l here. Even when
                                                         #binning later
                                                         #take care of f_sky later
-        self.gaussian_cov_norm_2D=np.outer(np.sqrt(self.gaussian_cov_norm),np.sqrt(self.gaussian_cov_norm))
+#         self.gaussian_cov_norm_2D=np.outer(np.sqrt(self.gaussian_cov_norm),np.sqrt(self.gaussian_cov_norm))
         if self.Tri_cov:
             self.CTR=cov_matter_tri(k=self.l)
         if use_window and use_binned_l:
             dl=np.sqrt(np.gradient(self.l))
-            self.dl_norm=np.outer(dl,dl)
+#             self.dl_norm=np.outer(dl,dl)
 
 
     def set_window_params(self):
@@ -116,7 +116,7 @@ class Covariance_utils():
         diag=np.diag(cov)
         return cov/np.sqrt(np.outer(diag,diag))
 
-    def get_SN(self,tracers,z_indx):
+    def get_SN(self,SN,tracers,z_indx):
         """
             get shot noise/shape noise for given set of tracer and z_bins.
             Note that we assume shot noise is function of ell in general. 
@@ -125,10 +125,10 @@ class Covariance_utils():
             especially on small scales.
         """
         SN2={}
-        SN2[13]=self.SN[(tracers[0],tracers[2])][:,z_indx[0], z_indx[2] ] if self.SN.get((tracers[0],tracers[2])) is not None else np.zeros_like(self.l)
-        SN2[24]=self.SN[(tracers[1],tracers[3])][:,z_indx[1], z_indx[3] ] if self.SN.get((tracers[1],tracers[3])) is not None else np.zeros_like(self.l)
-        SN2[14]=self.SN[(tracers[0],tracers[3])][:,z_indx[0], z_indx[3] ] if self.SN.get((tracers[0],tracers[3])) is not None else np.zeros_like(self.l)
-        SN2[23]=self.SN[(tracers[1],tracers[2])][:,z_indx[1], z_indx[2] ] if self.SN.get((tracers[1],tracers[2])) is not None else np.zeros_like(self.l)
+        SN2[13]=SN[(tracers[0],tracers[2])][:,z_indx[0], z_indx[2] ] if SN.get((tracers[0],tracers[2])) is not None else np.zeros_like(self.l)
+        SN2[24]=SN[(tracers[1],tracers[3])][:,z_indx[1], z_indx[3] ] if SN.get((tracers[1],tracers[3])) is not None else np.zeros_like(self.l)
+        SN2[14]=SN[(tracers[0],tracers[3])][:,z_indx[0], z_indx[3] ] if SN.get((tracers[0],tracers[3])) is not None else np.zeros_like(self.l)
+        SN2[23]=SN[(tracers[1],tracers[2])][:,z_indx[1], z_indx[2] ] if SN.get((tracers[1],tracers[2])) is not None else np.zeros_like(self.l)
 
         return SN2
 
@@ -145,12 +145,12 @@ class Covariance_utils():
 #         CV2[23]=cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f
         return CV2
 
-    def cl_gaussian_cov_window(self,cls,tracers,z_indx,Win,Bmode_mf=1):
+    def cl_gaussian_cov_window(self,cls,SN,tracers,z_indx,Win,Bmode_mf=1):
         """
         Computes the power spectrum gaussian covariance, with proper factors of window. We have separate function for the 
         case when window is not supplied.
         """
-        SN2=self.get_SN(tracers,z_indx)
+        SN2=self.get_SN(SN,tracers,z_indx)
         CV=self.get_CV_cl(cls,tracers,z_indx)
         CV_B=self.get_CV_B_cl(cls,tracers,z_indx)
         
@@ -216,7 +216,7 @@ class Covariance_utils():
 #         CV2[23]=cls[(tracers[1],tracers[2])][(z_indx[1], z_indx[2]) ]*self.sample_variance_f*sv_f[23]
         return CV2
             
-    def cl_gaussian_cov(self,cls,tracers,z_indx,Bmode_mf=1): #no-window covariance
+    def cl_gaussian_cov(self,cls,SN,tracers,z_indx,Bmode_mf=1): #no-window covariance
         """
         Gaussian covariance for the case when no window is supplied and only f_sky is used.
         """
@@ -263,9 +263,10 @@ class Covariance_utils():
                 fs0=f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
                 fs1423=f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[3]][z_indx[0],z_indx[3]]*f_sky[tracers[1],tracers[2]][z_indx[1],z_indx[2]])
         
+        gaussian_cov_norm_2D=np.outer(np.sqrt(self.gaussian_cov_norm),np.sqrt(self.gaussian_cov_norm))
         if not self.do_xi:
-            G1324/=self.gaussian_cov_norm_2D/fs1324*fs0
-            G1423/=self.gaussian_cov_norm_2D/fs1423*fs0
+            G1324/=gaussian_cov_norm_2D/fs1324*fs0
+            G1423/=gaussian_cov_norm_2D/fs1423*fs0
         else:
             G1324*=fs1324/fs0/Norm
             G1423*=fs1423/fs0/Norm
@@ -276,11 +277,11 @@ class Covariance_utils():
             
         return G1324,G1423
         
-    def xi_gaussian_cov(self,cls,tracers,z_indx,Win,WT_kwargs,Bmode_mf=1):
+    def xi_gaussian_cov(self,cls,SN,tracers,z_indx,Win,WT_kwargs,Bmode_mf=1):
         #FIXME: Need to implement the case when we are only using bin centers.
         if Win is None:
-            return self.xi_gaussian_cov_no_win(cls,SN,tracers,z_indx,do_xi,Win,WT,WT_kwargs,use_binned_theta,Bmode_mf)
-        SN2=self.get_SN(tracers,z_indx)
+            return self.xi_gaussian_cov_no_win(cls,SN,tracers,z_indx,Win,WT_kwargs,Bmode_mf)
+        SN2=self.get_SN(SN,tracers,z_indx)
         CV=self.get_CV_cl(cls,tracers,z_indx)
         CV_B=self.get_CV_B_cl(cls,tracers,z_indx)
         
@@ -329,10 +330,10 @@ class Covariance_utils():
 #                             G_t=np.outer(SN2[c1],SN2[c2])
                             G_t=SN2[c1]*SN2[c2]
                         if k=='NN' and self.xi_SN_analytical:
-                            if not self.use_binned_theta:
-                                G_t=np.diag(SN2[c1][0]*SN2[c2][0]/self.WT.theta[WT_kwargs['s1_s2']]) #Fixme: wont' work with binned_theta
-                            else:
-                                G_t=np.diag(SN2[c1][0]*SN2[c2][0]/self.WT.theta_bins_center/self.WT.delta_theta_bins) 
+#                             if not self.use_binned_theta:
+#                                 G_t=np.diag(SN2[c1][0]*SN2[c2][0]/WT_kwargs['theta']['s1_s2']) #Fixme: wont' work with binned_theta
+#                             else:
+                                G_t=np.diag(SN2[c1][0]*SN2[c2][0]/WT_kwargs['wig_theta']/WT_kwargs['wig_grad_theta']) 
                         else:
 #                             th,G_t=WT.projected_covariance2(cl_cov=G_t,**WT_kwargs)
                             th,G_t=self.WT.projected_covariance(cl_cov=G_t,**WT_kwargs)
@@ -345,7 +346,7 @@ class Covariance_utils():
                         G[corr_i]+=G_t
         return G[1324]+G[1423]
 
-    def xi_gaussian_cov_no_win(self,cls,tracers,z_indx,Win,WT_kwargs,Bmode_mf=1):
+    def xi_gaussian_cov_no_win(self,cls,SN,tracers,z_indx,Win,WT_kwargs,Bmode_mf=1):
         #FIXME: Need to implement the case when we are only using bin centers.
         SN2=self.get_SN(SN,tracers,z_indx)
         CV=self.get_CV_cl(cls,tracers,z_indx)
@@ -392,7 +393,7 @@ class Covariance_utils():
                         G_ti=SN2[c1]*SN2[c2]
                     if k=='NN' and self.xi_SN_analytical:
                         if not self.use_binned_theta:
-                                G_t_SNi=SN2[c1][-1]*SN2[c2][-1]/(self.WT.theta[WT_kwargs['s1_s2']])#Fixme: wont' work with binned_theta
+                                G_t_SNi=SN2[c1][-1]*SN2[c2][-1]/(WT_kwargs[theta]['s1_s2'])#Fixme: wont' work with binned_theta
                         else:
                                 G_t_SNi=SN2[c1][-1]*SN2[c2][-1]/self.WT.theta_bins_center/self.WT.delta_theta_bins
 
@@ -413,14 +414,14 @@ class Covariance_utils():
         return G[1324]+G[1423]
 
     
-    def cov_four_kernels(self,z_bins={},Ang_PS=None):
+    def cov_four_kernels(self,z_bins={},clz=None):
         zs1=z_bins[0]
         zs2=z_bins[1]
         zs3=z_bins[2]
         zs4=z_bins[3]
         sig_cL=zs1['Gkernel_int']*zs2['Gkernel_int']*zs3['Gkernel_int']*zs4['Gkernel_int']
 #Only use lensing kernel... not implemented for galaxies (galaxies have magnification, which is included)
-        sig_cL*=Ang_PS.clz['dchi']
+        sig_cL*=clz['dchi']
         return sig_cL
 
     
@@ -457,7 +458,7 @@ class Covariance_utils():
 
         return cov['SSC'],cov['Tri']
 
-    def bin_cl_cov_func(self,cov=None):#moved out of class. This is no longer used
+    def bin_cl_cov_func(self,cov=None,cl_bin_utils=None):#moved out of class. This is no longer used
         """
             bins the tomographic power spectra
             results: Either cl or covariance
@@ -469,10 +470,11 @@ class Covariance_utils():
         if self.use_binned_l or not self.bin_cl:
             cov_b=cov*1.
         else:
-            cov_b=self.binning.bin_2d(cov=cov,bin_utils=self.cl_bin_utils)
+            cov_b=self.binning.bin_2d(cov=cov,bin_utils=cl_bin_utils)
         return cov_b
     
-    def cl_cov(self,zs_indx,z_bins=None,sig_cL=None,cls=None, tracers=[],Win_cov=None,Win_cl1=None,Win_cl2=None,cov_utils=None,Ang_PS=None):
+    def cl_cov(self,zs_indx,z_bins=None,sig_cL=None,cls=None, tracers=[],Win_cov=None,Win_cl1=None,Win_cl2=None,
+               cov_utils=None,Ang_PS=None,SN=None,cl_bin_utils=None):
         """
             Computes the covariance between any two tomographic power spectra.
             cls: tomographic cls already computed before calling this function
@@ -494,7 +496,7 @@ class Covariance_utils():
             Win=Win_cov
 
         if self.use_window and self.do_pseudo_cl:
-            cov['G1324'],cov['G1423']=self.cl_gaussian_cov_window(cls,
+            cov['G1324'],cov['G1423']=self.cl_gaussian_cov_window(cls,SN,
                                             tracers,zs_indx,Win,)
         else:
             fs=self.f_sky
@@ -502,7 +504,7 @@ class Covariance_utils():
                 cov['G1324']=0
                 cov['G1423']=0
             else:
-                cov['G1324'],cov['G1423']=self.cl_gaussian_cov(cls,
+                cov['G1324'],cov['G1423']=self.cl_gaussian_cov(cls,SN,
                                             self.SN,tracers,zs_indx,self.do_xi,fs)
         cov['G']=cov['G1324']+cov['G1423']
         cov['final']=cov['G']
@@ -523,7 +525,7 @@ class Covariance_utils():
 
         for k in ['final','G','SSC','Tri']:#no need to bin G1324 and G1423
             if self.bin_cl:
-                cov[k+'_b']=self.bin_cl_cov_func(cov=cov[k])
+                cov[k+'_b']=self.bin_cl_cov_func(cov=cov[k],cl_bin_utils=cl_bin_utils)
             else:
                 cov[k+'_b']=cov[k]
 
@@ -538,8 +540,8 @@ class Covariance_utils():
         return cov
 
     def xi_cov(self,cov_indx,cov_cl=None,cls={},s1_s2=None,s1_s2_cross=None,
-               corr1=[],corr2=[], Win_cov=None,Win_cl1=None,Win_cl2=None,
-              z_bins=None,sig_cL=None):
+               corr1=[],corr2=[], Win_cov=None,Win_cl1=None,Win_cl2=None,SN=None,
+              z_bins=None,sig_cL=None,WT=None,WT_kwargs={}):
         """
             Computes covariance of xi, by performing 2-D hankel transform on covariance of Cl.
             In current implementation of hankel transform works only for s1_s2=s1_s2_cross.
@@ -565,8 +567,10 @@ class Covariance_utils():
         wig_d1=None
         wig_d2=None
         if self.use_binned_l:
-            wig_d1=self.WT_binned_cov[corr1][s1_s2][indxs_1]
-            wig_d2=self.WT_binned_cov[corr2][s1_s2_cross][indxs_2]
+            wig_d1=WT_kwargs['wig_d1']
+            wig_d2=WT_kwargs['wig_d2']
+#             wig_d1=WT_binned_cov[corr1][s1_s2][indxs_1]
+#             wig_d2=self.WT_binned_cov[corr2][s1_s2_cross][indxs_2]
 
         Win=None
     #         if self.use_window and self.store_win:
@@ -574,12 +578,12 @@ class Covariance_utils():
         if Win_cov is not None:
             Win=Win_cov#[z_indx]
 
-        WT_kwargs={'l_cl':self.l,'s1_s2':s1_s2,'s1_s2_cross':s1_s2_cross,'wig_d1':wig_d1,'wig_d2':wig_d2}
+#         WT_kwargs={'l_cl':self.l,'s1_s2':s1_s2,'s1_s2_cross':s1_s2_cross,'wig_d1':wig_d1,'wig_d2':wig_d2}
         bf=1
         if np.all(np.array(tracers)=='shear') and not s1_s2==s1_s2_cross: #cross between xi+ and xi-
             bf=-1
 
-        cov_xi['G']=self.xi_gaussian_cov(cls,tracers,z_indx,Win,WT_kwargs,bf)
+        cov_xi['G']=self.xi_gaussian_cov(cls,SN,tracers,z_indx,Win,WT_kwargs,bf)
 
         if not self.use_binned_theta:
             cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=self.xi_bin_utils[s1_s2])

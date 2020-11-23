@@ -19,7 +19,7 @@ import zarr
 from dask.threaded import get
 import time,gc
 from multiprocessing import Pool,cpu_count
-from skylens.thread_count import *
+from skylens.utils import *
 import pickle
 
 
@@ -65,11 +65,21 @@ class window_utils():
                 self.c_ell_b=kappa_class0.cl_tomo()['cl_b']
         self.xi0=None
         self.xi_b=None
+        WT_kwargs={'cl':None,'cov':None}
         if bin_theta_window and self.do_xi:
             self.xi0=kappa_class0.xi_tomo()['xi']
             self.xi_b=kappa_b_xi.xi_tomo()['xi']
+            WT_kwargs={'cl':{'l_cl':self.window_l,'s1_s2':(0,0),'wig_d':self.WT.wig_d[(0,0)],'wig_l':self.WT.l,'wig_norm':self.WT.wig_norm,'grad_l':self.WT.grad_l}}
+            WT_kwargs['cov']={'l_cl':self.window_l,'s1_s2':(0,0),'wig_d1':self.WT.wig_d[(0,0)],'wig_d':self.WT.wig_d[(0,0)],
+                              'wig_d2':self.WT.wig_d[(0,0)],'wig_l':self.WT.l,'grad_l':self.WT.grad_l,'wig_norm':self.WT.wig_norm}
+#         dic=self.__dict__
+#         for k in dic.keys():
+#             print('window_utils init size',k,get_size_pickle(getattr(self,k)))
         if self.Win is None and self.use_window:
-            self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=None,z_bins=z_bins)
+            xibu=None
+            if xi_bin_utils is not None:
+                xibu=xi_bin_utils[(0,0)]
+            self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,client=None,z_bins=z_bins,WT_kwargs=WT_kwargs,xi_bin_utils=xibu)
         if self.Win is None and self.use_window and self.do_pseudo_cl: #pseudo_cl window
             if self.do_xi:
                 print('Warning: window for xi is different from cl.')
@@ -106,8 +116,11 @@ class window_utils():
             if not isinstance(self.Win[k1], dict):
                 continue
             for k2 in self.Win[k1].keys(): #corr
+                if not isinstance(self.Win[k1][k2], dict):
+                    continue
+#                 print('scatter win',isinstance(self.Win[k1][k2], dict),self.Win[k1][k2])
 #                 for k3 in self.Win[k1][k2].keys(): #indxs
-                    self.Win[k1][k2]=client.scatter(self.Win[k1][k2])#lowest level is automatically scattered
+                self.Win[k1][k2]=client.scatter(self.Win[k1][k2])#lowest level is automatically scattered
         return 
     
     def wig3j_step_read(self,m=0,lm=None):
@@ -256,7 +269,8 @@ class window_utils():
         fsky=(~x).mean()
         return fsky,W#.astype('int16')
 
-    def get_window_power_cl(self,corr_indxs,c_ell0=None,c_ell_b=None,z_bin1=None,z_bin2=None):#corr={},indxs={}):
+    def get_window_power_cl(self,corr_indxs,c_ell0=None,c_ell_b=None,z_bin1=None,z_bin2=None,
+                           WT_kwargs=None,xi_bin_utils=None):#corr={},indxs={}):
         """
         Get the cross power spectra of windows given two tracers.
         Note that noise and signal have different windows and power spectra for both 
@@ -305,8 +319,8 @@ class window_utils():
         win['W_pm']=W_pm
         win['s1s2']=s1s2
         if self.do_xi:
-            th,win['xi']=self.WT.projected_correlation(l_cl=self.window_l,s1_s2=(0,0),cl=win[12]['cl'])#this is ~f_sky
-            win['xi_b']=self.binning.bin_1d(xi=win['xi'],bin_utils=self.xi_bin_utils[(0,0)])
+            th,win['xi']=self.WT.projected_correlation(cl=win[12]['cl'],**WT_kwargs)#this is ~f_sky
+            win['xi_b']=self.binning.bin_1d(xi=win['xi'],bin_utils=xi_bin_utils) #xi_bin_utils[(0,0)]
 
         win['M']={} #self.coupling_matrix_large(win['cl'], s1s2,wig_3j_2=wig_3j_2,W_pm=W_pm)*(2*self.l[:,None]+1) #FIXME: check ordering
         win['M_noise']=None
@@ -494,7 +508,8 @@ class window_utils():
         else:
             return 0
 
-    def get_window_power_cov(self,corr_indxs,c_ell0=None,c_ell_b=None,xi0=None,xi_b=None,z_bins={}):#corr1=None,corr2=None,indxs1=None,indxs2=None):
+    def get_window_power_cov(self,corr_indxs,c_ell0=None,c_ell_b=None,xi0=None,xi_b=None,z_bins={},
+                            WT_kwargs=None,xi_bin_utils=None):#corr1=None,corr2=None,indxs1=None,indxs2=None):
         """
         Compute window power spectra what will be used in the covariance calculations. 
         For covariances, we have four windows. Pairs of them are first multiplied together and
@@ -630,8 +645,7 @@ class window_utils():
             
         win['f_sky12'],mask12=self.mask_comb(z_bin1['window'],z_bin2['window'],
                                      )#For SSC
-        win['f_sky34'],mask34=self.mask_comb(
-                                z_bin3['window'],z_bin4['window']
+        win['f_sky34'],mask34=self.mask_comb(z_bin3['window'],z_bin4['window']
                                      )
         win['mask_comb_cl']=hp.anafast(map1=mask12,
                                  map2=mask34,
@@ -693,11 +707,11 @@ class window_utils():
                     cl34[k]=hp.anafast(map1=m4,map2=m3,lmax=self.window_lmax
                             )[self.window_l]
                 for k in cl12.keys():
-                    th,win['xi'][12][k]=self.WT.projected_correlation(l_cl=self.window_l,s1_s2=(0,0),cl=cl12[k])
-                    th,win['xi'][34][k]=self.WT.projected_correlation(l_cl=self.window_l,s1_s2=(0,0),cl=cl34[k])
+                    th,win['xi'][12][k]=self.WT.projected_correlation(cl=cl12[k],**WT_kwargs)
+                    th,win['xi'][34][k]=self.WT.projected_correlation(cl=cl34[k],**WT_kwargs)
                     if self.bin_theta_window:
-                        win['xi'][12][k]=self.binning.bin_1d(xi=win['xi'][12][k],bin_utils=self.xi_bin_utils[(0,0)])
-                        win['xi'][34][k]=self.binning.bin_1d(xi=win['xi'][34][k],bin_utils=self.xi_bin_utils[(0,0)])
+                        win['xi'][12][k]=self.binning.bin_1d(xi=win['xi'][12][k],bin_utils=xi_bin_utils)
+                        win['xi'][34][k]=self.binning.bin_1d(xi=win['xi'][34][k],bin_utils=xi_bin_utils)
 #             if self.bin_theta_window:
 #                 for s1 in self.s1_s2s[corr1]:
 #                     for s2 in self.s1_s2s[corr2]:
@@ -936,7 +950,8 @@ class window_utils():
         return result0 #{corr_indxs:result0}
 
     
-    def set_window_cl(self,corrs=None,corr_indxs=None,client=None,npartitions=100,use_bag=True,z_bins=None):
+    def set_window_cl(self,corrs=None,corr_indxs=None,client=None,npartitions=100,use_bag=True,z_bins=None,
+                     WT_kwargs=None,xi_bin_utils=None):
         """
         This function sets the graph for computing power spectra of windows 
         for both C_ell and covariance matrices.
@@ -953,10 +968,12 @@ class window_utils():
         if use_bag:
             z_bin1=dask.bag.from_sequence( [z_bins[ck[0]][ck[2]] for ck in self.cl_keys ],npartitions=npartitions)
             z_bin2=dask.bag.from_sequence( [z_bins[ck[1]][ck[3]] for ck in self.cl_keys ],npartitions=npartitions)
-            self.Win_cl=self.cl_bag.map(self.get_window_power_cl,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,z_bin1=z_bin1,z_bin2=z_bin2,)
+            self.Win_cl=self.cl_bag.map(self.get_window_power_cl,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,z_bin1=z_bin1,z_bin2=z_bin2,
+                                        WT_kwargs=WT_kwargs['cl'],xi_bin_utils=xi_bin_utils)
 #this can be slow... https://stackoverflow.com/questions/64559993/what-happens-during-dask-client-map-call
         else:
-            self.Win_cl=[delayed(self.get_window_power_cl)(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,z_bin1=z_bins[ck[0]][ck[2]],z_bin2=z_bins[ck[1]][ck[3]]) for ck in self.cl_keys]
+            self.Win_cl=[delayed(self.get_window_power_cl)(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,z_bin1=z_bins[ck[0]][ck[2]],
+                                                           z_bin2=z_bins[ck[1]][ck[3]],WT_kwargs=WT_kwargs['cl'],xi_bin_utils=xi_bin_utils) for ck in self.cl_keys]
         print('cl bags done',time.time()-t1)
         self.cov_keys=[]
         self.Win_cov=None
@@ -971,14 +988,14 @@ class window_utils():
                               3:z_bins[ck[3]][ck[7]]}
                             for ck in self.cov_keys],npartitions=npartitions)
                     self.Win_cov=self.cov_bag.map(self.get_window_power_cov,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,xi0=self.xi0,xi_b=self.xi_b,
-                                                 z_bins=z_bin4)
+                                                 z_bins=z_bin4,WT_kwargs=WT_kwargs['cov'],xi_bin_utils=xi_bin_utils)
                 else:
                     self.Win_cov=[delayed(self.get_window_power_cov)(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,xi0=self.xi0,xi_b=self.xi_b,
                                                                     z_bins={0:z_bins[ck[0]][ck[4]],
                                                                             1:z_bins[ck[1]][ck[5]],
                                                                             2:z_bins[ck[2]][ck[6]],
                                                                             3:z_bins[ck[3]][ck[7]]},
-                                                                    ) for ck in self.cov_keys]
+                                                                    WT_kwargs=WT_kwargs['cov'],xi_bin_utils=xi_bin_utils) for ck in self.cov_keys]
                 # ^ is super slow for very large number of covariances. ^^ helps because dask effectively bunches up delayed.
                 # ^ is better for smaller computes. ^^ for very large ones.
                 # FIXME: We can probably implement custom partitions, bunching up covariances from same tracers to make things more efficient.
