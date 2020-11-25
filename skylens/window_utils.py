@@ -14,7 +14,6 @@ from scipy.interpolate import interp1d
 import warnings,logging
 from distributed import LocalCluster
 from dask.distributed import Client,get_client,wait
-import h5py
 import zarr
 from dask.threaded import get
 import time,gc
