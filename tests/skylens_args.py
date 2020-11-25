@@ -3,7 +3,7 @@ import pickle
 import camb
 
 from skylens import *
-from survey_utils import *
+from skylens.survey_utils import *
 
 LC,scheduler_info=start_client(Scheduler_file=None,local_directory='../temp/',ncpu=None,n_workers=1,threads_per_worker=None,
                               memory_limit='120gb',dashboard_address=8801)
