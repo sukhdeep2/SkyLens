@@ -483,7 +483,7 @@ class Covariance_utils():
         return cov_b
     
     def cl_cov(self,zs_indx,z_bins=None,sig_cL=None,cls=None, tracers=[],Win_cov=None,Win_cl1=None,Win_cl2=None,
-               cov_utils=None,Ang_PS=None,SN=None,cl_bin_utils=None):
+               cov_utils=None,clz=None,SN=None,cl_bin_utils=None):
         """
             Computes the covariance between any two tomographic power spectra.
             cls: tomographic cls already computed before calling this function
@@ -519,9 +519,9 @@ class Covariance_utils():
         cov['final']=cov['G']
         cov['SSC'],cov['Tri']=self.cl_cov_connected(zs_indx=zs_indx,cls=cls,clz=clz, tracers=tracers,sig_cL=sig_cL)#,Win_cov=None,Win_cl=None)
         if self.use_window and (self.SSV_cov or self.Tri_cov) and self.do_pseudo_cl: #Check: This is from writing p-cl as M@cl... cov(p-cl)=M@cov(cl)@M.T ... separate  M when different p-cl
-            M1=Win_cl1[(tracers[0],tracers[1])][(zs_indx[0],zs_indx[1])]['M'] #12
-            M2=Win_cl2[(tracers[2],tracers[3])][(zs_indx[2],zs_indx[3])]['M'] #34
-            if self.bin_window:
+            M1=Win_cl1['M'] #12
+            M2=Win_cl2['M'] #34
+            if self.use_binned_l:
                 for k in ['SSC','Tri']:
                     cov[k]=self.bin_cl_cov_func(cov=cov[k])
             cov['final']=cov['G']+ M1@(cov['SSC']+cov['Tri'])@M2.T

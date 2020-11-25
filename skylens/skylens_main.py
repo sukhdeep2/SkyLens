@@ -551,7 +551,7 @@ class Skylens():
                                                                             1:zkernel[corr1[1]][indxs[1]],
                                                                             2:zkernel[corr2[0]][indxs[2]],
                                                                             3:zkernel[corr2[1]][indxs[3]]},
-                                                                             clz=clz),#don't want to copy z_bins,
+                                                                             clz=clz)#don't want to copy z_bins,
                     cov[corr1+corr2][indxs]=delayed(self.cov_utils.cl_cov)(indxs,cls=self.get_CV_cl(cl,corr1+corr2,indxs),
                                                                         SN=self.SN,cl_bin_utils=self.cl_bin_utils,
                                                                         Win_cov=Win_covi,tracers=corr1+corr2,

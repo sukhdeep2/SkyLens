@@ -35,9 +35,8 @@ tidal_SSV_cov=False
 Tri_cov=True
 
 bin_xi=True
-theta_bins=np.logspace(np.log10(1./60),1,20)
 
-nside=32
+nside=16
 window_lmax=nside
 
 use_window=True
@@ -62,7 +61,7 @@ th_min=2.5/60
 th_max=25./60
 n_th_bins=15
 th_bins=np.logspace(np.log10(th_min),np.log10(th_max),n_th_bins+1)
-th=np.logspace(np.log10(th_min),np.log10(th_max),n_th_bins*40)
+th=np.logspace(np.log10(th_min),np.log10(th_max),n_th_bins*10)
 thb=np.sqrt(th_bins[1:]*th_bins[:-1])
 
 #Hankel Transform setup
@@ -70,7 +69,8 @@ WT_kwargs={'l':l0,'theta':th,'s1_s2':[(2,2),(2,-2),(0,0),(0,2),(2,0)]}
 WT=wigner_transform(**WT_kwargs)
 
 z0=1 #1087
-zs_bin1=lsst_source_tomo_bins(nbins=2,use_window=use_window,nside=nside)
+nzbins=1
+zs_bin1=lsst_source_tomo_bins(nbins=nzbins,use_window=use_window,nside=nside)
 f_sky=0.35
 sparse_cov=True
 
@@ -78,7 +78,10 @@ corr_ggl=('galaxy','shear')
 corr_gg=('galaxy','galaxy')
 corr_ll=('shear','shear')
 corrs=[corr_ll,corr_ggl,corr_gg]
-Skylens_kwargs={'zs_bins':zs_bin1,'do_cov':do_cov,'bin_cl':bin_cl,'l_bins':l_bins,'l':l0, 'zg_bins':zs_bin1,
+
+nz_PS=30
+
+Skylens_kwargs={'zs_bins':zs_bin1,'do_cov':do_cov,'bin_cl':bin_cl,'l_bins':l_bins,'l':l0, 'zg_bins':zs_bin1,'nz_PS':nz_PS,
                 'use_window':use_window,'Tri_cov':Tri_cov,'use_binned_l':use_binned_l,'wigner_files':wigner_files,
                  'SSV_cov':SSV_cov,'tidal_SSV_cov':SSV_cov,'f_sky':f_sky,'store_win':store_win,
                 'window_lmax':window_lmax,'sparse_cov':sparse_cov,'corrs':corrs,'do_xi':do_xi,'bin_xi':bin_xi,

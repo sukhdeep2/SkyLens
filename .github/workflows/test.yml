@@ -31,4 +31,4 @@ jobs:
              - name: Tests
                run: |
                         python ./tests/test_pseudo_cl_0.py
-                        python ./tests/test_pseudo_xi_0.py
+                        python ./tests/test_xi_0.py
