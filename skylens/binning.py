@@ -1,5 +1,5 @@
 from scipy.interpolate import interp1d,interp2d,RectBivariateSpline
-import numpy as np
+import jax.numpy as np
 import itertools
 
 class binning():

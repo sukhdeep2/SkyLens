@@ -15,7 +15,7 @@ except:
 sys.path.insert(0,'./')
 
 from dask.distributed import Lock
-import numpy as np
+import jax.numpy as np
 from scipy.interpolate import interp1d
 from astropy.cosmology import Planck15 as cosmo
 from astropy import units as u

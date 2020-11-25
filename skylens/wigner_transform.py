@@ -5,7 +5,7 @@ from skylens.wigner_functions import *
 from skylens.utils import *
 from scipy.special import jn, jn_zeros,jv
 from dask.distributed import Client,get_client
-import numpy as np
+import jax.numpy as np
 import itertools
 d2r=np.pi/180.
 

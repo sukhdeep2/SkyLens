@@ -16,7 +16,7 @@ from skylens.cov_tri import *
 from skylens.utils import *
 from astropy.constants import c,G
 from astropy import units as u
-import numpy as np
+import jax.numpy as np
 from scipy.interpolate import interp1d
 import warnings,logging
 import copy

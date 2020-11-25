@@ -8,7 +8,7 @@ import sparse
 from skylens.wigner_transform import *
 from skylens.binning import *
 from skylens.cov_utils import *
-import numpy as np
+import jax.numpy as np
 import healpy as hp
 from scipy.interpolate import interp1d
 import warnings,logging
@@ -1083,7 +1083,6 @@ class window_utils():
         return self.Win
     
     def reduce_win_cl(self,win,win2):
-        print(win,win2)
         dic=win
         corr=win2['corr']
         corr2=corr[::-1]

@@ -1,6 +1,7 @@
 import sys
 import pickle
 import camb
+import traceback
 
 from skylens import *
 from skylens.survey_utils import *
@@ -82,7 +83,7 @@ corrs=[corr_ll,corr_ggl,corr_gg]
 nz_PS=30
 
 Skylens_kwargs={'zs_bins':zs_bin1,'do_cov':do_cov,'bin_cl':bin_cl,'l_bins':l_bins,'l':l0, 'zg_bins':zs_bin1,'nz_PS':nz_PS,
-                'use_window':use_window,'Tri_cov':Tri_cov,'use_binned_l':use_binned_l,'wigner_files':wigner_files,
-                 'SSV_cov':SSV_cov,'tidal_SSV_cov':SSV_cov,'f_sky':f_sky,'store_win':store_win,
+                'use_window':use_window,'Tri_cov':Tri_cov,'use_binned_l':use_binned_l,'wigner_files':wigner_files,'do_pseudo_cl':do_pseudo_cl,
+                 'SSV_cov':SSV_cov,'tidal_SSV_cov':SSV_cov,'f_sky':f_sky,'store_win':store_win,'scheduler_info':scheduler_info,
                 'window_lmax':window_lmax,'sparse_cov':sparse_cov,'corrs':corrs,'do_xi':do_xi,'bin_xi':bin_xi,
                 'theta_bins':th_bins,'WT':WT,'use_binned_theta':use_binned_l}

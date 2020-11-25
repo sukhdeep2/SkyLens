@@ -3,7 +3,7 @@ This file contains functions to compute wigner matrices used in wigner transform
 and wigner_3j matrices used in window function calculations. 
 """
 
-import numpy as np
+import jax.numpy as np
 from scipy.special import binom,jn,loggamma
 from scipy.special import eval_jacobi as jacobi
 from multiprocessing import Pool,cpu_count

@@ -1,7 +1,7 @@
 import sys
 sys.path.insert(0, '/home/sukhdees/project/code/python_scripts/')
 from astropy.coordinates import ICRS, Galactic,SkyCoord
-import numpy as np
+import jax.numpy as np
 import healpy as hp
 from astropy import units as units
 

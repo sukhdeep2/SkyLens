@@ -3,7 +3,7 @@ sys.path.append('/verafs/scratch/phy200040p/sukhdeep/project/skylens/skylens/')
 import dask
 # from astropy.constants import c,G
 # from astropy import units as u
-import numpy as np
+import jax.numpy as np
 # from scipy.interpolate import interp1d
 import warnings,logging
 import copy
@@ -394,41 +394,7 @@ class Skylens():
                                                     r_dim=2,mat_dims=[1,2])
                 self.xi_bin_utils[s1_s2]=client.compute(self.xi_bin_utils[s1_s2]).result()
                 self.xi_bin_utils[s1_s2]=scatter_dict(self.xi_bin_utils[s1_s2],scheduler_info=self.scheduler_info)
-            
-    def calc_cl(self,zbin1={}, zbin2={},corr=('shear','shear'),cosmo_params=None,Ang_PS=None):#FIXME: this can be moved outside the class.thenwe don't need to serialize self.
-        """
-            Compute the angular power spectra, Cl between two source bins
-            zs1, zs2: Source bins. Dicts containing information about the source bins
-        """
-        clz=Ang_PS.clz
-        cls=clz['cls']
-        f=Ang_PS.cl_f
-        sc=zbin1['kernel_int']*zbin1['kernel_int']
-        dchi=clz['dchi']
-        cl=np.dot(cls.T*sc,dchi)
-                # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
-        return cl
-
-    def bin_cl_func(self,cl=None,cov=None):#moved out of class. This is no longer used
-        """
-            bins the tomographic power spectra
-            results: Either cl or covariance
-            bin_cl: if true, then results has cl to be binned
-            bin_cov: if true, then results has cov to be binned
-            Both bin_cl and bin_cov can be true simulatenously.
-        """
-        cl_b=None
-        if not cl is None:
-            if self.use_binned_l or not self.bin_cl:
-                cl_b=cl*1.
-            else:
-                cl_b=self.binning.bin_1d(xi=cl,bin_utils=self.cl_bin_utils)
-            return cl_b
-
-    def calc_pseudo_cl(self,cl,Win):# moved outside the class. No used now.
-        pcl=cl@Win['M']
-        return  pcl
-        
+                    
     def cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,
                 corrs=None,bias_kwargs={},bias_func=None,stack_corr_indxs=None,
                 z_bins=None,Ang_PS=None):

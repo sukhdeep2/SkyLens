@@ -1,7 +1,7 @@
 """
 Matter trispectrum for covariance. Implementation of Harnois-Deraps&Pen 2011. 
 """
-import numpy as np
+import jax.numpy as np
 #
 
 class cov_matter_tri():
