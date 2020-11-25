@@ -9,15 +9,15 @@ jobs:
           steps:
              - uses: actions/checkout@v2
              - name: Set up Python 3.8
-                    uses: actions/setup-python@v2
-                    with:
+               uses: actions/setup-python@v2
+               with:
                         python-version: '3.8'
 
              - name: Install dependencies	
-                    run: |
+               run: |
                         pip install -r requirements.txt
                         pip install .
              - name: Tests
-                    run: |
+               run: |
                         python ./tests/test_pseudo_cl_0.py
                         python ./tests/test_pseudo_xi_0.py
