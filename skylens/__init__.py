@@ -13,6 +13,7 @@ from skylens.cov_utils import *
 from skylens.tracer_utils import *
 from skylens.window_utils import *
 from skylens.cov_tri import *
+from skylens.utils import *
 from astropy.constants import c,G
 from astropy import units as u
 import numpy as np

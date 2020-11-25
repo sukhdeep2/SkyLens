@@ -1,6 +1,7 @@
 import sys
 import emcee
 from skylens import *
+# from skylens.utils import *
 
 from dask.distributed import Lock
 
@@ -14,7 +15,7 @@ from dask.distributed import Client
 
 import argparse
 
-test_run=True
+test_run=False
 parser = argparse.ArgumentParser()
 parser.add_argument("--do_xi", "-do_xi",type=int, help="")
 parser.add_argument("--fix_cosmo", "-fc",type=int, help="use unit window")
@@ -25,12 +26,12 @@ args = parser.parse_args()
 
 args = parser.parse_args()
 
-fix_cosmo=True if not args.fix_cosmo else np.bool(args.fix_cosmo)
-do_xi=False if not args.do_xi else np.bool(args.do_xi)
-use_binned_l=False if not args.bin_l else np.bool(args.bin_l)
+fix_cosmo=False if args.fix_cosmo is None else np.bool(args.fix_cosmo)
+do_xi=False if args.do_xi is None else np.bool(args.do_xi)
+use_binned_l=True if args.bin_l is None else np.bool(args.bin_l)
 
-print('Doing mcmc',fix_cosmo,do_xi,use_binned_l,test_run) #err  True False True True     False True False True
-# crash
+print('Doing mcmc',fix_cosmo,do_xi,use_binned_l,test_run,args) #err  True False True True     False True False True
+
 Scheduler_file=args.scheduler
 dask_dir=args.dask_dir
 
@@ -60,23 +61,10 @@ if test_run:
 
 import os 
 # os.environ["OMP_NUM_THREADS"] = "1"
-worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
-if Scheduler_file is None:
-#     dask_initialize(nthreads=27,local_directory=dask_dir)
-#     client = Client()
-    LC=LocalCluster(n_workers=1,processes=False,memory_limit=memory,threads_per_worker=ncpu*2,
-                    local_directory=dask_dir, **worker_kwargs,
-                    #scheduler_port=12234,
-                    dashboard_address=8801
-                    # diagnostics_port=8801,
-    #                memory_monitor_interval='2000ms')
-                   )
-    client=Client(LC)#diagnostics_port=8801,)
-    Scheduler_file=client.scheduler_info()['address']
-else:
-    client=Client(scheduler_file=Scheduler_file,processes=False)
-scheduler_info=client.scheduler_info()
-scheduler_info['file']=Scheduler_file
+
+LC,scheduler_info=start_client(Scheduler_file=Scheduler_file,local_directory=dask_dir,ncpu=None,n_workers=1,threads_per_worker=None,
+                              memory_limit=memory,dashboard_address=8801)
+client=client_get(scheduler_info=scheduler_info)
 print('client: ',client)#,dask_dir,scheduler_info)
 
 lock = None #Lock(name="Why_Camb_Why",client=client)
@@ -238,6 +226,7 @@ for k in del_k:
 
 zs_bin1=scatter_dict(zs_bin1,scheduler_info=scheduler_info) 
 cl_bin_utils=kappa0.cl_bin_utils
+xi_bin_utils=kappa0.xi_bin_utils
 
 if fix_cosmo:
     kappa0.Ang_PS.angular_power_z()
@@ -245,7 +234,6 @@ else:
     kappa0.Ang_PS.reset()
 kappa0=client.scatter(kappa0)
 
-        
 def get_priors(params):#assume flat priors for now
     x=np.logical_or(np.any(params>priors_max,axis=1),np.any(params<priors_min,axis=1))
     p=np.zeros(len(params))
@@ -261,9 +249,9 @@ def assign_zparams(zbins={},p_name='',p_value=None):
 
 def get_Ang_PS(params,kappa0,z_bins,log_prior):
     cosmo_params=copy.deepcopy(cosmo_fid)
-#     Ang_PS=copy.deepcopy(kappa0.Ang_PS)
+    Ang_PS=copy.deepcopy(kappa0.Ang_PS)
     if not np.isfinite(log_prior):
-        return cosmo_params,z_bins
+        return cosmo_params,z_bins,Ang_PS
     zbins=copy.deepcopy(z_bins)
     i=0
     for p in params_order:
@@ -274,19 +262,20 @@ def get_Ang_PS(params,kappa0,z_bins,log_prior):
         i+=1
     zbins={'galaxy':zbins,'shear':zbins}
 #     model=kappa.tomo_short(cosmo_params=cosmo_params,z_bins=zbins,Ang_PS=Ang_PS,pk_lock=pk_lock)
-    return cosmo_params,zbins#,Ang_PS
+    return cosmo_params,zbins,Ang_PS
 
-def get_model(params,data,kappa0,Ang_PS,log_prior,indx,Win,WT,WT_binned,cl_bin_utils):
+def get_model(params,data,kappa0,log_prior,indx,Win,WT,WT_binned,cl_bin_utils,xi_bin_utils):
 #     print('get_model',indx,params,log_prior)
-    cosmo_params,z_bins=params
+    cosmo_params,z_bins,Ang_PS=params
     if not np.isfinite(log_prior):
         return np.zeros_like(data)
-    model=kappa0.tomo_short(cosmo_params=cosmo_params,z_bins=z_bins,Ang_PS=Ang_PS,Win=Win,WT=WT,WT_binned=WT_binned,cl_bin_utils=cl_bin_utils)#,pk_lock=pk_lock)
+    model=kappa0.tomo_short(cosmo_params=cosmo_params,z_bins=z_bins,Ang_PS=Ang_PS,Win=Win,WT=WT,WT_binned=WT_binned,
+                            cl_bin_utils=cl_bin_utils,xi_bin_utils=xi_bin_utils)#,pk_lock=pk_lock)
     return model
 def get_PS(kappa0,args_p):  
-    ap=copy.deepcopy(kappa0.Ang_PS)
+    ap=args_p[2]
     ap.angular_power_z(cosmo_params=args_p[0])
-    return ap
+    return args_p
 def chi_sq(params,data,cov_inv,kappa0,z_bins,pk_lock):
     t1=time.time()
     params=np.atleast_2d(params)
@@ -298,8 +287,10 @@ def chi_sq(params,data,cov_inv,kappa0,z_bins,pk_lock):
     args_p=[delayed(get_Ang_PS)(params[i],kappa0,z_bins,log_priors[i]) for i in np.arange(n_params)]
     args_p=client.persist(args_p)
     for i in np.arange(n_params):
-        ap=delayed(get_PS)(kappa0,args_p[i])
-        ap=client.compute(ap).result()
+        ap=None
+        if not np.isfinite(log_priors[i]):
+            ap=delayed(get_PS)(kappa0,args_p[i])
+            args_p[i]=client.compute(ap).result()
         
 #         cp=client.scatter(cp)
 #         print(zb.keys())
@@ -311,7 +302,7 @@ def chi_sq(params,data,cov_inv,kappa0,z_bins,pk_lock):
 #         zb=client.scatter(zb)
 #         args_p[i]=delayed(get_Ang_PS)(params[i],kappa0,z_bins,log_priors[i])
         
-        models[i]=delayed(get_model)(args_p[i],data,kappa0,ap,log_priors[i],i,Win,WT,WT_binned,cl_bin_utils)#pk_lock
+        models[i]=delayed(get_model)(args_p[i],data,kappa0,log_priors[i],i,Win,WT,WT_binned,cl_bin_utils,xi_bin_utils)#pk_lock
         models[i]=client.compute(models[i])
     models=np.array([models[i].result() for i in np.arange(n_params)])
     loss=data-models
@@ -409,6 +400,7 @@ outp['params_order']=params_order
 
 file_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/imaster/'
 #file_home='/media/data/repos/skylens/temp/tests/imaster/'
+zs_bin1=client.gather(zs_bin1)
 if do_xi:
     fname_out='xi_{nz}_bl{bl}_bth{bth}_nw{nw}_ns{ns}_camb{fc}.pkl'.format(nz=zs_bin1['n_bins'],bl=np.int(use_binned_l),
                                                                           bth=np.int(use_binned_theta),ns=nsteps,nw=nwalkers,fc=int(fix_cosmo))

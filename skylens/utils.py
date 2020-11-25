@@ -1,6 +1,7 @@
-import sys, os, gc, threading, subprocess,pickle
+import sys, os, gc, threading, subprocess,pickle,multiprocessing
 import numpy as np
 from dask.distributed import Client,get_client
+from distributed import LocalCluster
 # print('pid: ',pid, sys.version)
 def thread_count():
     pid=os.getpid()
@@ -57,6 +58,19 @@ def chunks(lst, n):
 def pickle_deepcopy(obj):
        return pickle.loads(pickle.dumps(obj, -1))
 
+def scatter_dict(dic,scheduler_info=None,depth=10): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
+    """
+        depth: Need to think this through. It appears dask can see one level of depth when scattering and gathering, but not more.
+    """
+    client=client_get(scheduler_info=scheduler_info)
+    for k in dic.keys():
+        if isinstance(dic[k],dict) and depth>0:
+            dic[k]=scatter_dict(dic[k],scheduler_info=scheduler_info,depth=depth-1)
+        else:
+            dic[k]=client.scatter(dic[k])
+    return dic
+
+
 def client_get(scheduler_info=None):
     if scheduler_info is not None:
         client=get_client(address=scheduler_info['address'])
@@ -64,11 +78,25 @@ def client_get(scheduler_info=None):
         client=get_client()
     return client
 
-def scatter_dict(dic,scheduler_info=None):
-    client=client_get(scheduler_info=scheduler_info)
-    for k in dic.keys():
-        if isinstance(dic[k],dict):
-            dic[k]=scatter_dict(dic[k],scheduler_info=scheduler_info)
-        else:
-            dic[k]=client.scatter(dic[k])
-    return dic
+worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
+def start_client(Scheduler_file=None,local_directory=None,ncpu=None,n_workers=1,threads_per_worker=None,
+                  worker_kwargs=worker_kwargs,LocalCluster_kwargs={},dashboard_address=8801,memory_limit='120gb'):
+    LC=None
+    if threads_per_worker is None:
+        if ncpu is None:
+            ncpu=multiprocessing.cpu_count()-1
+        threads_per_worker=ncpu
+    if Scheduler_file is None:
+                #     dask_initialize(nthreads=27,local_directory=dask_dir)
+                #     client = Client()
+        LC=LocalCluster(n_workers=n_workers,processes=False,threads_per_worker=threads_per_worker,
+                        local_directory=local_directory,dashboard_address=dashboard_address,
+                        memory_limit=memory_limit,**LocalCluster_kwargs,**worker_kwargs
+                   )
+        client=Client(LC)
+    else:
+        client=Client(scheduler_file=Scheduler_file,processes=False)
+    scheduler_info=client.scheduler_info()
+    scheduler_info['file']=Scheduler_file
+    return LC,scheduler_info #client can be obtained from client_get
+

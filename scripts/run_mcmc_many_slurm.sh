@@ -9,7 +9,7 @@
 ##SBATCH --ntasks-per-node=2
 #SBATCH --mem=128G
 #SBATCH -A phy200040p
-#SBATCH --array=1-2
+#SBATCH --array=1-8
 
 ID=$SLURM_ARRAY_JOB_ID
 
@@ -20,15 +20,17 @@ job_id=$SLURM_ARRAY_TASK_ID
 #temp_home=$home'../temp/'
 
 home='/verafs/scratch/phy200040p/sukhdeep/project/skylens/scripts/'
-temp_home='/verafs/home/sukhdeep/temp/'
+#temp_home='/verafs/home/sukhdeep/temp/dask/'
+temp_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/temp/'
+mkdir $temp_home
 cd $home
 
-fix_cosmos=( 1 0 )
+
 do_xis=( 0 1 )
-bin_ls=( 1 0 )
+bin_ls=( 0 1 )
+fix_cosmos=( 0 1 )
 
-
-tmp_file=$temp_home"/dask/""$ID""$job_id"".tmp"
+tmp_file=$temp_home"/""$ID""$job_id"".tmp"
 
 echo 0 > $tmp_file
 
@@ -52,19 +54,22 @@ do
                 echo 'exiting' $njob $job_id $total_job #>> $log_file
                 exit
             fi
-            ./dask-vera2.sh $njob &
-               CSCRATCH=$temp_home'/dask/scheduler_'${SLURM_ARRAY_JOB_ID}${SLURM_ARRAY_TASK_ID}'/'$njob'/'
-               rm -rf $CSCRATCH
+#            ./dask-vera2.sh $njob &
+               #CSCRATCH=$temp_home'/dask/scheduler_'${SLURM_ARRAY_JOB_ID}${SLURM_ARRAY_TASK_ID}'/'$njob'/'
+	    CSCRATCH=$temp_home'/scheduler_'${SLURM_ARRAY_JOB_ID}'/'
+	    mkdir $CSCRATCH
+	    CSCRATCH=$CSCRATCH'/'$njob'/'
+	       rm -rf $CSCRATCH
                mkdir $CSCRATCH
-               killall python
+#                killall python3
                CSCRATCH=$CSCRATCH
                SCHEFILE=$CSCRATCH/Scheduler.dasksche.json
                worker_log=$CSCRATCH/dask-local/worker-*
                echo $worker_log
-               while ! [ -f $SCHEFILE ]; do #redundant
-		   sleep 3
-                   echo -n . #>>$log_file
-               done
+ #              while ! [ -f $SCHEFILE ]; do #redundant
+  #                  sleep 3
+   #                echo -n . #>>$log_file
+    #           done
 
                 echo 'ids' $njob $job_id #>> $log_file
                 #conda_env py36
@@ -72,7 +77,7 @@ do
                 echo '==============================================================' #>>$log_file
                 echo 'begining::' $(date) #>>$log_file 
 
-                python3 MCMC_emcee.py  --do_xi=$do_xi --bin_l=$bin_l --fix_cosmo=$fix_cosmo --dask_dir=$CSCRATCH --scheduler=$SCHEFILE #|cat>>$log_file
+                python3 MCMC_emcee.py  --do_xi=$do_xi --bin_l=$bin_l --fix_cosmo=$fix_cosmo --dask_dir=$CSCRATCH #--scheduler=$SCHEFILE #|cat>>$log_file
 
                 echo 'Finished::' $(date) #>>$log_file                                                                                                                                                                    
                 echo '================================================' #>>$log_file          

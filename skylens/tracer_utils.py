@@ -84,16 +84,19 @@ class Tracer_utils():
                 for k in self.z_bins[tracer][i].keys():
                     if 'window' in k:
                         self.z_win[tracer][i][k]=self.z_bins[tracer][i][k]
-                if self.scheduler_info is not None:
-                    self.z_win[tracer][i]=client.scatter(self.z_win[tracer][i])
-                for k in self.z_win[tracer][i].keys():
-                    del self.z_bins[tracer][i][k]
+        self.z_win=scatter_dict(self.z_win,scheduler_info=self.scheduler_info)
+#                 if self.scheduler_info is not None:
+#                     self.z_win[tracer][i]=client.scatter(self.z_win[tracer][i])
+#                 for k in self.z_win[tracer][i].keys():
+#                     del self.z_bins[tracer][i][k]
                     
     def clean_z_window(self,):
         if self.scheduler_info is not None:
             client=get_client(address=self.scheduler_info['address'])
             for tracer in self.tracers:
-                client.cancel(self.z_win[tracer])
+                pass
+#                 client.cancel(self.z_win[tracer])
+#         print('clean z window',self.z_win)
         self.z_win=None
 #         del self.z_win
         

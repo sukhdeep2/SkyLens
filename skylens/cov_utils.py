@@ -37,8 +37,8 @@ class Covariance_utils():
 #         self.gaussian_cov_norm_2D=np.outer(np.sqrt(self.gaussian_cov_norm),np.sqrt(self.gaussian_cov_norm))
         if self.Tri_cov:
             self.CTR=cov_matter_tri(k=self.l)
-        if use_window and use_binned_l:
-            dl=np.sqrt(np.gradient(self.l))
+#         if use_window and use_binned_l:
+#             dl=np.sqrt(np.gradient(self.l))
 #             self.dl_norm=np.outer(dl,dl)
 
 
@@ -159,7 +159,12 @@ class Covariance_utils():
         add_EB=1
         if self.do_xi and np.all(np.array(tracers)=='shear'):
             add_EB+=1
-            
+        
+        
+        if self.use_window and self.use_binned_l:
+            dl=np.sqrt(np.gradient(self.l))
+            dl_norm=np.outer(dl,dl)
+        
         for corr_i in [1324,1423]:
             W_pm=Win['W_pm'][corr_i]
             c1=cv_indxs[corr_i][0]
@@ -186,7 +191,7 @@ class Covariance_utils():
                         if not self.use_binned_l:
                             G[corr_i]+=G_t*Win['M'][corr_i][k][wp]
                         else:
-                            G[corr_i]+=G_t*Win['M'][corr_i][k][wp]/self.dl_norm #FIXME: consider using factor of 2l+1 in window and cov separately.
+                            G[corr_i]+=G_t*Win['M'][corr_i][k][wp]/dl_norm #FIXME: consider using factor of 2l+1 in window and cov separately.
 #                             G[corr_i]/=np.gradient(self.l)
 
         return G[1324],G[1423]
@@ -541,7 +546,7 @@ class Covariance_utils():
 
     def xi_cov(self,cov_indx,cov_cl=None,cls={},s1_s2=None,s1_s2_cross=None,
                corr1=[],corr2=[], Win_cov=None,Win_cl1=None,Win_cl2=None,SN=None,
-              z_bins=None,sig_cL=None,WT=None,WT_kwargs={}):
+              z_bins=None,sig_cL=None,WT=None,WT_kwargs={},xi_bin_utils=None):
         """
             Computes covariance of xi, by performing 2-D hankel transform on covariance of Cl.
             In current implementation of hankel transform works only for s1_s2=s1_s2_cross.
@@ -586,7 +591,7 @@ class Covariance_utils():
         cov_xi['G']=self.xi_gaussian_cov(cls,SN,tracers,z_indx,Win,WT_kwargs,bf)
 
         if not self.use_binned_theta:
-            cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=self.xi_bin_utils[s1_s2])
+            cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=xi_bin_utils)
 
         cov_xi['SSC']=0
         cov_xi['Tri']=0
@@ -600,14 +605,14 @@ class Covariance_utils():
                                                             wig_d1=wig_d1,
                                                           wig_d2=wig_d2,
                                                             cl_cov=cov_cl['SSC'])
-            cov_xi['SSC']=self.binning.bin_2d(cov=cov_xi['SSC'],bin_utils=self.xi_bin_utils[s1_s2])
+            cov_xi['SSC']=self.binning.bin_2d(cov=cov_xi['SSC'],bin_utils=xi_bin_utils)
         if self.Tri_cov:
             th0,cov_xi['Tri']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
                                                             s1_s2_cross=s1_s2_cross,
                                                             wig_d1=wig_d1,
                                                           wig_d2=wig_d2,
                                                             cl_cov=cov_cl['Tri'])
-            cov_xi['Tri']=self.binning.bin_2d(cov=cov_xi['Tri'],bin_utils=self.xi_bin_utils[s1_s2])
+            cov_xi['Tri']=self.binning.bin_2d(cov=cov_xi['Tri'],bin_utils=xi_bin_utils)
 
         cov_xi['final']=cov_xi['G']+cov_xi['SSC']+cov_xi['Tri']
         if self.use_window and self.xi_win_approx:

@@ -1,6 +1,6 @@
 njob=$1
-temp_home='/verafs/home/sukhdeep/temp/'
-CSCRATCH=$temp_home'/dask/scheduler_'${SLURM_ARRAY_JOB_ID}${SLURM_ARRAY_TASK_ID}'/'$njob'/'
+temp_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
+CSCRATCH=$temp_home'/scheduler_'${SLURM_ARRAY_JOB_ID}'/'$njob'/'
 
 SCHEFILE=$CSCRATCH/Scheduler.dasksche.json
 

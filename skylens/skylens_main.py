@@ -393,7 +393,7 @@ class Skylens():
                                                     r_bins=self.theta_bins,
                                                     r_dim=2,mat_dims=[1,2])
                 self.xi_bin_utils[s1_s2]=client.compute(self.xi_bin_utils[s1_s2]).result()
-                self.xi_bin_utils[s1_s2]={k:client.scatter(self.xi_bin_utils[s1_s2][k]) for k in self.xi_bin_utils[s1_s2].keys()}
+                self.xi_bin_utils[s1_s2]=scatter_dict(self.xi_bin_utils[s1_s2],scheduler_info=self.scheduler_info)
             
     def calc_cl(self,zbin1={}, zbin2={},corr=('shear','shear'),cosmo_params=None,Ang_PS=None):#FIXME: this can be moved outside the class.thenwe don't need to serialize self.
         """
@@ -565,7 +565,8 @@ class Skylens():
 
     def tomo_short(self,cosmo_h=None,cosmo_params=None,pk_lock=None,WT_binned=None,WT=None,
                 corrs=None,bias_kwargs={},bias_func=None,stack_corr_indxs=None,
-                z_bins=None,Ang_PS=None,zkernel=None,Win=None,cl_bin_utils=None):
+                z_bins=None,Ang_PS=None,zkernel=None,Win=None,cl_bin_utils=None,
+                  xi_bin_utils=None):
         """
             
         """
@@ -594,7 +595,7 @@ class Skylens():
                         bias_func='constant_bias'
                         bias_kwargs={'b1':1,'b2':1}
         if self.do_xi:
-            return self.xi_tomo_short(corrs=corrs,stack_corr_indxs=stack_corr_indxs,zkernel=zkernel,Ang_PS=Ang_PS,Win=Win,WT_binned=WT_binned,WT=WT)
+            return self.xi_tomo_short(corrs=corrs,stack_corr_indxs=stack_corr_indxs,zkernel=zkernel,Ang_PS=Ang_PS,Win=Win,WT_binned=WT_binned,WT=WT,xi_bin_utils=xi_bin_utils)
         else:
             return self.cl_tomo_short(corrs=corrs,stack_corr_indxs=stack_corr_indxs,zkernel=zkernel,Ang_PS=Ang_PS,Win=Win,cl_bin_utils=cl_bin_utils)
     
@@ -719,16 +720,15 @@ class Skylens():
                     if self.use_binned_theta:
                         wig_d=self.WT_binned[corr][s1_s2][indx]
                         
-                    print('xi_tomo',wig_d,wig_norm)
 #                     xi[corr][s1_s2][indx]=delayed(self.get_xi)(cls=cl,corr=corr,indxs=indx,
 #                                                         s1_s2=s1_s2,Win=win)
                     xi[corr][s1_s2][indx]=delayed(get_xi)(cl=cl[corr][indx],wig_d=wig_d,wig_norm=wig_norm,
                                          xi_bin_utils=xi_bin_utils,bin_xi=self.bin_xi,use_binned_theta=self.use_binned_theta,Win=win)
 
         print('Done xi graph',get_size(cl)/1.e6,get_size_pickle(self.cov_utils))
-        dic=self.cov_utils.__dict__
-        for k in dic.keys():
-            print('Done xi graph,cov_utils size',k,get_size_pickle(getattr(self.cov_utils,k)))
+#         dic=self.cov_utils.__dict__
+#         for k in dic.keys():
+#             print('Done xi graph,cov_utils size',k,get_size_pickle(getattr(self.cov_utils,k)))
         if self.do_cov:
             corrs_iter=[(corrs[i],corrs[j]) for i in np.arange(len(corrs)) for j in np.arange(i,len(corrs))]
             cov_indxs={}
@@ -784,6 +784,7 @@ class Skylens():
                                                                                         cls=cls,s1_s2=s1_s2,SN=self.SN,
                                                                                         s1_s2_cross=s1_s2_cross,#clr=clr,
                                                                                         Win_cov=Win_cov[indxs],
+                                                                                        xi_bin_utils=self.xi_bin_utils[s1_s2],
                                                                                         Win_cl1=Win_cl1[(indxs[0],indxs[1])],
                                                                                         Win_cl2=Win_cl2[(indxs[2],indxs[3])],
                                                                                         corr1=corr1,corr2=corr2,sig_cL=sig_cL,
@@ -796,7 +797,7 @@ class Skylens():
         out['cl']=cls_tomo_nu
         return out
 
-    def xi_tomo_short(self,corrs=None,stack_corr_indxs=None,Ang_PS=None,zkernel=None,cosmo_params=None,Win=None,WT_binned=None,WT=None):
+    def xi_tomo_short(self,corrs=None,stack_corr_indxs=None,Ang_PS=None,zkernel=None,cosmo_params=None,Win=None,WT_binned=None,WT=None,xi_bin_utils=None):
         """
          Same as xi_tomo / cl_tomo_short, except no delayed is used and it only returns a stacked vector of binned xi.
          This function is useful for mcmc where we only need to compute xi, and want to reduce the
@@ -837,7 +838,7 @@ class Skylens():
                         win=Win['cl'][corr][indx]
 
                     xi=get_xi(cl=cl[corr][indx],wig_d=wig_d,wig_norm=wig_norm,
-                             xi_bin_utils=self.xi_bin_utils[s1_s2],bin_xi=self.bin_xi,use_binned_theta=self.use_binned_theta,Win=win)
+                             xi_bin_utils=xi_bin_utils[s1_s2],bin_xi=self.bin_xi,use_binned_theta=self.use_binned_theta,Win=win)
 #                     xi_bi=bin_xi_func(xi=xi,xi_bin_utils=self.xi_bin_utils[s1_s2],bin_xi=self.bin_xi,use_binned_theta=self.use_binned_theta,Win=Win)
                     xi_b+=[xi]#[xi_bi]
         xi_b=np.concatenate(xi_b).ravel()
