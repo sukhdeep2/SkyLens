@@ -555,7 +555,7 @@ class Skylens():
                     cov[corr1+corr2][indxs]=delayed(self.cov_utils.cl_cov)(indxs,cls=self.get_CV_cl(cl,corr1+corr2,indxs),
                                                                         SN=self.SN,cl_bin_utils=self.cl_bin_utils,
                                                                         Win_cov=Win_covi,tracers=corr1+corr2,
-                                                                          Win_cl1=Win_cl1i,
+                                                                          Win_cl1=Win_cl1i,clz=clz,
                                                                           Win_cl2=Win_cl2i,sig_cL=sig_cL)
             cov['cov_indxs']=cov_indxs
 

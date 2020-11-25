@@ -16,6 +16,8 @@ jobs:
              - name: Install dependencies	
                run: |
                         pip install -r requirements.txt
+			python -m pip install "dask[bag]" --upgrade
+			python -m pip install 'fsspec>=0.3.3'
                         pip install .
              - name: Tests
                run: |
