@@ -22,7 +22,7 @@ from skylens.cov_utils import *
 from skylens.tracer_utils import *
 from skylens.window_utils import *
 from skylens.utils import *
-from skylens.cov_tri import *
+
 
 d2r=np.pi/180.
 c=c.to(u.km/u.second)
@@ -469,10 +469,10 @@ class Skylens():
         if cosmo_h is None:
             cosmo_h=Ang_PS.PS.cosmo_h
 
-        kernel={}
+        zkernel={}
         self.SN={}
         for tracer in tracers:
-            kernel[tracer]=self.tracer_utils.set_kernels(Ang_PS=Ang_PS,tracer=tracer,z_bins=z_bins[tracer])
+            zkernel[tracer]=self.tracer_utils.set_kernels(Ang_PS=Ang_PS,tracer=tracer,z_bins=z_bins[tracer])
             self.SN[(tracer,tracer)]=self.tracer_utils.SN[tracer]
             if 'galaxy' in tracers:
                 if bias_func is None:
@@ -495,7 +495,7 @@ class Skylens():
             corr2=corr[::-1]
             corr_indxs=self.corr_indxs[(corr[0],corr[1])]#+self.cov_indxs
             for (i,j) in corr_indxs:#FIXME: we might want to move to map, like covariance. will be useful to define the tuples in forzenset then.
-                cl[corr][(i,j)]=delayed(self.cl_func[corr])(zbin1=kernel[corr[0]][i],zbin2=kernel[corr[1]][j],
+                cl[corr][(i,j)]=delayed(self.cl_func[corr])(zbin1=zkernel[corr[0]][i],zbin2=zkernel[corr[1]][j],
                                                              corr=corr,cosmo_params=cosmo_params,clz=clz)#Ang_PS=Ang_PS) 
                 cl_b[corr][(i,j)]=delayed(bin_cl_func)(cl=cl[corr][(i,j)],use_binned_l=self.use_binned_l,bin_cl=self.bin_cl,cl_bin_utils=self.cl_bin_utils)
                 if self.use_window and self.do_pseudo_cl and (i,j) in self.stack_indxs[corr]:
@@ -504,7 +504,7 @@ class Skylens():
                         pcl_b[corr][(i,j)]=delayed(bin_cl_func)(cl=pcl[corr][(i,j)],use_binned_l=self.use_binned_l,bin_cl=self.bin_cl,cl_bin_utils=self.cl_bin_utils)
                     else:
                         pcl[corr][(i,j)]=None
-                        pcl_b[corr][(i,j)]=delayed(calc_cl_pseudo_cl)(zbin1=kernel[corr[0]][i],zbin2=kernel[corr[1]][j],
+                        pcl_b[corr][(i,j)]=delayed(calc_cl_pseudo_cl)(zbin1=zkernel[corr[0]][i],zbin2=zkernel[corr[1]][j],
                                                              corr=corr,cosmo_params=cosmo_params,clz=clz,Win=self.Win['cl'][corr][(i,j)])
 #                         pcl_b[corr][(i,j)]=delayed(calc_pseudo_cl)(None,cl_b[corr][(i,j)],Win=self.Win.Win['cl'][corr][(i,j)])
                 else:
@@ -540,18 +540,23 @@ class Skylens():
                     Win_cl1=self.Win['cl'][corr1]
                     Win_cl2=self.Win['cl'][corr2]
                 #cov[corr1+corr2]=dask.bag.from_sequence(cov_indxs_iter).map(self.cl_cov,cls=cl,Win_cov=Win_cov,tracers=corr1+corr2,Win_cl=Win_cl)
-                cov[corr1+corr2]={indxs: delayed(self.cov_utils.cl_cov)(indxs,cls=self.get_CV_cl(cl,corr1+corr2,indxs),
+                for indxs in cov_indxs_iter:
+                    if self.use_window:
+                        Win_cl1i=Win_cl1[(indxs[0],indxs[1])]
+                        Win_cl2i=Win_cl2[(indxs[0],indxs[1])]
+                        Win_covi=Win_cov[indxs]
+                    else:
+                        Win_cl1i,Win_cl2i,Win_covi=None,None,None
+                    sig_cL=delayed(self.cov_utils.cov_four_kernels)(z_bins={0:zkernel[corr1[0]][indxs[0]],
+                                                                            1:zkernel[corr1[1]][indxs[1]],
+                                                                            2:zkernel[corr2[0]][indxs[2]],
+                                                                            3:zkernel[corr2[1]][indxs[3]]},
+                                                                             clz=clz),#don't want to copy z_bins,
+                    cov[corr1+corr2][indxs]=delayed(self.cov_utils.cl_cov)(indxs,cls=self.get_CV_cl(cl,corr1+corr2,indxs),
                                                                         SN=self.SN,cl_bin_utils=self.cl_bin_utils,
-                                                                        Win_cov=Win_cov[indxs],tracers=corr1+corr2,
-                                                                          Win_cl1=Win_cl1[(indxs[0],indxs[1])],
-                                                                          Win_cl2=Win_cl2[(indxs[2],indxs[3])],
-                                                                          sig_cL=delayed(self.cov_utils.cov_four_kernels)(z_bins={0:kernel[corr1[0]][indxs[0]],
-                                                                                                1:kernel[corr1[1]][indxs[1]],
-                                                                                                2:kernel[corr2[0]][indxs[2]],
-                                                                                                3:kernel[corr2[1]][indxs[3]]},
-                                                                                                 clz=clz),#don't want to copy z_bins,
-                                                                       )#Ang_PS=Ang_PS)
-                                         for indxs in cov_indxs_iter}
+                                                                        Win_cov=Win_covi,tracers=corr1+corr2,
+                                                                          Win_cl1=Win_cl1i,
+                                                                          Win_cl2=Win_cl2i,sig_cL=sig_cL)
             cov['cov_indxs']=cov_indxs
 
             print('cl cov graph done')
@@ -559,10 +564,26 @@ class Skylens():
         out_stack=delayed(self.stack_dat)({'cov':cov,'pcl_b':pcl_b,'est':'pcl_b'},corrs=corrs,
                                           corr_indxs=stack_corr_indxs)
         if not self.do_xi:
-            return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl,'pseudo_cl':pcl,'pseudo_cl_b':pcl_b}
+            return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl,'pseudo_cl':pcl,'pseudo_cl_b':pcl_b,'zkernel':zkernel,'clz':clz}
         else:
-            return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl,'pseudo_cl':pcl,'pseudo_cl_b':pcl_b,'kernel':kernel,'clz':clz}
+            return {'stack':out_stack,'cl_b':cl_b,'cov':cov,'cl':cl,'pseudo_cl':pcl,'pseudo_cl_b':pcl_b,'zkernel':zkernel,'clz':clz}
 
+    def gather_data(self):
+        client=client_get(self.scheduler_info)
+        keys=['xi_bin_utils','cl_bin_utils','Win','WT_binned']
+        for k in keys:
+            self.__dict__[k]=client.gather(self.__dict__[k]) #FIXME: need a function to properly gather dicts
+        self.Ang_PS.clz=client.gather(self.Ang_PS.clz)
+        self.WT.gather_data()
+        
+    def scatter_data(self):
+        client=client_get(self.scheduler_info)
+        keys=['xi_bin_utils','cl_bin_utils','Win','WT_binned']
+        for k in keys:
+            self.__dict__[k]=client.scatter(self.__dict__[k])
+        self.WT.scatter_data()
+        
+        
     def tomo_short(self,cosmo_h=None,cosmo_params=None,pk_lock=None,WT_binned=None,WT=None,
                 corrs=None,bias_kwargs={},bias_func=None,stack_corr_indxs=None,
                 z_bins=None,Ang_PS=None,zkernel=None,Win=None,cl_bin_utils=None,
@@ -684,9 +705,11 @@ class Skylens():
                             pk_params=pk_params,corrs=corrs)
 
         cl=cls_tomo_nu['cl'] #Note that if window is turned off, pseudo_cl=cl
+        clz=cls_tomo_nu['clz']
         cov_xi={}
         xi={}
         out={}
+        zkernel=None
         client=self.get_client()
         if self.use_binned_theta:
             wig_norm=1
@@ -732,7 +755,7 @@ class Skylens():
         if self.do_cov:
             corrs_iter=[(corrs[i],corrs[j]) for i in np.arange(len(corrs)) for j in np.arange(i,len(corrs))]
             cov_indxs={}
-            kernel=cls_tomo_nu['kernel']
+            zkernel=cls_tomo_nu['zkernel']
             clz=cls_tomo_nu['clz']
             for (corr1,corr2) in corrs_iter:
                 s1_s2s_1=self.s1_s2s[corr1]
@@ -775,26 +798,33 @@ class Skylens():
                                       'l_cl':self.l,'s1_s2':s1_s2,'s1_s2_cross':s1_s2_cross,
                                        'wig_theta':wig_theta,'wig_grad_theta':wig_grad_theta,
                                       }
-                            sig_cL=delayed(self.cov_utils.cov_four_kernels)(z_bins={0:kernel[corr1[0]][indxs[0]],
-                                                                                    1:kernel[corr1[1]][indxs[1]],
-                                                                                    2:kernel[corr2[0]][indxs[2]],
-                                                                                    3:kernel[corr2[1]][indxs[3]]},
+                            if self.use_window:
+                                Win_cl1i=Win_cl1[(indxs[0],indxs[1])]
+                                Win_cl2i=Win_cl2[(indxs[0],indxs[1])]
+                                Win_covi=Win_cov[indxs]
+                            else:
+                                Win_cl1i,Win_cl2i,Win_covi=None,None,None
+
+                            sig_cL=delayed(self.cov_utils.cov_four_kernels)(z_bins={0:zkernel[corr1[0]][indxs[0]],
+                                                                                    1:zkernel[corr1[1]][indxs[1]],
+                                                                                    2:zkernel[corr2[0]][indxs[2]],
+                                                                                    3:zkernel[corr2[1]][indxs[3]]},
                                                                                      clz=clz)
                             cov_xi[corr][s1_s2+s1_s2_cross][indxs]=delayed(self.cov_utils.xi_cov)(indxs,cov_cl=None, #cov_cl[indxs],
                                                                                         cls=cls,s1_s2=s1_s2,SN=self.SN,
                                                                                         s1_s2_cross=s1_s2_cross,#clr=clr,
-                                                                                        Win_cov=Win_cov[indxs],
+                                                                                        Win_cov=Win_covi,
                                                                                         xi_bin_utils=self.xi_bin_utils[s1_s2],
-                                                                                        Win_cl1=Win_cl1[(indxs[0],indxs[1])],
-                                                                                        Win_cl2=Win_cl2[(indxs[2],indxs[3])],
+                                                                                        Win_cl1=Win_cl1i,Win_cl2=Win_cl2i,
                                                                                         corr1=corr1,corr2=corr2,sig_cL=sig_cL,
-                                                                                        WT_kwargs=WT_kwargs
+                                                                                        WT_kwargs=WT_kwargs,clz=clz
                                                                                                  )
 
         out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi,'est':'xi'},corrs=corrs)
         out['xi']=xi
         out['cov']=cov_xi
         out['cl']=cls_tomo_nu
+        out['zkernel']=zkernel
         return out
 
     def xi_tomo_short(self,corrs=None,stack_corr_indxs=None,Ang_PS=None,zkernel=None,cosmo_params=None,Win=None,WT_binned=None,WT=None,xi_bin_utils=None):

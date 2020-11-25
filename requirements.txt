@@ -7,6 +7,4 @@ dask
 distributed
 astropy
 healpy
-
-
 zarr<=2.3.1

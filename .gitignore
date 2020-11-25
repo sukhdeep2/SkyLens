@@ -13,6 +13,5 @@
 *.pkl
 temp/*
 desi/*
-tests/*
 build/*
 dist/*

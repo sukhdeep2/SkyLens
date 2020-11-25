@@ -70,6 +70,17 @@ def scatter_dict(dic,scheduler_info=None,depth=10): #FIXME: This needs some impr
             dic[k]=client.scatter(dic[k])
     return dic
 
+def gather_dict(dic,scheduler_info=None,depth=0): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
+    """
+        depth: Need to think this through. It appears dask can see one level of depth when scattering and gathering, but not more.
+    """
+    client=client_get(scheduler_info=scheduler_info)
+    for k in dic.keys():
+        if isinstance(dic[k],dict) and depth>0:
+            dic[k]=gather_dict(dic[k],scheduler_info=scheduler_info,depth=depth-1)
+        else:
+            dic[k]=client.gather(dic[k])
+    return dic
 
 def client_get(scheduler_info=None):
     if scheduler_info is not None:

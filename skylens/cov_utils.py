@@ -9,6 +9,7 @@ from scipy.integrate import quad as scipy_int1d
 from scipy.special import jn, jn_zeros
 from skylens.wigner_functions import *
 from skylens.binning import *
+from skylens.cov_tri import *
 import healpy as hp
 
 d2r=np.pi/180.
@@ -398,7 +399,7 @@ class Covariance_utils():
                         G_ti=SN2[c1]*SN2[c2]
                     if k=='NN' and self.xi_SN_analytical:
                         if not self.use_binned_theta:
-                                G_t_SNi=SN2[c1][-1]*SN2[c2][-1]/(WT_kwargs[theta]['s1_s2'])#Fixme: wont' work with binned_theta
+                                G_t_SNi=SN2[c1][-1]*SN2[c2][-1]/(WT_kwargs['theta']['s1_s2'])#Fixme: wont' work with binned_theta
                         else:
                                 G_t_SNi=SN2[c1][-1]*SN2[c2][-1]/self.WT.theta_bins_center/self.WT.delta_theta_bins
 
@@ -430,7 +431,7 @@ class Covariance_utils():
         return sig_cL
 
     
-    def cl_cov_connected(self,z_bins=None,cls=None, tracers=[],Win_cov=None,Win_cl=None,Ang_PS=None,sig_cL=None):
+    def cl_cov_connected(self,z_bins=None,cls=None, tracers=[],Win_cov=None,Win_cl=None,clz=None,sig_cL=None,zs_indx=None):
         cov={}
         cov['SSC']=0
         cov['Tri']=0
@@ -442,22 +443,25 @@ class Covariance_utils():
 #             sig_cL=self.cov_four_kernels(z_bins=z_bins)
 
         if self.SSV_cov :
-            clz=Ang_PS.clz
             sigma_win=self.sigma_win_calc(clz=clz,Win=Win,tracers=tracers,zs_indx=zs_indx)
 
-            clr=Ang_PS.clz['clsR']
+            clr=clz['clsR']
             if self.tidal_SSV_cov:
-                clr=Ang_PS.clz['clsR']+ Ang_PS.clz['clsRK']/6.
+                clr=clz['clsR']+ clz['clsRK']/6.
 
             sig_F=np.sqrt(sig_cL*sigma_win) #kernel is function of l as well due to spin factors
             clr=clr*sig_F.T
             cov['SSC']=np.dot(clr.T,clr)
 
         if self.Tri_cov:
-            cov['Tri']=self.CTR.cov_tri_zkernel(P=Ang_PS.clz['cls'],z_kernel=sig_cL/Ang_PS.clz['chi']**2,chi=Ang_PS.clz['chi']) #FIXME: check dimensions, get correct factors of length.. chi**2 is guessed from eq. A3 of https://arxiv.org/pdf/1601.05779.pdf ... note that cls here is in units of P(k)/chi**2
-            fs0=self.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]]
-            fs0*=self.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
-            fs0=np.sqrt(fs0)
+            cov['Tri']=self.CTR.cov_tri_zkernel(P=clz['cls'],z_kernel=sig_cL/clz['chi']**2,chi=clz['chi']) #FIXME: check dimensions, get correct factors of length.. chi**2 is guessed from eq. A3 of https://arxiv.org/pdf/1601.05779.pdf ... note that cls here is in units of P(k)/chi**2
+            
+            if isinstance(self.f_sky,float):
+                fs0=self.f_sky
+            else:
+                fs0=self.f_sky[tracers[0],tracers[1]][zs_indx[0],zs_indx[1]]
+                fs0*=self.f_sky[tracers[2],tracers[3]][zs_indx[2],zs_indx[3]]
+                fs0=np.sqrt(fs0)
     #             cov['Tri']/=self.cov_utils.gaussian_cov_norm_2D**2 #Since there is no dirac delta, there should be 2 factor of (2l+1)dl... eq. A3 of https://arxiv.org/pdf/1601.05779.pdf
             cov['Tri']/=fs0 #(2l+1)f_sky.. we didnot normalize gaussian covariance in trispectrum computation.
 
@@ -513,7 +517,7 @@ class Covariance_utils():
                                             self.SN,tracers,zs_indx,self.do_xi,fs)
         cov['G']=cov['G1324']+cov['G1423']
         cov['final']=cov['G']
-        cov['SSC'],cov['Tri']=self.cl_cov_connected(zs_indx,cls=cls, tracers=tracers,sig_cL=sig_cL)#,Win_cov=None,Win_cl=None)
+        cov['SSC'],cov['Tri']=self.cl_cov_connected(zs_indx=zs_indx,cls=cls,clz=clz, tracers=tracers,sig_cL=sig_cL)#,Win_cov=None,Win_cl=None)
         if self.use_window and (self.SSV_cov or self.Tri_cov) and self.do_pseudo_cl: #Check: This is from writing p-cl as M@cl... cov(p-cl)=M@cov(cl)@M.T ... separate  M when different p-cl
             M1=Win_cl1[(tracers[0],tracers[1])][(zs_indx[0],zs_indx[1])]['M'] #12
             M2=Win_cl2[(tracers[2],tracers[3])][(zs_indx[2],zs_indx[3])]['M'] #34
@@ -546,7 +550,7 @@ class Covariance_utils():
 
     def xi_cov(self,cov_indx,cov_cl=None,cls={},s1_s2=None,s1_s2_cross=None,
                corr1=[],corr2=[], Win_cov=None,Win_cl1=None,Win_cl2=None,SN=None,
-              z_bins=None,sig_cL=None,WT=None,WT_kwargs={},xi_bin_utils=None):
+              z_bins=None,sig_cL=None,WT=None,WT_kwargs={},xi_bin_utils=None,clz=None):
         """
             Computes covariance of xi, by performing 2-D hankel transform on covariance of Cl.
             In current implementation of hankel transform works only for s1_s2=s1_s2_cross.
@@ -597,22 +601,25 @@ class Covariance_utils():
         cov_xi['Tri']=0
 
         if cov_cl is None:
-            cov_cl=self.cl_cov_connected(cov_indx,cls=cls,Win_cov=Win_cov,tracers=corr1+corr2,Win_cl=None,sig_cL=sig_cL)
+            cov_cl={}
+            cov_cl['SSC'],cov_cl['Tri']=self.cl_cov_connected(zs_indx=cov_indx,cls=cls,Win_cov=Win_cov,tracers=corr1+corr2,Win_cl=None,sig_cL=sig_cL,clz=clz)
 
         if self.SSV_cov:
             th0,cov_xi['SSC']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
                                                             s1_s2_cross=s1_s2_cross,
                                                             wig_d1=wig_d1,
-                                                          wig_d2=wig_d2,
+                                                            wig_d2=wig_d2,
                                                             cl_cov=cov_cl['SSC'])
-            cov_xi['SSC']=self.binning.bin_2d(cov=cov_xi['SSC'],bin_utils=xi_bin_utils)
+            if not self.use_binned_theta:
+                cov_xi['SSC']=self.binning.bin_2d(cov=cov_xi['SSC'],bin_utils=xi_bin_utils)
         if self.Tri_cov:
             th0,cov_xi['Tri']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
                                                             s1_s2_cross=s1_s2_cross,
                                                             wig_d1=wig_d1,
-                                                          wig_d2=wig_d2,
+                                                            wig_d2=wig_d2,
                                                             cl_cov=cov_cl['Tri'])
-            cov_xi['Tri']=self.binning.bin_2d(cov=cov_xi['Tri'],bin_utils=xi_bin_utils)
+            if not self.use_binned_theta:
+                cov_xi['Tri']=self.binning.bin_2d(cov=cov_xi['Tri'],bin_utils=xi_bin_utils)
 
         cov_xi['final']=cov_xi['G']+cov_xi['SSC']+cov_xi['Tri']
         if self.use_window and self.xi_win_approx:

@@ -1136,7 +1136,7 @@ class window_utils():
                 self.WinM_cov=[delayed(self.combine_single_coupling_cov)(None,Wc) for Wc in self.Win_cov_lm]
 
 
-            print('done cl+cov graph',self.WinM_cl)#,len(self.WinM_cl))
+            print('done cl+cov graph')#,self.WinM_cl)#,len(self.WinM_cl))
             
             self.Win={'cl':{},'cov':{}}
             i=0

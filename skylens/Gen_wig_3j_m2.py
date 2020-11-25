@@ -1,8 +1,8 @@
 from wigner_functions import *
 import zarr
 import time
-lmax=3500 #1e4
-wlmax=2100 
+lmax=100 #1e4
+wlmax=100 
 m1=2
 m2=-2
 m3=0
@@ -12,9 +12,9 @@ wlmax=np.int(wlmax)
 
 
 home='./'                                                                                                                                        
-home='/physics2/sukhdees/skylens/'  
+home='../tests/'
 
-fname=home+'temp/dask_wig3j_l{lmax}_w{wlmax}_{i}_reorder.zarr'
+fname=home+'/dask_wig3j_l{lmax}_w{wlmax}_{i}_reorder.zarr'
 
 fname=fname.format(i=abs(m2),lmax=lmax,wlmax=wlmax)
 print('will save to ',fname)
