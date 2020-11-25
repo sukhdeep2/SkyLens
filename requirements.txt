@@ -7,4 +7,6 @@ dask
 distributed
 astropy
 healpy
+pandas
+dask[bag]
 zarr<=2.3.1
