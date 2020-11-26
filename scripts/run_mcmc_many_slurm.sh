@@ -77,7 +77,7 @@ do
                 echo '==============================================================' #>>$log_file
                 echo 'begining::' $(date) #>>$log_file 
 
-                python3 MCMC_emcee.py  --do_xi=$do_xi --bin_l=$bin_l --fix_cosmo=$fix_cosmo --dask_dir=$CSCRATCH #--scheduler=$SCHEFILE #|cat>>$log_file
+                python3 -Xfaulthandler MCMC_emcee.py  --do_xi=$do_xi --bin_l=$bin_l --fix_cosmo=$fix_cosmo --dask_dir=$CSCRATCH #--scheduler=$SCHEFILE #|cat>>$log_file
 
                 echo 'Finished::' $(date) #>>$log_file                                                                                                                                                                    
                 echo '================================================' #>>$log_file          

@@ -52,12 +52,13 @@ class wigner_transform():
         client=client_get(scheduler_info=self.scheduler_info)
         self.l=client.gather(self.l)
         self.grad_l=client.gather(self.grad_l)
-        self.theta=client.gather(self.theta)
         self.norm=client.gather(self.norm)
         for k in self.wig_d.keys():
             self.wig_d[k]=client.gather(self.wig_d[k])
+            self.theta[k]=client.gather(self.theta[k])
+            self.theta_deg[k]=client.gather(self.theta_deg[k])
         for k in ['theta_bins','theta_bins_center','grad_theta_bins',
-                 'l_bins','l_bins_center','grad_l_bins']:
+                 'l_bins','l_bins_center','grad_l_bins','wig_norm']:
             if hasattr(self,k):
                 self.__dict__[k]=client.gather(self.__dict__[k])
 

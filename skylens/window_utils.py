@@ -101,8 +101,8 @@ class window_utils():
                     client=get_client(address=self.scheduler_info['address'])
                 self.Win=client.compute(self.Win).result()
 
-#                 client.cancel(self.Win_cl)
-#                 client.cancel(self.Win_cov)
+                client.cancel(self.Win_cl)
+                client.cancel(self.Win_cov)
                 del self.Win_cl,self.Win_cov
                 
 #             self.cleanup()

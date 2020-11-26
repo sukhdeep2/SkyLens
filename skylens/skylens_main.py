@@ -575,6 +575,7 @@ class Skylens():
             if hasattr(self,k):
                 self.__dict__[k]=client.gather(self.__dict__[k]) #FIXME: need a function to properly gather dicts
         self.Ang_PS.clz=client.gather(self.Ang_PS.clz)
+        self.tracer_utils.gather_z_bins()
         if self.WT is not None:
             self.WT.gather_data()
         
@@ -999,7 +1000,7 @@ class Skylens():
         out={'cov':cov_final}
         out[est]=D_final
         return out
-
+    
 def calc_cl(zbin1={}, zbin2={},corr=('shear','shear'),cosmo_params=None,clz=None,Ang_PS=None):#FIXME: this can be moved outside the class.thenwe don't need to serialize self.
     """
         Compute the angular power spectra, Cl between two source bins

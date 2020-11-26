@@ -72,6 +72,11 @@ class Tracer_utils():
             self.z_bins[tracer]['n_bins']=nb
 #             for i in np.arange(self.n_bins[tracer]):
 #                 self.z_bins[tracer][i]=client.scatter(self.z_bins[tracer][i])
+    def gather_z_bins(self):
+        client=client_get(self.scheduler_info)
+        for tracer in self.tracers:
+            self.z_bins[tracer]=client.gather(self.z_bins[tracer])
+
         
     def set_z_window(self,):
         self.z_win={}

@@ -2,6 +2,9 @@ import sys
 import emcee
 from skylens import *
 # from skylens.utils import *
+from resource import getrusage, RUSAGE_SELF
+import psutil
+from distributed.utils import format_bytes
 
 from dask.distributed import Lock
 
@@ -27,8 +30,8 @@ args = parser.parse_args()
 args = parser.parse_args()
 
 fix_cosmo=False if args.fix_cosmo is None else np.bool(args.fix_cosmo)
-do_xi=False if args.do_xi is None else np.bool(args.do_xi)
-use_binned_l=True if args.bin_l is None else np.bool(args.bin_l)
+do_xi=True if args.do_xi is None else np.bool(args.do_xi)
+use_binned_l=False if args.bin_l is None else np.bool(args.bin_l)
 
 print('Doing mcmc',fix_cosmo,do_xi,use_binned_l,test_run,args) #err  True False True True     False True False True
 
@@ -134,12 +137,12 @@ power_spectra_kwargs={} #{'pk_lock':lock}
 
 kappa0=Skylens(zs_bins=zs_bin,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zs_bin,
                use_window=use_window,Tri_cov=Tri_cov,
-               use_binned_l=use_binned_l,wigner_files=wigner_files,
+               use_binned_l=True,wigner_files=wigner_files, #binned_l here is true because we cannot fit everything in memory otherwise
                SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=0.35,
                store_win=store_win,window_lmax=window_lmax,
                sparse_cov=True,corrs=corrs,
                do_xi=do_xi,bin_xi=bin_xi,theta_bins=th_bins,WT=WT,
-                use_binned_theta=use_binned_theta,
+                use_binned_theta=True,
                 nz_PS=100,do_pseudo_cl=do_pseudo_cl,xi_win_approx=True,
                 xi_SN_analytical=xi_SN_analytical,power_spectra_kwargs=power_spectra_kwargs,
                 scheduler_info=scheduler_info
@@ -168,16 +171,17 @@ else:
     cov_inv=np.linalg.inv(cl_cov['cov'].todense())
     data=cl_cov['pcl_b']
 #     del cl0G
-
+kappa0.gather_data()
 print('Got data and cov')
-Win={'cl':client.gather(kappa0.Win['cl'])}
+#Win={'cl':client.gather(kappa0.Win['cl'])}
+Win=None
 del kappa0
-
+client.restart()
 do_cov=False
 #kappa0.do_cov=False
 kappa0=Skylens(zs_bins=zs_bin,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zs_bin,
                use_window=use_window,Tri_cov=Tri_cov,
-                use_binned_l=use_binned_l,wigner_files=wigner_files,
+                use_binned_l=use_binned_l,wigner_files=wigner_files,#covariance is false, binned_l false should be ok
                 SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=0.35,
                 store_win=store_win,window_lmax=window_lmax,
                 sparse_cov=True,corrs=corrs,
@@ -189,22 +193,15 @@ kappa0=Skylens(zs_bins=zs_bin,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg
                 )
 # kappa0.Win={'cl':client.gather(kappa0.Win['cl'])}
 Win=client.gather(kappa0.Win)
-kappa0.WT.gather_data()
-WT=client.scatter(kappa0.WT)
+kappa0.gather_data()
+print(kappa0.l.shape,kappa0.use_binned_l)
+# WT=client.scatter(kappa0.WT)
 
 WT_binned=client.gather(kappa0.WT_binned)
-WT_binned=client.scatter(WT_binned)
-print(WT,WT_binned)
-# print(Win)
-# Win={'cl':{k1: {k2: {k3: client.scatter(Win['cl'][k1][k2][k3])
-#                      for k3 in Win['cl'][k1][k2].keys()} 
-#                 for k2 in Win['cl'][k1].keys()} 
-#            for k1 in Win['cl'].keys()} }
-# print(Win)#['cl'][corr_ll][(0,0)]['M'])
+# WT_binned=client.scatter(WT_binned)
 
 cosmo_fid=kappa0.Ang_PS.PS.cosmo_params
 
-# if fix_cosmo:
 params_order=['b1_{i}'.format(i=i) for i in np.arange(zs_bin['n_bins'])]#,'Ase9','Om']
 
 priors_max=np.ones(len(params_order))*2
@@ -224,7 +221,7 @@ for k in del_k:
         if zs_bin1[i].get(k) is not None:
             del zs_bin1[i][k]
 
-zs_bin1=scatter_dict(zs_bin1,scheduler_info=scheduler_info) 
+# zs_bin1=scatter_dict(zs_bin1,scheduler_info=scheduler_info) 
 cl_bin_utils=kappa0.cl_bin_utils
 xi_bin_utils=kappa0.xi_bin_utils
 
@@ -232,7 +229,12 @@ if fix_cosmo:
     kappa0.Ang_PS.angular_power_z()
 else:
     kappa0.Ang_PS.reset()
-kappa0=client.scatter(kappa0)
+# kappa0=client.scatter(kappa0)
+
+proc = psutil.Process()
+print('starting mcmc ', 'mem, peak mem: ',format_bytes(proc.memory_info().rss),
+                 int(getrusage(RUSAGE_SELF).ru_maxrss/1024./1024.)
+                 )
 
 def get_priors(params):#assume flat priors for now
     x=np.logical_or(np.any(params>priors_max,axis=1),np.any(params<priors_min,axis=1))
@@ -247,7 +249,7 @@ def assign_zparams(zbins={},p_name='',p_value=None):
     zbins[bin_indx][p_n]=p_value
     return zbins
 
-def get_Ang_PS(params,kappa0,z_bins,log_prior):
+def get_params(params,kappa0,z_bins,log_prior):
     cosmo_params=copy.deepcopy(cosmo_fid)
     Ang_PS=copy.deepcopy(kappa0.Ang_PS)
     if not np.isfinite(log_prior):
@@ -265,8 +267,9 @@ def get_Ang_PS(params,kappa0,z_bins,log_prior):
     return cosmo_params,zbins,Ang_PS
 
 def get_model(params,data,kappa0,log_prior,indx,Win,WT,WT_binned,cl_bin_utils,xi_bin_utils):
-#     print('get_model',indx,params,log_prior)
     cosmo_params,z_bins,Ang_PS=params
+    Ang_PS.angular_power_z(cosmo_params=cosmo_params)
+#     Ang_PS=copy.deepcopy(Ang_PS)
     if not np.isfinite(log_prior):
         return np.zeros_like(data)
     model=kappa0.tomo_short(cosmo_params=cosmo_params,z_bins=z_bins,Ang_PS=Ang_PS,Win=Win,WT=WT,WT_binned=WT_binned,
@@ -276,6 +279,7 @@ def get_PS(kappa0,args_p):
     ap=args_p[2]
     ap.angular_power_z(cosmo_params=args_p[0])
     return args_p
+
 def chi_sq(params,data,cov_inv,kappa0,z_bins,pk_lock):
     t1=time.time()
     params=np.atleast_2d(params)
@@ -284,27 +288,15 @@ def chi_sq(params,data,cov_inv,kappa0,z_bins,pk_lock):
     print('chi_sq',Win.keys())
     models={}
     args_p={}
-    args_p=[delayed(get_Ang_PS)(params[i],kappa0,z_bins,log_priors[i]) for i in np.arange(n_params)]
-    args_p=client.persist(args_p)
+    args_p=[get_params(params[i],kappa0,z_bins,log_priors[i]) for i in np.arange(n_params)]
+#     args_p=[delayed(get_params)(params[i],kappa0,z_bins,log_priors[i]) for i in np.arange(n_params)]
+#     args_p=client.persist(args_p)
     for i in np.arange(n_params):
-        ap=None
-        if not np.isfinite(log_priors[i]):
-            ap=delayed(get_PS)(kappa0,args_p[i])
-            args_p[i]=client.compute(ap).result()
-        
-#         cp=client.scatter(cp)
-#         print(zb.keys())
-# #         ap=client.scatter(ap)
-#         for corr in zb.keys():
-#             for i in np.arange(zb[corr]['n_bins']):
-#                 for k in zb[corr][i].keys():
-#                     zb[corr][i][k]=client.scatter(zb[corr][i][k])
-#         zb=client.scatter(zb)
-#         args_p[i]=delayed(get_Ang_PS)(params[i],kappa0,z_bins,log_priors[i])
-        
-        models[i]=delayed(get_model)(args_p[i],data,kappa0,log_priors[i],i,Win,WT,WT_binned,cl_bin_utils,xi_bin_utils)#pk_lock
-        models[i]=client.compute(models[i])
-    models=np.array([models[i].result() for i in np.arange(n_params)])
+        models[i]=get_model(args_p[i],data,kappa0,log_priors[i],i,Win,WT,WT_binned,cl_bin_utils,xi_bin_utils)#pk_lock
+#         models[i]=delayed(get_model)(args_p[i],data,kappa0,log_priors[i],i,Win,WT,WT_binned,cl_bin_utils,xi_bin_utils)#pk_lock
+#         models[i]=client.compute(models[i])
+#     models=np.array([models[i].result() for i in np.arange(n_params)])
+    models=np.array([models[i] for i in np.arange(n_params)])
     loss=data-models
     chisq=np.zeros(n_params)-np.inf
     for i in np.arange(n_params):
@@ -312,8 +304,7 @@ def chi_sq(params,data,cov_inv,kappa0,z_bins,pk_lock):
     chisq+=log_priors
     print('chisq',time.time()-t1)
     client.cancel(args_p)
-    del ap,models,args_p
-    gc.collect()
+    del models,args_p
     return chisq
 
 def ini_walkers():
