@@ -5,6 +5,7 @@ from scipy.interpolate import interp1d,interp2d,RectBivariateSpline
 from scipy.optimize import fsolve
 import numpy as np
 import itertools
+d2r=np.pi/180.
 
 class hankel_transform():
     def __init__(self,theta_min=0.1,theta_max=100,l_max=10,l_min=1.e-4,n_zeros=1000,n_zeros_step=1000,
@@ -20,6 +21,7 @@ class hankel_transform():
         self.n_zeros_step=n_zeros_step
         self.l={}
         self.theta={}
+        self.theta_deg={}
         self.J={}
         self.J_nu1={}
         self.zeros={}
@@ -33,6 +35,7 @@ class hankel_transform():
                                                    l_max=l_max,l_min=l_min,n_zeros_step=n_zeros_step,
                                                    prune_theta=prune_theta,
                                                    prune_log_space=prune_log_space)
+            self.theta_deg[i]=self.theta[i]/d2r #FIXME: Ugly
 
     def get_k_r_j(self,j_nu=0,n_zeros=1000,theta_min=0.1,theta_max=100,l_max=10,l_min=1.e-4,
                   n_zeros_step=1000,prune_theta=0,prune_log_space=True):

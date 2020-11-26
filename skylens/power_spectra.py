@@ -1,13 +1,19 @@
 """
 Class to compute the matter power spectra. Includes wrappers over class, camb, CCL and Bayonic physics PC's (Hung-Jin's method.)
 """
+
+import os,sys
+
 try:
     import camb
     from camb import model, initialpower
 except:
     camb=None
-#import pyccl
-import os,sys
+try:
+    import pyccl
+except:
+    pyccl=None
+
 try:
     from classy import Class
 except:
@@ -32,7 +38,7 @@ cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817
                 'Ase9':2.2,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
                 'w':-1,'wa':0})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
-pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'camb_pk'}
+pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'ccl_pk'}
 
 # baryonic scenario option:
 # "owls_AGN","owls_DBLIMFV1618","owls_NOSN","owls_NOSN_NOZCOOL","owls_NOZCOOL","owls_REF","owls_WDENS"
@@ -88,6 +94,7 @@ class Power_Spectra():
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.name='PS'
         self.cosmo_h=cosmo.clone(H0=100)
+        self.cosmo_params={}
         self.set_cosmology(cosmo_params=cosmo_params)
         pk_func=pk_params.get('pk_func')
         pk_func_default=self.camb_pk_too_many_z
@@ -119,7 +126,7 @@ class Power_Spectra():
         m_nu[-1]=cosmo_params['mnu']
         m_nu*=cosmo.m_nu.unit
         self.cosmo=self.cosmo.clone(H0=cosmo_params['h']*100,Ob0=cosmo_params['Omb'],Om0=cosmo_params['Om'],
-                                   m_nu=m_nu)#Ok0=cosmo_params['Omk'])
+                                   m_nu=m_nu)#,Ok0=cosmo_params['Omk'])
         if cosmo_params.get('w0') is not None:
             if cosmo_params.get('wa') is None:
                 cosmo_params['wa']=0
@@ -202,12 +209,13 @@ class Power_Spectra():
             pk_params=self.pk_params
 
         cosmo_ccl=pyccl.Cosmology(h=cosmo_params['h'],Omega_c=cosmo_params['Omd'],
-                                Omega_b=cosmo_params['Omb'],
-                                A_s=cosmo_params['Ase9']*1.e-9,n_s=cosmo_params['ns'],
-                                m_nu=cosmo_params['mnu'])
-        kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),pk_params['nk'])
+                                  Omega_b=cosmo_params['Omb'],m_nu=cosmo_params['mnu'],
+                                  A_s=cosmo_params['Ase9']*1.e-9,n_s=cosmo_params['ns'],
+                                  transfer_function='boltzmann_camb', matter_power_spectrum='halofit')
+        kh=self.kh#np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),pk_params['nk'])
+        k=kh*cosmo_params['h']
         nz=len(z)
-        ps=np.zeros((nz,pk_params['nk']))
+        ps=np.zeros((nz,len(k)))
         ps0=[]
         z0=9.#PS(z0) will be rescaled using growth function when CCL fails.
 
@@ -215,15 +223,15 @@ class Power_Spectra():
         if pk_params['non_linear']==1:
             pyccl_pkf=pyccl.nonlin_matter_power
         for i in np.arange(nz):
-            try:
-                ps[i]= pyccl_pkf(cosmo_ccl,kh,1./(1+z[i]))
-            except Exception as err:
-                self.logger.error ('CCL err %s %s',err,z[i])
-                if not np.any(ps0):
-                    ps0=pyccl.linear_matter_power(cosmo_ccl,kh,1./(1.+z0))
-                Dz=self.DZ_int(z=[z0,z[i]])
-                ps[i]=ps0*(Dz[1]/Dz[0])**2
-        return ps*cosmo_params['h']**3,kh/cosmo_params['h'] #factors of h to get in same units as camb output
+#             try:
+                ps[i]= pyccl_pkf(cosmo_ccl,k,1./(1+z[i]))
+#             except Exception as err:
+#                 self.logger.error ('CCL err %s %s',err,z[i])
+#                 if not np.any(ps0):
+#                     ps0=pyccl.linear_matter_power(cosmo_ccl,kh,1./(1.+z0))
+#                 Dz=self.DZ_int(z=[z0,z[i]])
+#                 ps[i]=ps0*(Dz[1]/Dz[0])**2
+        return ps*cosmo_params['h']**3,kh   #factors of h to get in same units as camb output
 
     def camb_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
         #Set up a new set of parameters for CAMB
@@ -247,16 +255,16 @@ class Power_Spectra():
 
         #stdout=np.copy(sys.stdout)
         #sys.stdout = open(os.devnull, 'w')
-        if self.silence_camb:
-            sys.stdout = open(os.devnull, 'w')
+#         if self.silence_camb:
+#             sys.stdout = open(os.devnull, 'w')
         pars.InitPower.set_params(ns=cosmo_params['ns'], r=0,As =cosmo_params['Ase9']*1.e-9) #
         if return_s8:
             z_t=np.sort(np.unique(np.append([0],z).flatten()))
         else:
             z_t=np.array(z)
         pars.set_matter_power(redshifts=z_t,kmax=pk_params['kmax'])
-        if self.silence_camb:
-            sys.stdout = sys.__stdout__
+#         if self.silence_camb:
+#             sys.stdout = sys.__stdout__
         #sys.stdout = sys.__stdout__
         #sys.stdout=stdout
 

@@ -93,6 +93,10 @@ worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_
 def start_client(Scheduler_file=None,local_directory=None,ncpu=None,n_workers=1,threads_per_worker=None,
                   worker_kwargs=worker_kwargs,LocalCluster_kwargs={},dashboard_address=8801,memory_limit='120gb'):
     LC=None
+    try:  
+        os.makedirs(local_directory)  
+    except Exception as error:  
+        print('error in creating local directory: ',local_directory,error) 
     if threads_per_worker is None:
         if ncpu is None:
             ncpu=multiprocessing.cpu_count()-1

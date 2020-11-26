@@ -44,6 +44,8 @@ class Covariance_utils():
 
 
     def set_window_params(self):
+        if self.f_sky is None:
+            return
         if isinstance(self.f_sky,float):
             self.Om_W=4*np.pi*self.f_sky
             self.Win,self.Win0=self.window_func()
@@ -259,15 +261,15 @@ class Covariance_utils():
         fs1324=1
         fs0=1
         fs1423=1
-        if f_sky is not None:
+        if self.f_sky is not None:
             if isinstance(self.f_sky,float):
                 fs1324=self.f_sky
                 fs0=self.f_sky**2
                 fs1423=self.f_sky
             else:
-                fs1324=f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[2]][z_indx[0],z_indx[2]]*f_sky[tracers[1],tracers[3]][z_indx[1],z_indx[3]])
-                fs0=f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
-                fs1423=f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[3]][z_indx[0],z_indx[3]]*f_sky[tracers[1],tracers[2]][z_indx[1],z_indx[2]])
+                fs1324=self.f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[2]][z_indx[0],z_indx[2]]*f_sky[tracers[1],tracers[3]][z_indx[1],z_indx[3]])
+                fs0=self.f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
+                fs1423=self.f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[3]][z_indx[0],z_indx[3]]*f_sky[tracers[1],tracers[2]][z_indx[1],z_indx[2]])
         
         gaussian_cov_norm_2D=np.outer(np.sqrt(self.gaussian_cov_norm),np.sqrt(self.gaussian_cov_norm))
         if not self.do_xi:
@@ -513,8 +515,7 @@ class Covariance_utils():
                 cov['G1324']=0
                 cov['G1423']=0
             else:
-                cov['G1324'],cov['G1423']=self.cl_gaussian_cov(cls,SN,
-                                            self.SN,tracers,zs_indx,self.do_xi,fs)
+                cov['G1324'],cov['G1423']=self.cl_gaussian_cov(cls,SN,tracers,zs_indx)
         cov['G']=cov['G1324']+cov['G1423']
         cov['final']=cov['G']
         cov['SSC'],cov['Tri']=self.cl_cov_connected(zs_indx=zs_indx,cls=cls,clz=clz, tracers=tracers,sig_cL=sig_cL)#,Win_cov=None,Win_cl=None)

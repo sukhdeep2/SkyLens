@@ -32,7 +32,7 @@ class Skylens():
                 cov_utils=None,logger=None,tracer_utils=None,#lensing_utils=None,galaxy_utils=None,
                 zs_bins=None,zk_bins=None,zg_bins=None,galaxy_bias_func=None,
                 power_spectra_kwargs={},WT_kwargs=None,
-                z_PS=None,nz_PS=100,log_z_PS=True,
+                z_PS=None,nz_PS=100,log_z_PS=2,
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
                 Tri_cov=False,sparse_cov=False,
                 use_window=True,window_lmax=None,window_l=None,store_win=False,Win=None,
@@ -570,11 +570,13 @@ class Skylens():
 
     def gather_data(self):
         client=client_get(self.scheduler_info)
-        keys=['xi_bin_utils','cl_bin_utils','Win','WT_binned']
+        keys=['xi_bin_utils','cl_bin_utils','Win','WT_binned','z_bins']
         for k in keys:
-            self.__dict__[k]=client.gather(self.__dict__[k]) #FIXME: need a function to properly gather dicts
+            if hasattr(self,k):
+                self.__dict__[k]=client.gather(self.__dict__[k]) #FIXME: need a function to properly gather dicts
         self.Ang_PS.clz=client.gather(self.Ang_PS.clz)
-        self.WT.gather_data()
+        if self.WT is not None:
+            self.WT.gather_data()
         
     def scatter_data(self):
         client=client_get(self.scheduler_info)
@@ -1005,9 +1007,10 @@ def calc_cl(zbin1={}, zbin2={},corr=('shear','shear'),cosmo_params=None,clz=None
     """
     cls=clz['cls']
     f=clz['cl_f']
-    sc=zbin1['kernel_int']*zbin1['kernel_int']
+    sc=zbin1['kernel_int']*zbin2['kernel_int']
     dchi=clz['dchi']
     cl=np.dot(cls.T*sc,dchi)
+#     cl/=f**2 #accounted for in kernel
             # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
     return cl
 
