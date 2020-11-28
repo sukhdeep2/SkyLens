@@ -89,7 +89,7 @@ class Tracer_utils():
                 for k in self.z_bins[tracer][i].keys():
                     if 'window' in k:
                         self.z_win[tracer][i][k]=self.z_bins[tracer][i][k]
-        self.z_win=scatter_dict(self.z_win,scheduler_info=self.scheduler_info)
+        self.z_win=scatter_dict(self.z_win,scheduler_info=self.scheduler_info,broadcast=True)
 #                 if self.scheduler_info is not None:
 #                     self.z_win[tracer][i]=client.scatter(self.z_win[tracer][i])
 #                 for k in self.z_win[tracer][i].keys():

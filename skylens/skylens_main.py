@@ -336,6 +336,10 @@ class Skylens():
                 for indxs in self.corr_indxs[corr]:    
                     cl0=self.c_ell0[corr][indxs].compute()
                     cl_b=self.c_ell_b[corr][indxs].compute()
+                    wt0=cl0
+                    wt_b=1./cl_b
+                    if np.all(cl_b==0):
+                        wt_b[:]=0
                     for im in np.arange(len(s1_s2s)):
                         s1_s2=s1_s2s[im]
                         win_xi=None
@@ -345,7 +349,7 @@ class Skylens():
                         self.WT_binned[corr][s1_s2][indxs]=delayed(self.binning.bin_2d_WT)(
                                                             wig_mat=self.WT.wig_d[s1_s2],
                                                             wig_norm=self.WT.wig_norm,
-                                                            wt0=cl0,wt_b=1./cl_b,bin_utils_cl=self.cl_bin_utils,
+                                                            wt0=wt0,wt_b=wt_b,bin_utils_cl=self.cl_bin_utils,
                                                             bin_utils_xi=self.xi_bin_utils[s1_s2],
                                                             win_xi=win_xi,
                                                             use_binned_theta=self.use_binned_theta)
@@ -358,12 +362,11 @@ class Skylens():
                                 self.WT_binned_cov[corr][s1_s2][indxs]=delayed(self.binning.bin_2d_WT)(
                                                             wig_mat=self.WT.wig_d[s1_s2],
                                                             wig_norm=self.WT.wig_norm,
-                                                            wt0=cl0,wt_b=1./cl_b,bin_utils_cl=self.cl_bin_utils,
+                                                            wt0=wt0,wt_b=wt_b,bin_utils_cl=self.cl_bin_utils,
                                                             bin_utils_xi=self.xi_bin_utils[s1_s2],
                                                             win_xi=None,
                                                             use_binned_theta=self.use_binned_theta)
                         
-
     def update_zbins(self,z_bins={},tracer='shear'):
         """
         If the tracer bins need to be updated. Ex. when running chains with varying photo-z params.
@@ -384,7 +387,7 @@ class Skylens():
             self.cl_bin_utils=self.binning.bin_utils(r=self.l0,r_bins=self.l_bins,
                                                 r_dim=2,mat_dims=[1,2])
 #             self.cl_bin_utils={k:client.scatter(self.cl_bin_utils[k]) for k in self.cl_bin_utils.keys()}
-            self.cl_bin_utils=scatter_dict(self.cl_bin_utils,scheduler_info=self.scheduler_info)
+            self.cl_bin_utils=scatter_dict(self.cl_bin_utils,scheduler_info=self.scheduler_info,broadcast=True)
         self.xi_bin_utils=None
         if self.do_xi and self.bin_xi:
             self.xi_bin_utils={}
@@ -393,7 +396,7 @@ class Skylens():
                                                     r_bins=self.theta_bins,
                                                     r_dim=2,mat_dims=[1,2])
                 self.xi_bin_utils[s1_s2]=client.compute(self.xi_bin_utils[s1_s2]).result()
-                self.xi_bin_utils[s1_s2]=scatter_dict(self.xi_bin_utils[s1_s2],scheduler_info=self.scheduler_info)
+                self.xi_bin_utils[s1_s2]=scatter_dict(self.xi_bin_utils[s1_s2],scheduler_info=self.scheduler_info,broadcast=True)
             
     def calc_cl(self,zbin1={}, zbin2={},corr=('shear','shear'),cosmo_params=None,Ang_PS=None):#FIXME: this can be moved outside the class.thenwe don't need to serialize self.
         """
@@ -923,6 +926,8 @@ class Skylens():
                     
                 for indx in corr_indxs[corr]:
                     D_final[i*len_bins:(i+1)*len_bins]=dat_c[indx]
+#                     if not np.all(np.isfinite(dat_c[indx])):
+#                         print('stack data not finite at',corr,indx,dat_c[indx])
                     i+=1
         print('stack got 2pt')
         if not self.do_cov:
@@ -1049,8 +1054,6 @@ def bin_cl_func(cl,use_binned_l=False,bin_cl=False,cl_bin_utils=None):
 
 def get_xi(cl=None,wig_d=None,cl_kwargs={},wig_norm=1,
           xi_bin_utils=None,bin_xi=None,use_binned_theta=None,Win=None):
-#     if cl is None:
-#         cl=calc_cl(**cl_kwargs)
     xi=projected_correlation(cl=cl,wig_d=wig_d,norm=wig_norm)
     xib=bin_xi_func(xi=xi,Win=Win,xi_bin_utils=xi_bin_utils,bin_xi=bin_xi,use_binned_theta=use_binned_theta)
     return xib

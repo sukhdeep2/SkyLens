@@ -1,4 +1,4 @@
-import sys, os, gc, threading, subprocess,pickle,multiprocessing
+import sys, os, gc, threading, subprocess,pickle,multiprocessing,dask
 import numpy as np
 from dask.distributed import Client,get_client
 from distributed import LocalCluster
@@ -58,22 +58,33 @@ def chunks(lst, n):
 def pickle_deepcopy(obj):
        return pickle.loads(pickle.dumps(obj, -1))
 
-def scatter_dict(dic,scheduler_info=None,depth=10): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
+def scatter_dict(dic,scheduler_info=None,depth=10,broadcast=False,return_workers=False,workers=None): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
     """
         depth: Need to think this through. It appears dask can see one level of depth when scattering and gathering, but not more.
     """
-    client=client_get(scheduler_info=scheduler_info)
-    for k in dic.keys():
-        if isinstance(dic[k],dict) and depth>0:
-            dic[k]=scatter_dict(dic[k],scheduler_info=scheduler_info,depth=depth-1)
-        else:
-            dic[k]=client.scatter(dic[k])
+    if dic is None:
+        print('scatter_dict got empty dictionary')
+    else:
+        client=client_get(scheduler_info=scheduler_info)
+        for k in dic.keys():
+            if isinstance(dic[k],dict) and depth>0:
+                dic[k],workers=scatter_dict(dic[k],scheduler_info=scheduler_info,depth=depth-1,broadcast=broadcast,return_workers=True,workers=workers)
+            else:
+                dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
+                workers=list(client.who_has(dic[k]).values())[0]
+    #             print('scatter-dict ',k,workers)
+    if return_workers:
+        return dic,workers
     return dic
 
 def gather_dict(dic,scheduler_info=None,depth=0): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
+                                                    #we can use client.who_has()
     """
         depth: Need to think this through. It appears dask can see one level of depth when scattering and gathering, but not more.
     """
+    if dic is None:
+        print('gather_dict got empty dictionary')
+        return dic
     client=client_get(scheduler_info=scheduler_info)
     for k in dic.keys():
         if isinstance(dic[k],dict) and depth>0:
@@ -89,10 +100,13 @@ def client_get(scheduler_info=None):
         client=get_client()
     return client
 
-worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
+worker_kwargs={}#{'memory_spill_fraction':.95,'memory_target_fraction':.95,'memory_pause_fraction':1}
 def start_client(Scheduler_file=None,local_directory=None,ncpu=None,n_workers=1,threads_per_worker=None,
-                  worker_kwargs=worker_kwargs,LocalCluster_kwargs={},dashboard_address=8801,memory_limit='120gb'):
+                  worker_kwargs=worker_kwargs,LocalCluster_kwargs={},dashboard_address=8801,
+                 memory_limit='120gb',processes=False):
     LC=None
+    if local_directory is None:
+        local_directory='./temp_skylens/pid'+str(os.getpid())+'/'
     try:  
         os.makedirs(local_directory)  
     except Exception as error:  
@@ -101,10 +115,13 @@ def start_client(Scheduler_file=None,local_directory=None,ncpu=None,n_workers=1,
         if ncpu is None:
             ncpu=multiprocessing.cpu_count()-1
         threads_per_worker=ncpu
+    if n_workers is None:
+        n_workers=1
     if Scheduler_file is None:
                 #     dask_initialize(nthreads=27,local_directory=dask_dir)
                 #     client = Client()
-        LC=LocalCluster(n_workers=n_workers,processes=False,threads_per_worker=threads_per_worker,
+#         dask.config.set(scheduler='threads')
+        LC=LocalCluster(n_workers=n_workers,processes=processes,threads_per_worker=threads_per_worker,
                         local_directory=local_directory,dashboard_address=dashboard_address,
                         memory_limit=memory_limit,**LocalCluster_kwargs,**worker_kwargs
                    )

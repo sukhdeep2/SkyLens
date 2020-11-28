@@ -5,8 +5,8 @@
 #SBATCH -o /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/run_mcmc_many%A_%a.out
 #SBATCH -t 20:00:00
 #SBATCH -N 1
-#SBATCH -n 28
-##SBATCH --ntasks-per-node=2
+##SBATCH -n 28
+#SBATCH --ntasks-per-node=27
 #SBATCH --mem=128G
 #SBATCH -A phy200040p
 #SBATCH --array=1-8
@@ -28,7 +28,7 @@ cd $home
 
 do_xis=( 0 1 )
 bin_ls=( 0 1 )
-fix_cosmos=( 0 1 )
+fix_cosmos=( 1 )
 
 tmp_file=$temp_home"/""$ID""$job_id"".tmp"
 
@@ -66,10 +66,10 @@ do
                SCHEFILE=$CSCRATCH/Scheduler.dasksche.json
                worker_log=$CSCRATCH/dask-local/worker-*
                echo $worker_log
- #              while ! [ -f $SCHEFILE ]; do #redundant
-  #                  sleep 3
-   #                echo -n . #>>$log_file
-    #           done
+#               while ! [ -f $SCHEFILE ]; do #redundant
+#                    sleep 3
+#                   echo -n . #>>$log_file
+#               done
 
                 echo 'ids' $njob $job_id #>> $log_file
                 #conda_env py36
@@ -78,7 +78,7 @@ do
                 echo 'begining::' $(date) #>>$log_file 
 
                 python3 -Xfaulthandler MCMC_emcee.py  --do_xi=$do_xi --bin_l=$bin_l --fix_cosmo=$fix_cosmo --dask_dir=$CSCRATCH #--scheduler=$SCHEFILE #|cat>>$log_file
-
+                
                 echo 'Finished::' $(date) #>>$log_file                                                                                                                                                                    
                 echo '================================================' #>>$log_file          
                 )

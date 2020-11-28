@@ -36,16 +36,17 @@ class wigner_transform():
         print('Scattering WT data',self.nscatter)  
 #         if self.nscatter>1:
 #             crash
+        broadcast=True
         client=client_get(scheduler_info=self.scheduler_info)
-        self.l=client.scatter(self.l) #FIXME: creates problem with intepolation function
-        self.grad_l=client.scatter(self.grad_l)
-        self.norm=client.scatter(self.norm)
+        self.l=client.scatter(self.l,broadcast=broadcast) #FIXME: creates problem with intepolation function
+        self.grad_l=client.scatter(self.grad_l,broadcast=broadcast)
+        self.norm=client.scatter(self.norm,broadcast=broadcast)
         self.wig_norm=client.scatter(self.wig_norm)
         self.grad_theta_bins=1
         for k in self.wig_d.keys():
-            self.wig_d[k]=client.scatter(self.wig_d[k])
-            self.theta[k]=client.scatter(self.theta[k])
-            self.theta_deg[k]=client.scatter(self.theta_deg[k])
+            self.wig_d[k]=client.scatter(self.wig_d[k],broadcast=broadcast)
+            self.theta[k]=client.scatter(self.theta[k],broadcast=broadcast)
+            self.theta_deg[k]=client.scatter(self.theta_deg[k],broadcast=broadcast)
         
     def gather_data(self):
         self.nscatter-=1
@@ -94,7 +95,7 @@ class wigner_transform():
         zeros=jn_zeros(bessel_order,max(self.wig_d_taper_order_low,self.wig_d_taper_order_high))
         l_max_low=zeros[self.wig_d_taper_order_low-1]/self.theta[s1_s2]
         if l_max_low.max()>self.l.max():
-            print('Wigner ell max too low for theta_min. Recommendation based on first few zeros of bessel ',s1_s2,' :',zeros[:5]/self.theta[s1_s2].min())
+            print('Wigner ell max of ',self.l.max(),' too low for theta_min. Recommendation based on first few zeros of bessel ',s1_s2,' :',zeros[:5]/self.theta[s1_s2].min())
         l_max_high=zeros[self.wig_d_taper_order_high-1]/self.theta[s1_s2]
         if self.wig_d_taper_order_high==0:
             l_max_high[:]=self.l.max()
