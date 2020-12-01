@@ -1,5 +1,5 @@
 import os
-os.environ["OMP_NUM_THREADS"] = "5" #need to be set early
+os.environ["OMP_NUM_THREADS"] = "4" #need to be set early
 
 import sys
 import emcee
@@ -37,9 +37,9 @@ if __name__=='__main__':
 
     args = parser.parse_args()
 
-    fix_cosmo=False if args.fix_cosmo is None else np.bool(args.fix_cosmo)
+    fix_cosmo=True if args.fix_cosmo is None else np.bool(args.fix_cosmo)
     do_xi=False if args.do_xi is None else np.bool(args.do_xi)
-    use_binned_l=True if args.bin_l is None else np.bool(args.bin_l)
+    use_binned_l=False if args.bin_l is None else np.bool(args.bin_l)
 
     print('Doing mcmc',fix_cosmo,do_xi,use_binned_l,test_run) #err  True False True True     False True False True
 

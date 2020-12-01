@@ -733,9 +733,11 @@ class Skylens():
         for corr in corrs:
             s1_s2s=self.s1_s2s[corr]
             xi[corr]={}
+            xi[corr[::-1]]={}
             for im in np.arange(len(s1_s2s)):
                 s1_s2=s1_s2s[im]
                 xi[corr][s1_s2]={}
+                xi[corr[::-1]][s1_s2]={}
                 xi_bin_utils=None
                 if not self.use_binned_theta:
                     wig_d=self.WT.wig_d[s1_s2]
@@ -753,6 +755,7 @@ class Skylens():
 #                                                         s1_s2=s1_s2,Win=win)
                     xi[corr][s1_s2][indx]=delayed(get_xi)(cl=cl[corr][indx],wig_d=wig_d,wig_norm=wig_norm,
                                          xi_bin_utils=xi_bin_utils,bin_xi=self.bin_xi,use_binned_theta=self.use_binned_theta,Win=win)
+                    xi[corr[::-1]][s1_s2][indx[::-1]]=xi[corr][s1_s2][indx] #FIXME: s1_s2 should be reversed as well?... 
 
         print('Done xi graph',get_size(cl)/1.e6,get_size_pickle(self.cov_utils))
 #         dic=self.cov_utils.__dict__

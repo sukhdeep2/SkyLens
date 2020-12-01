@@ -28,7 +28,7 @@ cd $home
 
 do_xis=( 0 1 )
 bin_ls=( 0 1 )
-fix_cosmos=( 1 )
+fix_cosmos=( 0 1 )
 
 tmp_file=$temp_home"/""$ID""$job_id"".tmp"
 

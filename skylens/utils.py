@@ -2,6 +2,7 @@ import sys, os, gc, threading, subprocess,pickle,multiprocessing,dask
 import numpy as np
 from dask.distributed import Client,get_client
 from distributed import LocalCluster
+from collections.abc import Mapping #to check for dicts
 # print('pid: ',pid, sys.version)
 def thread_count():
     pid=os.getpid()
@@ -39,13 +40,19 @@ def get_size_pickle(obj):
     yy=pickle.dumps(obj)
     return np.around(sys.getsizeof(yy)/1.e6,decimals=3)
 
-def dict_size_pickle(obj,print_prefact=''): #useful for some memory diagnostics
-    print(print_prefact,'dict full size ',get_size_pickle(obj))
-    for k in obj.keys():
-        if isinstance(obj[k],dict):
-            dict_size_pickle(obj[k])
+def dict_size_pickle(dic,print_prefact='',depth=2): #useful for some memory diagnostics
+    print(print_prefact,'dict full size ',get_size_pickle(dic))
+    if not isinstance(dic,dict):
+        print(dic, 'is not a dict',depth)
+        return 
+    if depth <=0:
+        return
+    for k,v in dic.items():
+        if isinstance(v,dict) and depth>0:
+            dict_size_pickle(v,print_prefact=print_prefact+' '+str(k),depth=depth-1)
         else:
-            print(print_prefact,'dict obj size: ',k, get_size_pickle(dict_size_pickle(obj[k])))
+            print(print_prefact,'dict obj size: ',k, get_size_pickle(v))
+    return
 
 def chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
