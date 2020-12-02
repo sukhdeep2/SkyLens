@@ -4,8 +4,8 @@ from skylens.skylens_main import *
 #sys.path.append('/verafs/scratch/phy200040p/sukhdeep/project/skylens/skylens/')
 import dask
 from dask import delayed
-from skylens.power_spectra import *
 from skylens.cosmology import *
+from skylens.power_spectra import *
 from skylens.angular_power_spectra import *
 from skylens.hankel_transform import *
 from skylens.wigner_transform import *

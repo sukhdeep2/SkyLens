@@ -25,7 +25,6 @@ from skylens.utils import *
 
 
 d2r=np.pi/180.
-c=c.to(u.km/u.second)
 
 class Skylens():
     def __init__(self,l=np.arange(2,2001),WT=None,Ang_PS=None,
@@ -470,7 +469,7 @@ class Skylens():
         clz=Ang_PS.clz
             
         if cosmo_h is None:
-            cosmo_h=Ang_PS.PS.cosmo_h
+            cosmo_h=Ang_PS.PS#.cosmo_h
 
         zkernel={}
         self.SN={}
@@ -593,7 +592,7 @@ class Skylens():
     def tomo_short(self,cosmo_h=None,cosmo_params=None,pk_lock=None,WT_binned=None,WT=None,
                 corrs=None,bias_kwargs={},bias_func=None,stack_corr_indxs=None,
                 z_bins=None,Ang_PS=None,zkernel=None,Win=None,cl_bin_utils=None,
-                  xi_bin_utils=None):
+                  xi_bin_utils=None,pk_params=None):
         """
             
         """
@@ -601,17 +600,13 @@ class Skylens():
             corrs=self.corrs
         if stack_corr_indxs is None:
             stack_corr_indxs=self.stack_indxs
-#         if Ang_PS is None:
-#             Ang_PS=self.Ang_PS #Warning: This is dangerous. In a parallel MCMC you probably want to make a copy of Ang_PS and then pass it.
-#         if z_bins is None:
-#             z_bins=self.z_bins #Warning: This is dangerous. In a parallel MCMC, when varying z_bins params (e.g. bias) you probably want to make a copy of z_bins and then pass it.
 
         tracers=np.unique([j for i in corrs for j in i])
         
         Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_lock=pk_lock,
                                     cosmo_params=cosmo_params)
         if cosmo_h is None:
-            cosmo_h=Ang_PS.PS.cosmo_h
+            cosmo_h=Ang_PS.PS#.cosmo_h
 
         if zkernel is None:
             zkernel={}
@@ -702,7 +697,7 @@ class Skylens():
         """
 
         if cosmo_h is None:
-            cosmo_h=self.Ang_PS.PS.cosmo_h
+            cosmo_h=self.Ang_PS.PS#.cosmo_h
         if corrs is None:
             corrs=self.corrs
 

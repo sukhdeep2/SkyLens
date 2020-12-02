@@ -1,6 +1,5 @@
         #TODO: 
         # - Allow windows to be read from a file.
-        # - Allow an alternative graph that allows different windows to be computed independently (i.e. wigner split is secondary). 
         
 import dask
 from dask import delayed
@@ -50,14 +49,12 @@ class window_utils():
 
         self.c_ell0=None
         self.c_ell_b=None
-#         self.xi_bin_utils=kappa_class0.xi_bin_utils
+
         del self.kappa_class0,self.kappa_class_b,self.kappa_b_xi,self.z_bins
         self.cl_bin_utils=None
         if bin_window:
             self.binnings=binning()
             self.cl_bin_utils=kappa_class0.cl_bin_utils
-#             self.kappa_class0=kappa_class0
-#             self.kappa_class_b=kappa_class_b
 
             self.c_ell0=kappa_class0.cl_tomo()['cl']
             if kappa_class_b is not None:
@@ -75,9 +72,6 @@ class window_utils():
             WT_kwargs['cov']={'l_cl':self.window_l,'s1_s2':(0,0),'wig_d1':self.WT.wig_d[(0,0)],'wig_d':self.WT.wig_d[(0,0)],
                           'wig_d2':self.WT.wig_d[(0,0)],'wig_l':self.WT.l,'grad_l':self.WT.grad_l,'wig_norm':self.WT.wig_norm}
 
-#         dic=self.__dict__
-#         for k in dic.keys():
-#             print('window_utils init size',k,get_size_pickle(getattr(self,k)))
         use_bag=False
         if self.Win is None and self.use_window:
             xibu=None
@@ -116,17 +110,13 @@ class window_utils():
         wigner matrices are large. so we read them ste by step
         """
         step=self.step
-#         for m in self.m_s:
         wig_3j=zarr.open(self.wigner_files[m],mode='r')
         if sem_lock is None:
             out=wig_3j.oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l)]
         else:
             with sem_lock:
                 out=wig_3j.oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l)]
-#         with zarr.open(self.wigner_files[m],mode='r') as wig_f:
-#             out=wig_f.oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l)]
         out=out.transpose(1,2,0)
-#         os.close(wig_3j)
         del wig_3j
         return out
 
@@ -140,7 +130,6 @@ class window_utils():
         for m1 in self.m_s:
             for m2 in self.m_s[mi:]:
                 wig_3j_2[str(m1)+str(m2)]=wig_3j_1[m1]*wig_3j_1[m2].astype('float64') #numpy dot appears to run faster with 64bit ... ????
-                #FIXME: try sparse.COO if memory remains an issue
             mi+=1
         del wig_3j_1
         open_fd = len(psutil.Process().open_files())
@@ -210,13 +199,6 @@ class window_utils():
             self.wig_s1s2s[corr]=str(mi[0])+str(mi[1])
         print('wigner done',self.wig_3j.keys())
 
-
-    # def coupling_matrix(self,win,wig_3j_1,wig_3j_2,W_pm=0):
-    #     """
-    #     get the coupling matrix from windows power spectra and wigner functions. Not used
-    #     as we now use the coupling_matrix_large by default.
-    #     """
-    #     return np.dot(wig_3j_1*wig_3j_2,win*(2*self.window_l+1)   )/4./np.pi
 
     def coupling_matrix_large(self,win,wig_3j_2,mf_pm,bin_wt,W_pm,lm,cov,cl_bin_utils=None):
         """
@@ -741,7 +723,7 @@ class window_utils():
                     if self.bin_theta_window:
                         win['xi'][12][k]=self.binning.bin_1d(xi=win['xi'][12][k],bin_utils=xi_bin_utils)
                         win['xi'][34][k]=self.binning.bin_1d(xi=win['xi'][34][k],bin_utils=xi_bin_utils)
-#             if self.bin_theta_window:
+#             if self.bin_theta_window: #FIXME: Following NEEDS fixing
 #                 for s1 in self.s1_s2s[corr1]:
 #                     for s2 in self.s1_s2s[corr2]:
 #                         bin_wt_xi={}
@@ -1129,30 +1111,12 @@ class window_utils():
                 Win_lm[lm]={}
 
                 Win_lm[lm]=delayed(self.get_coupling_lm_all_win)(Win_cl,Win_cov,lm,self.wig_3j_2[lm],self.mf_pm[lm],cl_bin_utils=cl_bin_utils)
-#                 if use_bag:
-#                     Win_cl_lm[lm]=self.cl_bag.map(self.get_cl_coupling_lm,Win_cl,lm,
-#                                                self.wig_3j_2[lm],self.mf_pm[lm],cl_bin_utils=cl_bin_utils)
-#                 else:
-#                     Win_cl_lm[lm]=[delayed(self.get_cl_coupling_lm)(None,Wc,lm,self.wig_3j_2[lm],self.mf_pm[lm],
-#                                                                     cl_bin_utils=cl_bin_utils) for Wc in Win_cl]
-#                 print('done lm cl graph',lm,time.time()-t1)
-#                 if self.do_cov:
-#                     if use_bag:
-#                         Win_cov_lm[lm]=self.cov_bag.map(self.get_cov_coupling_lm,Win_cov,lm,
-#                                                    self.wig_3j_2[lm],self.mf_pm[lm],cl_bin_utils=cl_bin_utils)
-#                     else:
-#                         Win_cov_lm[lm]=[delayed(self.get_cov_coupling_lm)(None,Wc,lm,
-#                                                                  self.wig_3j_2[lm],self.mf_pm[lm],cl_bin_utils=cl_bin_utils) for Wc in Win_cov]
 #### Donot delete
                 if self.store_win:  
                    client_func=client.compute
                    if use_bag:
                         client_func=client.persist
                    Win_lm[lm]=client_func(Win_lm[lm],timeout=200,workers=(workers[worker_i%nworkers]),allow_other_workers=False)
-#                    Win_cl_lm[lm]=client_func(Win_cl_lm[lm],timeout=200,workers=(workers[worker_i]),allow_other_workers=False)
-#                                                                     #FIXME: does not work on lists (use_bag=False) need to convert those to bag first.
-#                    if self.do_cov:
-#                         Win_cov_lm[lm]=client_func(Win_cov_lm[lm],timeout=200,workers=(workers[worker_i]), allow_other_workers=False)
                    print('done lm cl+cov graph',lm,time.time()-t1,get_size_pickle(self.get_cl_coupling_lm),workers[worker_i%nworkers])
                    worker_i+=1
                    lm_submitted+=[lm]
@@ -1175,27 +1139,11 @@ class window_utils():
                            job_i-=1
                        lm_submitted=[]#.remove(lmi)
                        job_i=0
-                   #gc.collect()
-#                    client.cancel(self.wig_3j_2[lm])
-#                    client.cancel(self.mf_pm[lm])
                 print('done lm',lm,time.time()-t1)
-#             for lm in self.lms:
-#                 if self.do_cov:
-#                     wait(Win_cov_lm[lm])
-#                     wait(Win_cl_lm[lm])
-#                     del self.wig_3j_2[lm]
-#                     del self.mf_pm[lm]
-#                     print('cleared wig lm',lm)
-#             print(Win_cl_lm)
-#             Win_cl_lm=client.gather(Win_cl_lm)
-#             print(Win_cl_lm)
-#             Win_cov_lm=client.gather(Win_cov_lm)
+                
             print('Done all lm')
-            self.Win=delayed(self.combine_coupling_cl_cov)(Win_cl_lm,Win_cov_lm)
-#             self.Win_cl=delayed(self.combine_coupling_cl)(self.Win_cl_lm)
             
-#             if self.do_cov:
-#                 self.Win_cov=delayed(self.combine_coupling_cov)(self.Win_cov_lm)
+            self.Win=delayed(self.combine_coupling_cl_cov)(Win_cl_lm,Win_cov_lm)
             print('done combine lm graph',time.time()-t1)
 
         if self.store_win:

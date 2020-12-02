@@ -6,14 +6,12 @@ import os,sys
 from skylens.power_spectra import *
 #from hankel_transform import *
 #from binning import *
-from astropy.constants import c,G
-from astropy import units as u
+from astropy.cosmology import *
 import numpy as np
 from scipy.interpolate import interp1d
 from scipy.integrate import quad as scipy_int1d
 
 d2r=np.pi/180.
-c=c.to(u.km/u.second)
 
 class Angular_power_spectra():
     def __init__(self,l=np.arange(2,2001),power_spectra_kwargs={},
@@ -75,10 +73,10 @@ class Angular_power_spectra():
 #                 print('angular_power_z: Pk same as before, not recomputing')
                 return self.clz # same as last calculation
 
-        self.PS.set_cosmology(cosmo_params=cosmo_params,cosmo_h=cosmo_h)
+        self.PS.set_cosmology(cosmo_params=cosmo_params)#,cosmo_h=cosmo_h)
         
         if cosmo_h is None:
-            cosmo_h=self.PS.cosmo_h
+            cosmo_h=self.PS#.cosmo_h
         l=self.l
 
         z=self.z
@@ -99,14 +97,15 @@ class Angular_power_spectra():
             RKls=np.zeros((nz,nl),dtype='float32')
             cls_lin=np.zeros((nz,nl_w),dtype='float32')#*u.Mpc#**2
 
-        cH=c/(cosmo_h.efunc(self.z)*cosmo_h.H0)
-        cH=cH.value
+        cH=cosmo_h.Dh/cosmo_h.efunc(self.z)
+#         cH=cH.value
 
         def k_to_l(l,lz,f_k): #take func from k to l space
-            fk_int=interp1d(lz,f_k,bounds_error=False,fill_value=0)
-            return fk_int(l)
+            return np.interp(l,xp=lz,fp=f_k,left=0, right=0)
+#             fk_int=interp1d(lz,f_k,bounds_error=False,fill_value=0)
+#             return fk_int(l)
         
-        chi=cosmo_h.comoving_transverse_distance(z).value
+        chi=cosmo_h.comoving_transverse_distance(z)#.value
         kh=self.PS.kh
         pk=self.PS.pk
         for i in np.arange(nz):
@@ -123,7 +122,6 @@ class Angular_power_spectra():
         self.clz={'cls':cls,'l':l,'cH':cH,'dchi':cH*self.dz,'chi':chi,'dz':self.dz,
                  'cl_f':self.cl_f}
         if self.SSV_cov:
-#             self.cov_utils.sigma_win_calc(cls_lin=cls_lin)
             self.clz.update({'clsR':cls*Rls,'clsRK':cls*RKls,'cls_lin':cls_lin})
         return self.clz
             

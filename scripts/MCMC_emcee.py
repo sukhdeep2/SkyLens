@@ -29,6 +29,7 @@ if __name__=='__main__':
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--do_xi", "-do_xi",type=int, help="")
+    parser.add_argument("--eh_pk", "-eh_pk",type=int, help="")
     parser.add_argument("--fix_cosmo", "-fc",type=int, help="use unit window")
     parser.add_argument("--bin_l", "-bl",type=int, help="use complicated window")
     parser.add_argument("--scheduler", "-s", help="Scheduler file")
@@ -37,11 +38,12 @@ if __name__=='__main__':
 
     args = parser.parse_args()
 
-    fix_cosmo=True if args.fix_cosmo is None else np.bool(args.fix_cosmo)
+    fix_cosmo=False if args.fix_cosmo is None else np.bool(args.fix_cosmo)
     do_xi=False if args.do_xi is None else np.bool(args.do_xi)
-    use_binned_l=False if args.bin_l is None else np.bool(args.bin_l)
+    eh_pk=True if args.eh_pk is None else np.bool(args.eh_pk)
+    use_binned_l=True if args.bin_l is None else np.bool(args.bin_l)
 
-    print('Doing mcmc',fix_cosmo,do_xi,use_binned_l,test_run) #err  True False True True     False True False True
+    print('Doing mcmc',fix_cosmo,do_xi,use_binned_l,eh_pk,test_run) #err  True False True True     False True False True
 
     Scheduler_file=args.scheduler
     dask_dir=args.dask_dir
@@ -140,7 +142,11 @@ if __name__=='__main__':
     corr_ll=('shear','shear')
     corrs=[corr_ll,corr_ggl,corr_gg]
 
-    power_spectra_kwargs={} #{'pk_lock':lock}
+    pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'camb_pk'}
+    if eh_pk:
+        print('mcmc will use eh_pk')
+        pk_params['pk_func']='eh_pk'
+    power_spectra_kwargs={'pk_params':pk_params} #{'pk_lock':lock}
 
     kappa0=Skylens(zs_bins=zs_bin,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zs_bin,
                    use_window=use_window,Tri_cov=Tri_cov,
@@ -242,8 +248,10 @@ if __name__=='__main__':
         kappa0.Ang_PS.angular_power_z()
     else:
         kappa0.Ang_PS.reset()
+    print('kappa0 pk',kappa0.Ang_PS.PS.pk_func)
+    
     kappa0=client.scatter(kappa0,broadcast=True)
-
+    
     proc = psutil.Process()
     print('starting mcmc ', 'mem, peak mem: ',format_bytes(proc.memory_info().rss),
                      int(getrusage(RUSAGE_SELF).ru_maxrss/1024./1024.)
@@ -284,6 +292,7 @@ if __name__=='__main__':
         if not np.isfinite(log_prior):
             return -np.inf #np.zeros_like(data)
         cosmo_params,z_bins,Ang_PS=get_params(params,kappa0,z_bins,log_prior)
+
 #         cosmo_params,z_bins,Ang_PS=params
 #         Ang_PS.angular_power_z(cosmo_params=cosmo_params)
     #     Ang_PS=copy.deepcopy(Ang_PS)
@@ -382,7 +391,7 @@ if __name__=='__main__':
         outp['time']=time.time()-t1
 
         print('Done steps '+str(steps_taken)+ ' acceptance fraction ' +str(outp['acceptance_fraction'])+'  '
-        'time'+str(time.time()-t1)+str((time.time()-t1)/3600.))
+        'time'+str(time.time()-t1)+str((time.time()-t1)/3600.), 'nsteps: ',nsteps, 'chain shape',outp['chain'].shape)
         return outp
 
     if not do_xi and not use_binned_l:

@@ -1,14 +1,30 @@
 #TO do:
 # 1. Distance in presence of massive netrinos. Currently we are assuming them to be massless. eq. 27 of https://arxiv.org/pdf/1001.4538.pdf
 # 2. Use same name convention as Astropy.cosmology so that user can interchange between the two classes.
+# 3. implement sigma8 calculation, useful for EH pk normalization.
+# 4. change c to speed_of_light everywhere.
 
 import numpy as np
 #from galsim.integ import int1d
 from scipy.integrate import quad as scipy_int1d
-from skylens.power_spectra import *
 import warnings
 from astropy.cosmology import Planck15 as cosmo
 cosmo_h=cosmo.clone(H0=100)
+
+from astropy.constants import c,G
+from astropy import units as u
+
+c=c.to(u.km/u.second)
+G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)
+H100=100*(u.km/u.second/u.Mpc)
+
+c_unit=c.unit
+G2_unit=G2.unit
+H0_unit=H100.unit
+c=c.value
+G2=G2.value
+H100=H100.value
+
 
 tol=1.e-9
 
@@ -24,10 +40,12 @@ class cosmology():
         self._z=np.arange(start=0,stop=z_max,step=dz)
         self._dz=np.gradient(self._z)
         self.comoving_distance=self.comoving_distance_trapz
+        self.efunc=self.E_z
         if self.use_astropy:
             if self.astropy_cosmo is None:
                 self.astropy_cosmo=cosmo_planck15
             self.set_astropy(cosmo_params=cosmo_params)
+            self.efunc=self.astropy_cosmo.efunc
             if h_inv:
                 self.comoving_distance=self.astropy_cosmo_h.comoving_distance
                 self.comoving_transverse_distance=self.astropy_cosmo_h.comoving_transverse_distance
@@ -36,7 +54,9 @@ class cosmology():
                 self.comoving_transverse_distance=self.astropy_cosmo.comoving_transverse_distance
         self.set_cosmology(cosmo_params=cosmo_params)
 
-    def set_cosmology(self,cosmo_params):
+    def set_cosmology(self,cosmo_params=None):
+        if cosmo_params is None:
+            return
         self.__dict__.update(cosmo_params) #assign all input args to the class as properties
         self.Om=self.Omb+self.Omd
         self.OmL=1-self.Om-self.OmR#FIXME
@@ -46,7 +66,7 @@ class cosmology():
             self.Dh=self.c*(np.sqrt(np.absolute(self.Omk))) #a0h0=1./sqrt(Omega_k)
         if self.h_inv:
             self.Dh=self.c/100.
-        self.rho=self.Rho_crit()*self.Om
+#         self.rho=self.Rho_crit()*self.Om
         if not self.use_astropy:
             self.comoving_distance(self._z)
         else:
@@ -80,12 +100,8 @@ class cosmology():
                 cosmo_params['wa']=0
             if cosmo_params['w0']!=-1 or cosmo_params['wa']!=0:
                 self.astropy_cosmo=self.astropy_cosmo_w0_wa(cosmo=self.astropy_cosmo,w0=cosmo_param['w0'],wa=cosmo_param['wa'])
-#         self.astropy_cosmo_h=self.astropy_cosmo.clone(H0=100)
         if h_inv:
                 self.astropy_cosmo=self.astropy_cosmo.clone(H0=100)
-#                 self.comoving_distance=self.astropy_cosmo_h.comoving_distance
-#                 self.comoving_transverse_distance=self.astropy_cosmo_h.comoving_transverse_distance
-#             else:
         self.comoving_distance=self.astropy_cosmo.comoving_distance
         self.comoving_transverse_distance=self.astropy_cosmo.comoving_transverse_distance
 
@@ -188,23 +204,29 @@ class cosmology():
             #warnings.warn('This formula for DM12 is apparently not valid for Omega_k<0')#http://arxiv.org/pdf/astro-ph/9603028v3.pdf... this function doesnot work if E(z)=0 between z1,z2
             return curvature_radius*np.sin(Dc/curvature_radius)
 
-    def DA(self,z=[0]):#angular diameter distance
-        Dm=self.DM(z)
+    def angular_diameter_distance(self,z=[0]):#angular diameter distance
+        Dm=self.comoving_transverse_distance(z)
         return Dm/(1+z)
 
-    def DA2(self,z1=[],z2=[]):
-        return self.DM2(z1=z1,z2=z2)/(1+z2)
+    def angular_diameter_distance_z1z2(self,z1=[],z2=[]):
+        return self.comoving_transverse_distance_z1z2(z1=z1,z2=z2)/(1+z2)
 
     def DZ_approx(self,z=[0]):# linear growth factor.. only valid for LCDM
 #fitting formula (eq 67) given in lahav and suto:living reviews in relativity.. http://www.livingreviews.org/lrr-2004-8
+        if not hasattr(self,'_DZ0') and not np.all(z==0):
+            self._DZ0=1
+            self._DZ0=self.DZ_approx(z=np.atleast_1d([0]))
         hr=self.E_z_inv(z)
         omega_z=self.Om*((1+z)**3)*((hr)**2)
         lamda_z=self.OmL*(hr**2)
         gz=5.0*omega_z/(2.0*(omega_z**(4.0/7.0)-lamda_z+(1+omega_z/2.0)*(1+lamda_z/70.0)))
         dz=gz/(1.0+z)
-        return dz/dz[0]   #check normalisation
+        return dz/self._DZ0   #check normalisation
 
     def DZ_int(self,z=[0],Ez_func=None): #linear growth factor.. full integral.. eq 63 in Lahav and suto
+        if not hasattr(self,'_DZ0_int') and not np.all(z==0):
+            self._DZ0_int=1
+            self._DZ0_int=self.DZ_int(z=np.atleast_1d([0]))
         def intf(z):
             return (1+z)/self.H_z(z=z,Ez_func=Ez_func)**3
         j=0
@@ -218,7 +240,7 @@ class cosmology():
                 dz[j]=self.H_z(i)*scipy_int1d(intf,i,inf,epsrel=self.rtol,epsabs=tol)[0]
             j=j+1
         dz=dz*2.5*self.Om*self.H0**2
-        return dz/dz[0] #check for normalization
+        return dz/self._DZ0_int #check for normalization
 
     def Omega_Z(self,z=[0]):
         z=np.array(z)
@@ -243,13 +265,10 @@ class cosmology():
         return self.Om/self.f_z(z=z)
 
     def Rho_crit(self):
-        H0=self.H0*10**-6  #km/s/mpc ->km/s/pc
-        if self.h_inv:
-            H0=100.*10**-6  #km/s/mpc ->km/s/pc
-        G=4.302*10**-3 #pc Msun km/s
-        rc=3*H0**2/(8*np.pi*G)
-        rc=rc*10**6 # unit of Msun/pc^2/mpc ... upsilon wgg in mpc
-        return rc
+        H0=H100 if cosmo_h is None else cosmo_h.H0
+        rc=3*H0**2/(8*np.pi*G2)
+        rc=rc.to(u.Msun/u.pc**2/u.Mpc)# unit of Msun/pc^2/mpc
+        return rc.value
 
     def comoving_volume(self,z=[]): #z should be bin edges
         z_mean=0.5*(z[1:]+z[:-1])
@@ -257,11 +276,17 @@ class cosmology():
         dc_mean=self.DC(z_mean)
         return (dc_mean**2)*(dc[1:]-dc[:-1])
 
-class EH_pk(cosmology): #eisenstein_hu power spectra https://arxiv.org/pdf/astro-ph/9709112.pdf
+class EH_pk(): #eisenstein_hu power spectra https://arxiv.org/pdf/astro-ph/9709112.pdf
     def __init__(self,cosmo_params={},k=[]):
-        super().__init__(cosmo_params=cosmo_params)
+#         super().__init__(cosmo_params=cosmo_params)
+        self.__dict__.update(cosmo_params) #assign all input args to the class as properties
         self.k=k
+        self.c=c
         self.theta=self.Tcmb/2.7
+        try:
+            self.theta=self.theta.value
+        except:
+            pass
         self.Om_h2=self.Om*(self.h**2)
         self.Ob_h2=self.Omb*(self.h**2)
         
@@ -351,4 +376,15 @@ class EH_pk(cosmology): #eisenstein_hu power spectra https://arxiv.org/pdf/astro
         pk*=self.Ase9*1.e-9
         pk*=2*np.pi**2
         pk*=(self.c/self.h/100)**(3+self.ns)
-        self.pk=pk
+        self.pk0=pk
+        
+def Rho_crit(cosmo_h=None):
+    H0=H100 if cosmo_h is None else cosmo_h.H0
+    rc=3*(H0*H0_unit)**2/(8*np.pi*G2*G2_unit)
+    rc=rc.to(u.Msun/u.pc**2/u.Mpc)# unit of Msun/pc^2/mpc
+    return rc.value
+
+Rho_crit100=Rho_crit()
+sigma_crit_norm100=(3./2.)*((H100/c)**2)/Rho_crit100
+sigma_crit_norm100=sigma_crit_norm100#.value
+Rho_crit100=Rho_crit100
