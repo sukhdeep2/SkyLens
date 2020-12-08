@@ -15,6 +15,7 @@ from distributed import LocalCluster
 from dask.distributed import Client,get_client,wait,Semaphore
 import zarr
 from dask.threaded import get
+from distributed.client import Future
 import time,gc
 from multiprocessing import Pool,cpu_count
 from skylens.utils import *
@@ -69,10 +70,14 @@ class window_utils():
             self.xi0=kappa_class0.xi_tomo()['xi']
             self.xi_b=kappa_b_xi.xi_tomo()['xi']
         if self.do_xi:
-            WT_kwargs={'cl':{'l_cl':self.window_l,'s1_s2':(0,0),'wig_d':self.WT.wig_d[(0,0)],'wig_l':self.WT.l,'wig_norm':self.WT.wig_norm,'grad_l':self.WT.grad_l}}
-            WT_kwargs['cov']={'l_cl':self.window_l,'s1_s2':(0,0),'wig_d1':self.WT.wig_d[(0,0)],'wig_d':self.WT.wig_d[(0,0)],
+            client=client_get(self.scheduler_info)
+            s1_s2=(0,0)
+            lcl=client.scatter(self.window_l,broadcast=True)
+            WT_kwargs={'cl':{'l_cl':lcl,'s1_s2':s1_s2,'wig_d':self.WT.wig_d[(0,0)],'wig_l':self.WT.l,'wig_norm':self.WT.wig_norm,'grad_l':self.WT.grad_l}}
+            WT_kwargs['cov']={'l_cl':lcl,'s1_s2':s1_s2,'wig_d1':self.WT.wig_d[(0,0)],'wig_d':self.WT.wig_d[(0,0)],
                           'wig_d2':self.WT.wig_d[(0,0)],'wig_l':self.WT.l,'grad_l':self.WT.grad_l,'wig_norm':self.WT.wig_norm}
-
+            WT_kwargs=scatter_dict(WT_kwargs,broadcast=True,scheduler_info=self.scheduler_info,depth=2)
+#             print('window utils ',WT_kwargs,type(WT_kwargs['cl']['wig_d']),isinstance(WT_kwargs['cl']['wig_d'],Future))
         use_bag=False
         if self.Win is None and self.use_window:
             xibu=None
@@ -258,7 +263,7 @@ class window_utils():
         cases. 
         Spin factors and binning weights if needed are also set here.
         """
-#         print('getting window power cl',corr_indxs)
+#         print('getting window power cl',WT_kwargs)
         corr=(corr_indxs[0],corr_indxs[1])
         indxs=(corr_indxs[2],corr_indxs[3])
         win={}
@@ -973,7 +978,14 @@ class window_utils():
                 self.c_ell_b=client.compute(self.c_ell_b).result()
                 self.c_ell0=scatter_dict(self.c_ell0,scheduler_info=self.scheduler_info,broadcast=True,depth=2)
                 self.c_ell_b=scatter_dict(self.c_ell_b,scheduler_info=self.scheduler_info,broadcast=True,depth=2)
-#         print('set_window_cl',z_bins,WT_kwargs,xi_bin_utils)
+
+            if self.xi0 is not None:
+                self.xi0=client.compute(self.xi0).result()
+                self.xi_b=client.compute(self.xi_b).result()
+                self.xi0=scatter_dict(self.xi0,scheduler_info=self.scheduler_info,broadcast=True,depth=2)
+                self.xi_b=scatter_dict(self.xi_b,scheduler_info=self.scheduler_info,broadcast=True,depth=2)
+
+                
         if use_bag:
             z_bin1=dask.bag.from_sequence( [z_bins[ck[0]][ck[2]] for ck in self.cl_keys ],npartitions=npartitions)
             z_bin2=dask.bag.from_sequence( [z_bins[ck[1]][ck[3]] for ck in self.cl_keys ],npartitions=npartitions)

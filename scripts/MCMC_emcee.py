@@ -38,7 +38,7 @@ if __name__=='__main__':
     args = parser.parse_args()
 
     fix_cosmo=False if args.fix_cosmo is None else np.bool(args.fix_cosmo)
-    do_xi=False if args.do_xi is None else np.bool(args.do_xi)
+    do_xi=True if args.do_xi is None else np.bool(args.do_xi)
     eh_pk=True if args.eh_pk is None else np.bool(args.eh_pk)
     use_binned_l=True if args.bin_l is None else np.bool(args.bin_l)
 

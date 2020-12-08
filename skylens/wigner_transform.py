@@ -163,7 +163,7 @@ class wigner_transform():
             wig_l=self.l
             wig_norm=self.wig_norm
         cl2=self.cl_grid(l_cl=l_cl,cl=cl,taper=taper,wig_l=wig_l,**kwargs)
-        w=np.dot(wig_d[s1_s2]*wig_norm,cl2)
+        w=np.dot(wig_d*wig_norm,cl2)
         return self.theta[s1_s2],w
 
     def projected_covariance(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
@@ -193,7 +193,7 @@ class wigner_transform():
                               wig_d1=None,wig_d2=None,
                                 taper=False,**kwargs):
         if wig_d1 is not None:
-            print(wig_d1.shape,cl_cov.shape)
+            #print(wig_d1.shape,cl_cov.shape)
             return self.theta[s1_s2],wig_d1@cl_cov@wig_d2.T
         #when cl_cov is a 2-d matrix
         if s1_s2_cross is None:

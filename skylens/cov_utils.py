@@ -425,7 +425,7 @@ class Covariance_utils():
                     G_t_SN+=G_t_SNi
         
         th,G_t=self.WT.projected_covariance(cl_cov=G_t,**WT_kwargs)
-        print('cov utils xi_gaussina_cov',G_t.shape)
+        #print('cov utils xi_gaussina_cov',G_t.shape)
         if np.any(G_t_SN!=0):
             G_t+=np.diag(G_t_SN)
         G_t/=Norm

@@ -3,6 +3,8 @@ import numpy as np
 from dask.distributed import Client,get_client
 from distributed import LocalCluster
 from collections.abc import Mapping #to check for dicts
+from distributed.client import Future
+
 # print('pid: ',pid, sys.version)
 
 def thread_count():
@@ -77,7 +79,7 @@ def chunks(lst, n):
 def pickle_deepcopy(obj):
        return pickle.loads(pickle.dumps(obj, -1))
 
-def scatter_dict(dic,scheduler_info=None,depth=10,broadcast=False,return_workers=False,workers=None): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
+def scatter_dict(dic,scheduler_info=None,depth=2,broadcast=False,return_workers=False,workers=None): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
     """
         depth: Need to think this through. It appears dask can see one level of depth when scattering and gathering, but not more.
     """
@@ -88,6 +90,11 @@ def scatter_dict(dic,scheduler_info=None,depth=10,broadcast=False,return_workers
         for k in dic.keys():
             if isinstance(dic[k],dict) and depth>0:
                 dic[k],workers=scatter_dict(dic[k],scheduler_info=scheduler_info,depth=depth-1,broadcast=broadcast,return_workers=True,workers=workers)
+            elif isinstance(dic[k],Future): #don't want future of future.
+#                 print('scatter dict was passed a future, gathering and re-scattering', k)
+                dic[k]=client.gather(dic[k])
+                dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
+                workers=list(client.who_has(dic[k]).values())[0]
             else:
                 dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
                 workers=list(client.who_has(dic[k]).values())[0]

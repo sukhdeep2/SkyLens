@@ -44,7 +44,7 @@ class Skylens():
         if yaml_inp_file is not None:
             yaml_inp_args=parse_yaml(file_name=yaml_inp_file)
             self.__dict__.update(yaml_inp_args)
-            print('skylens init, yaml args',yaml_inp_args.keys())
+            #print('skylens init, yaml args',yaml_inp_args.keys())
             del yaml_inp_args
         elif python_inp_file is not None:
             yaml_inp_args=parse_python(file_name=python_inp_file)
@@ -186,7 +186,7 @@ class Skylens():
                 if k=='self' or k=='client' or 'yaml' in k or 'python' in k:
                     continue
                 inp_args[k]=copy.deepcopy(self.__dict__[k])#when passing yaml, most of input_args are updated. use updated ones
-            print('binned_meansure',inp_args.keys())
+            #print('binned_meansure',inp_args.keys())
             self.lb=np.int32((self.l_bins[1:]+self.l_bins[:-1])*.5)
             inp_args['use_binned_l']=False
             inp_args['use_binned_theta']=False
