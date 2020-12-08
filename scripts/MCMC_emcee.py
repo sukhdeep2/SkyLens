@@ -24,7 +24,7 @@ import argparse
 
 if __name__=='__main__':
     
-    test_run=False
+    test_run=True
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--do_xi", "-do_xi",type=int, help="")

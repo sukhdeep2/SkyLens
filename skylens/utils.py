@@ -144,7 +144,8 @@ def start_client(Scheduler_file=None,local_directory=None,ncpu=None,n_workers=1,
     """
     LC=None
     if local_directory is None:
-        local_directory='./temp_skylens/pid'+str(os.getpid())+'/'
+        local_directory='./temp_skylens/'
+    local_directory+='pid'+str(os.getpid())+'/'
     try:  
         os.makedirs(local_directory)  
     except Exception as error:  

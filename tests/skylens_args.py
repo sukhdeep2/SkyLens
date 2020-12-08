@@ -4,7 +4,7 @@ from skylens.survey_utils import *
 
 """to start a dask cluster"""
 LC,scheduler_info=start_client(Scheduler_file=None,local_directory='../temp/',ncpu=None,n_workers=1,threads_per_worker=None,
-                              memory_limit='120gb',dashboard_address=8801)
+                              memory_limit='20gb',dashboard_address=8801)
 client=client_get(scheduler_info=scheduler_info)
 
 """tracer pairs for correlations"""
@@ -67,8 +67,8 @@ theta=np.logspace(np.log10(theta_min),np.log10(theta_max),n_theta_bins*10)
 thb=.5*(theta_bins[1:]+theta_bins[:-1])
 
 #Hankel Transform setup
-WT_kwargs={'l':l0,'theta':theta,'s1_s2':[(2,2),(2,-2),(0,0),(0,2),(2,0)]}
-WT=wigner_transform(**WT_kwargs)
+WT_kwargs={'l':l0,'theta':theta,'s1_s2':[(2,2),(2,-2),(0,0),(0,2),(2,0)],'scheduler_info':scheduler_info}
+WT=None #wigner_transform(**WT_kwargs)
 
 
 """window calculations"""
@@ -88,7 +88,7 @@ clean_tracer_window=True #remove tracer windows from memory once coupling matric
 wigner_files={} #wigner file to get pseudo_cl coupling matrices.
                 #these can be gwenerated using Gen_wig_m0.py and Gen_wig_m2.py
                 #these are large files and are stored as compressed arrays, using zarr package.
-wig_home='../tests/'
+wig_home='./tests/'
 wigner_files[0]= wig_home+'dask_wig3j_l100_w100_0_reorder.zarr'
 wigner_files[2]= wig_home+'/dask_wig3j_l100_w100_2_reorder.zarr'
 
@@ -108,7 +108,7 @@ f_sky=0.35 #if there is no window. This can also be a dictionary for different c
 """generate simulated samples"""
 #for this example. You should define your own tracer_zbins
 nzbins=2
-shear_zbins=lsst_source_tomo_bins(nbins=nzbins,use_window=use_window,nside=nside)
+shear_zbins=lsst_source_tomo_bins(nbins=nzbins,use_window=use_window,nside=nside,scheduler_info=scheduler_info)
 galaxy_zbins=shear_zbins
 """tracer_zbins are expected to be nested dictionaries with following structure:
 tracer_zbin={ n_bins: 2, #total number of z_bins
@@ -147,5 +147,5 @@ log_z_PS=2 #grid to generate nz_PS redshifts. 0==linear, 1==log, 2==log+linear. 
 
 if __name__=='__main__':
     from skylens import *
-    kappa0=Skylens(python_inp_file='./skylens_args.py')
+    kappa0=Skylens(python_inp_file='./tests/skylens_args.py')
 #     kappa0=Skylens(**skylens_kwargs) #this can be used if you uncomment line above defining skylens_kwargs

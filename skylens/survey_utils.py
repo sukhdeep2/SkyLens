@@ -83,7 +83,7 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
     corr=('galaxy','galaxy')
     
     kappa0=Skylens(galaxy_zbins=zs_bins,do_cov=False,bin_cl=False,l_bins=None,l=l0,use_window=False,
-                   corrs=[corr],f_sky=f_sky)
+                   corrs=[corr],f_sky=f_sky,scheduler_info=scheduler_info)
     cl0G=kappa0.cl_tomo()
     
     npix0=hp.nside2npix(nside)

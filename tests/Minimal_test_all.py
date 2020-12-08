@@ -132,7 +132,7 @@ for do_xi in do_xis:
                             print('tests that failed: ',failed_tests)
                             print("\n","\n")
                             try:
-                                kappa0=Skylens(zs_bins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zs_bin1,
+                                kappa0=Skylens(shear_zbins=zs_bin1,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, galaxy_zbins=zs_bin1,
                                                use_window=use_window,Tri_cov=Tri_cov,
                                                use_binned_l=use_binned_l,wigner_files=wigner_files,
                                                SSV_cov=SSV_cov,tidal_SSV_cov=SSV_cov,f_sky=0.35,
