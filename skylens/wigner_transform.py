@@ -25,10 +25,17 @@ class wigner_transform():
         self.nscatter=0
 #         self.theta=theta
         for (m1,m2) in s1_s2:
+            if self.wig_d.get((m1,m2)) is not None:
+                continue
             self.wig_d[(m1,m2)]=wigner_d_parallel(m1,m2,theta,self.l,ncpu=ncpu)
             self.theta[(m1,m2)]=theta #FIXME: Ugly
             self.theta_deg[(m1,m2)]=theta/d2r #FIXME: Ugly
             self.wig_d_smoothing(s1_s2=(m1,m2))
+            
+            self.wig_d[(m2,m1)]=self.wig_d[(m1,m2)]
+            self.theta[(m2,m1)]=self.theta[(m1,m2)]
+            self.theta_deg[(m2,m1)]=self.theta_deg[(m1,m2)]
+
         self.scatter_data()
     
     def scatter_data(self):
@@ -36,28 +43,30 @@ class wigner_transform():
         print('Scattering WT data',self.nscatter)  
 #         if self.nscatter>1:
 #             crash
+        broadcast=True
         client=client_get(scheduler_info=self.scheduler_info)
-        self.l=client.scatter(self.l) #FIXME: creates problem with intepolation function
-        self.grad_l=client.scatter(self.grad_l)
-        self.norm=client.scatter(self.norm)
+        self.l=client.scatter(self.l,broadcast=broadcast) #FIXME: creates problem with intepolation function
+        self.grad_l=client.scatter(self.grad_l,broadcast=broadcast)
+        self.norm=client.scatter(self.norm,broadcast=broadcast)
         self.wig_norm=client.scatter(self.wig_norm)
         self.grad_theta_bins=1
         for k in self.wig_d.keys():
-            self.wig_d[k]=client.scatter(self.wig_d[k])
-            self.theta[k]=client.scatter(self.theta[k])
-            self.theta_deg[k]=client.scatter(self.theta_deg[k])
+            self.wig_d[k]=client.scatter(self.wig_d[k],broadcast=broadcast)
+            self.theta[k]=client.scatter(self.theta[k],broadcast=broadcast)
+            self.theta_deg[k]=client.scatter(self.theta_deg[k],broadcast=broadcast)
         
     def gather_data(self):
         self.nscatter-=1
         client=client_get(scheduler_info=self.scheduler_info)
         self.l=client.gather(self.l)
         self.grad_l=client.gather(self.grad_l)
-        self.theta=client.gather(self.theta)
         self.norm=client.gather(self.norm)
         for k in self.wig_d.keys():
             self.wig_d[k]=client.gather(self.wig_d[k])
+            self.theta[k]=client.gather(self.theta[k])
+            self.theta_deg[k]=client.gather(self.theta_deg[k])
         for k in ['theta_bins','theta_bins_center','grad_theta_bins',
-                 'l_bins','l_bins_center','grad_l_bins']:
+                 'l_bins','l_bins_center','grad_l_bins','wig_norm']:
             if hasattr(self,k):
                 self.__dict__[k]=client.gather(self.__dict__[k])
 
@@ -93,7 +102,7 @@ class wigner_transform():
         zeros=jn_zeros(bessel_order,max(self.wig_d_taper_order_low,self.wig_d_taper_order_high))
         l_max_low=zeros[self.wig_d_taper_order_low-1]/self.theta[s1_s2]
         if l_max_low.max()>self.l.max():
-            print('Wigner ell max too low for theta_min. Recommendation based on first few zeros of bessel ',s1_s2,' :',zeros[:5]/self.theta[s1_s2].min())
+            print('Wigner ell max of ',self.l.max(),' too low for theta_min. Recommendation based on first few zeros of bessel ',s1_s2,' :',zeros[:5]/self.theta[s1_s2].min())
         l_max_high=zeros[self.wig_d_taper_order_high-1]/self.theta[s1_s2]
         if self.wig_d_taper_order_high==0:
             l_max_high[:]=self.l.max()
@@ -154,7 +163,7 @@ class wigner_transform():
             wig_l=self.l
             wig_norm=self.wig_norm
         cl2=self.cl_grid(l_cl=l_cl,cl=cl,taper=taper,wig_l=wig_l,**kwargs)
-        w=np.dot(wig_d[s1_s2]*wig_norm,cl2)
+        w=np.dot(wig_d*wig_norm,cl2)
         return self.theta[s1_s2],w
 
     def projected_covariance(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
@@ -184,7 +193,7 @@ class wigner_transform():
                               wig_d1=None,wig_d2=None,
                                 taper=False,**kwargs):
         if wig_d1 is not None:
-            print(wig_d1.shape,cl_cov.shape)
+            #print(wig_d1.shape,cl_cov.shape)
             return self.theta[s1_s2],wig_d1@cl_cov@wig_d2.T
         #when cl_cov is a 2-d matrix
         if s1_s2_cross is None:

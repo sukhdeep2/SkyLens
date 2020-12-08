@@ -44,6 +44,14 @@ class Covariance_utils():
 
 
     def set_window_params(self):
+        """
+            set survey area and analytical window power spectra 
+            based on f_sky input. f_sky can be a float or a 
+            dictionary of values for different correlation
+            pairs and quadruples (four tracers, for covariance).
+        """
+        if self.f_sky is None:
+            return
         if isinstance(self.f_sky,float):
             self.Om_W=4*np.pi*self.f_sky
             self.Win,self.Win0=self.window_func()
@@ -259,15 +267,15 @@ class Covariance_utils():
         fs1324=1
         fs0=1
         fs1423=1
-        if f_sky is not None:
+        if self.f_sky is not None:
             if isinstance(self.f_sky,float):
                 fs1324=self.f_sky
                 fs0=self.f_sky**2
                 fs1423=self.f_sky
             else:
-                fs1324=f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[2]][z_indx[0],z_indx[2]]*f_sky[tracers[1],tracers[3]][z_indx[1],z_indx[3]])
-                fs0=f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
-                fs1423=f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[3]][z_indx[0],z_indx[3]]*f_sky[tracers[1],tracers[2]][z_indx[1],z_indx[2]])
+                fs1324=self.f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[2]][z_indx[0],z_indx[2]]*f_sky[tracers[1],tracers[3]][z_indx[1],z_indx[3]])
+                fs0=self.f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
+                fs1423=self.f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[3]][z_indx[0],z_indx[3]]*f_sky[tracers[1],tracers[2]][z_indx[1],z_indx[2]])
         
         gaussian_cov_norm_2D=np.outer(np.sqrt(self.gaussian_cov_norm),np.sqrt(self.gaussian_cov_norm))
         if not self.do_xi:
@@ -284,7 +292,11 @@ class Covariance_utils():
         return G1324,G1423
         
     def xi_gaussian_cov(self,cls,SN,tracers,z_indx,Win,WT_kwargs,Bmode_mf=1):
-        #FIXME: Need to implement the case when we are only using bin centers.
+        """
+        Gaussian covariance for correlation functions. If no window is provided, 
+        returns output of xi_gaussian_cov_no_win
+        """
+        #FIXME: Need to check the case when we are only using bin centers.
         if Win is None:
             return self.xi_gaussian_cov_no_win(cls,SN,tracers,z_indx,Win,WT_kwargs,Bmode_mf)
         SN2=self.get_SN(SN,tracers,z_indx)
@@ -353,6 +365,9 @@ class Covariance_utils():
         return G[1324]+G[1423]
 
     def xi_gaussian_cov_no_win(self,cls,SN,tracers,z_indx,Win,WT_kwargs,Bmode_mf=1):
+        """
+        Gaussian covariance for correlation functions, when no window is provided.
+        """
         #FIXME: Need to implement the case when we are only using bin centers.
         SN2=self.get_SN(SN,tracers,z_indx)
         CV=self.get_CV_cl(cls,tracers,z_indx)
@@ -410,7 +425,7 @@ class Covariance_utils():
                     G_t_SN+=G_t_SNi
         
         th,G_t=self.WT.projected_covariance(cl_cov=G_t,**WT_kwargs)
-
+        #print('cov utils xi_gaussina_cov',G_t.shape)
         if np.any(G_t_SN!=0):
             G_t+=np.diag(G_t_SN)
         G_t/=Norm
@@ -421,6 +436,9 @@ class Covariance_utils():
 
     
     def cov_four_kernels(self,z_bins={},clz=None):
+        """
+        product of four tracer kernels, for non-gaussian covariance.
+        """
         zs1=z_bins[0]
         zs2=z_bins[1]
         zs3=z_bins[2]
@@ -432,6 +450,9 @@ class Covariance_utils():
 
     
     def cl_cov_connected(self,z_bins=None,cls=None, tracers=[],Win_cov=None,Win_cl=None,clz=None,sig_cL=None,zs_indx=None):
+        """
+        Non gaussian covariance, for power spectra.
+        """
         cov={}
         cov['SSC']=0
         cov['Tri']=0
@@ -513,8 +534,7 @@ class Covariance_utils():
                 cov['G1324']=0
                 cov['G1423']=0
             else:
-                cov['G1324'],cov['G1423']=self.cl_gaussian_cov(cls,SN,
-                                            self.SN,tracers,zs_indx,self.do_xi,fs)
+                cov['G1324'],cov['G1423']=self.cl_gaussian_cov(cls,SN,tracers,zs_indx)
         cov['G']=cov['G1324']+cov['G1423']
         cov['final']=cov['G']
         cov['SSC'],cov['Tri']=self.cl_cov_connected(zs_indx=zs_indx,cls=cls,clz=clz, tracers=tracers,sig_cL=sig_cL)#,Win_cov=None,Win_cl=None)

@@ -1,0 +1,122 @@
+# Skylens args yaml file
+# anything that starts with eval..str, will be evaluated as eval(str). note that it is 2 dots ..
+
+corrs:      # tracer pairs for correlations. valid tracers are shear, galaxy, kappa
+       - ( shear, shear )  #FIXME: surely there must be a better way of doing this
+       - ( shear, galaxy )
+       - ( galaxy, galaxy ) 
+
+stack_indxs: null     #if None, use all possible pairs of tomographic bins for each of the corr defined in corrs
+                      #      ('shear','shear'): [(0,0),(0,1),(1,1)]
+                      #     ('shear','galaxy'): [(0,0),(0,1),(1,0),(1,1)]
+                     #    ('galaxy','galaxy'): [(0,0),(0,1),(1,1)]
+
+cl_func_names: {} #names of functions to be used for cl calculations. must be defined in global scope. default is calc_cl
+zkernel_func_names: {} ##names of functions to be used for redshift kernel calculations. must be defined in global scope. default is set_kernel
+
+shear_zbins: eval..lsst_source_tomo_bins(nbins=2,use_window=True,nside=32)
+galaxy_zbins: eval..lsst_source_tomo_bins(nbins=2,use_window=True,nside=32)
+
+# C_ell args
+l: eval..np.arange(2,201)
+Nl_bins: 25
+l_bin_min: 20
+l_bin_max: 200
+log_bins: True
+l_bins: eval..np.int64(np.logspace(np.log10(20),np.log10(200),26)) # if None/null we will use other args to generate log or linear bins
+bin_cl: True
+do_pseudo_cl: True
+use_window: True #must be true with pseudo_cl
+use_binned_l: True
+cl_func_names: {}
+
+#correlation function args
+
+do_xi: True
+use_binned_theta: True
+bin_xi: True
+xi_win_approx: True #this turns out to be the right thing to do. code needs fixing.
+theta_min: 25/60 #values are in degrees
+theta_max: 250/60
+n_theta_bins: 20
+theta_bins: eval..np.logspace(np.log10(25/60),np.log10(250/60),20+1) #values are in degrees. 
+theta: null
+
+WT_kwargs:
+        theta: eval..np.logspace(np.log10(25/60),np.log10(250/60),20*40)
+        s1_s2: #surely there must be a better way
+            - (2,2)
+            - (2,-2)
+            - (0,0)
+            - (0,2)
+            - (2,0)
+        l: eval..np.arange(2,201)
+        wig_d_taper_order_high: 8
+        wig_d_taper_order_low: 6
+
+#covariance args
+do_cov: True
+SSV_cov: False
+tidal_SSV_cov: False
+Tri_cov: False
+do_sample_variance: True
+sparse_cov: False
+use_window: True
+f_sky: 0.35  #not needed when using window
+xi_SN_analytical: True #use analytical expression for shot noise, instead of wigner transform
+
+#args for window calculations ... used in covariance as well as pseudo_cl, and correlation functions
+window_lmax: 32
+window_l: null #if None use all l upto window_lmax
+store_win: True
+Win: null
+wigner_files:
+    0: /verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/dask_wig3j_l3500_w2100_0_reorder.zarr
+    2: /verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/dask_wig3j_l3500_w2100_2_reorder.zarr
+clean_tracer_window: True #once window based calculations (coupling matrices) are done, remove windows from memory 
+
+#power_spectra args
+z_PS: null  #redshift values at which to compute pk
+nz_PS: 100   # if z_PS is None, we generate nz_PS redshifts
+log_z_PS: 2   # if z_PS is None. 0=generate linear z bins, 1=log bins, 2=log+linear grid
+
+pk_params:
+     non_linear: 1
+     kmax: 30
+     kmin: 3.e-4
+     nk: 500
+     scenario: dmo
+     pk_func: camb_pk
+     halofit_version: takahashi
+
+cosmo_params:  #if cosmo_params is passed as null, default is used, default=Planck15.
+     read_cosmo: Planck15 #if null, use values from below, otherwise get from astropy cosmology
+     h: cosmo.h
+     Omb: cosmo.Ob0
+     Omd: cosmo.Om0-cosmo.Ob0
+     s8: 0.817
+     Om: cosmo.Om0
+     Ase9: 2.2
+     mnu: cosmo.m_nu[-1].value
+     Omk: cosmo.Ok0
+     tau: 0.06
+     ns: 0.965
+     OmR: cosmo.Ogamma0+cosmo.Onu0
+     w: -1
+     wa: 0
+     Tcmb: cosmo.Tcmb0
+
+
+scheduler_info: null
+start_new_cluster: True
+scheduler_args:   #used if scheduler_info is None. pasrser will start a new cluster, unless scheduler_args is also None or start_new_cluster is false
+              Scheduler_file: null  #if	this is	defined, everything below doesn't matter
+              local_directory: ./dask_temp/
+              n_workers: 25
+              threads_per_worker: 1
+              processes: True
+              dashboard_address: 8801
+              memory_limit: 100gb
+
+test_key: eval..test_func(skylens_kwargs)
+clean_keys: [clean_keys,test_key]

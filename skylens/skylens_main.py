@@ -1,10 +1,7 @@
 import os,sys
 sys.path.append('/verafs/scratch/phy200040p/sukhdeep/project/skylens/skylens/')
 import dask
-# from astropy.constants import c,G
-# from astropy import units as u
-import jax.numpy as np
-# from scipy.interpolate import interp1d
+import numpy as np
 import warnings,logging
 import copy
 import multiprocessing,psutil
@@ -22,73 +19,80 @@ from skylens.cov_utils import *
 from skylens.tracer_utils import *
 from skylens.window_utils import *
 from skylens.utils import *
-
+from skylens.parse_input import *
 
 d2r=np.pi/180.
-c=c.to(u.km/u.second)
 
 class Skylens():
-    def __init__(self,l=np.arange(2,2001),WT=None,Ang_PS=None,
+    def __init__(self,yaml_inp_file=None,python_inp_file=None,l=None,Ang_PS=None,
                 cov_utils=None,logger=None,tracer_utils=None,#lensing_utils=None,galaxy_utils=None,
-                zs_bins=None,zk_bins=None,zg_bins=None,galaxy_bias_func=None,
-                power_spectra_kwargs={},WT_kwargs=None,
-                z_PS=None,nz_PS=100,log_z_PS=True,
+                shear_zbins=None,kappa_zbins=None,galaxy_zbins=None,
+                pk_params=None,cosmo_params=None,WT_kwargs=None,WT=None,
+                z_PS=None,nz_PS=100,log_z_PS=2,
                 do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
                 Tri_cov=False,sparse_cov=False,
                 use_window=True,window_lmax=None,window_l=None,store_win=False,Win=None,
-                f_sky=None,wigner_step=None,cl_func_names={},
+                f_sky=None,wigner_step=None,cl_func_names={},zkernel_func_names={},
                 l_bins=None,bin_cl=False,use_binned_l=False,do_pseudo_cl=True,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
                 use_binned_theta=False, xi_win_approx=False,xi_SN_analytical=False,
                 corrs=None,corr_indxs=None,stack_indxs=None,
                 wigner_files=None,name='',clean_tracer_window=True,
-                client=None,scheduler_info=None):
+                scheduler_info=None):
 
         self.__dict__.update(locals()) #assign all input args to the class as properties
-        self.l0=l*1.
-        
-#         self.set_client()
+        if yaml_inp_file is not None:
+            yaml_inp_args=parse_yaml(file_name=yaml_inp_file)
+            self.__dict__.update(yaml_inp_args)
+            #print('skylens init, yaml args',yaml_inp_args.keys())
+            del yaml_inp_args
+        elif python_inp_file is not None:
+            yaml_inp_args=parse_python(file_name=python_inp_file)
+            self.__dict__.update(yaml_inp_args)
+            del yaml_inp_args
+        self.l0=self.l*1.
+        self.set_WT()
         self.set_bin_params()
         self.set_binned_measure(locals())
 
-        if logger is None:
-            self.logger=logging.getLogger() #not really being used right now
+        if logger is None:#not really being used right now
+            self.logger=logging.getLogger() 
             self.logger.setLevel(level=logging.DEBUG)
             logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s',
                                 level=logging.DEBUG, datefmt='%I:%M:%S')
 
         if tracer_utils is None:
-            self.tracer_utils=Tracer_utils(zs_bins=zs_bins,zg_bins=zg_bins,zk_bins=zk_bins,
-                                            logger=self.logger,l=self.l,scheduler_info=scheduler_info)
+            self.tracer_utils=Tracer_utils(shear_zbins=self.shear_zbins,galaxy_zbins=self.galaxy_zbins,kappa_zbins=self.kappa_zbins,
+                                            logger=self.logger,l=self.l,scheduler_info=self.scheduler_info,
+                                            zkernel_func_names=self.zkernel_func_names)
 
-        self.set_corr_indxs(corr_indxs=corr_indxs,stack_indxs=stack_indxs)
-        
+        self.set_corr_indxs(corr_indxs=self.corr_indxs,stack_indxs=self.stack_indxs)
+
         self.window_lmax=30 if window_lmax is None else window_lmax
-        self.window_l=np.arange(self.window_lmax+1) if window_l is None else window_l
+        self.window_l=np.arange(self.window_lmax+1) if self.window_l is None else self.window_l
 
         self.set_WT_spins()
 
         self.z_bins=self.tracer_utils.z_bins
-        self.clean_setup()
-#         self.set_fsky(f_sky)
         
         if cov_utils is None:
-            self.cov_utils=Covariance_utils(f_sky=f_sky,l=self.l,logger=self.logger,
-                                            do_xi=self.do_xi,xi_SN_analytical=xi_SN_analytical,
-                                            do_sample_variance=do_sample_variance,WT=self.WT,
-                                            use_window=use_window,use_binned_l=self.use_binned_l,
+            self.cov_utils=Covariance_utils(f_sky=self.f_sky,l=self.l,logger=self.logger,
+                                            do_xi=self.do_xi,xi_SN_analytical=self.xi_SN_analytical,
+                                            do_sample_variance=self.do_sample_variance,WT=self.WT,
+                                            use_window=self.use_window,use_binned_l=self.use_binned_l,
                                             window_l=self.window_l,use_binned_theta=self.use_binned_theta,
-                                            do_cov=do_cov,SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,
-                                            Tri_cov=Tri_cov,sparse_cov=sparse_cov,bin_cl=bin_cl,
-                                            xi_win_approx=xi_win_approx,do_pseudo_cl=do_pseudo_cl,
+                                            do_cov=self.do_cov,SSV_cov=self.SSV_cov,tidal_SSV_cov=self.tidal_SSV_cov,
+                                            Tri_cov=self.Tri_cov,sparse_cov=self.sparse_cov,bin_cl=self.bin_cl,
+                                            xi_win_approx=self.xi_win_approx,do_pseudo_cl=self.do_pseudo_cl,
                                            cl_bin_utils=self.cl_bin_utils,xi_bin_utils=self.xi_bin_utils,)
 
         if Ang_PS is None:
+            power_spectra_kwargs={'pk_params':self.pk_params,'cosmo_params':self.cosmo_params}
             self.Ang_PS=Angular_power_spectra(
                                 SSV_cov=self.SSV_cov,l=self.l,logger=self.logger,
                                 power_spectra_kwargs=power_spectra_kwargs,
                                 cov_utils=self.cov_utils,window_l=self.window_l,
-                                z_PS=z_PS,nz_PS=nz_PS,log_z_PS=log_z_PS,
+                                z_PS=self.z_PS,nz_PS=self.nz_PS,log_z_PS=self.log_z_PS,
                                 z_PS_max=self.tracer_utils.z_PS_max)
                         #FIXME: Need a dict for these args
         self.set_cl_funcs()
@@ -97,14 +101,14 @@ class Skylens():
             self.do_pseudo_cl=True #we will use pseudo_cl transform to get correlation functions.
 
         self.Win=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,s1_s2s=self.s1_s2s,
-                        cov_indxs=self.cov_indxs,client=self.client,scheduler_info=self.scheduler_info,
-                        use_window=use_window,do_cov=do_cov,cov_utils=self.cov_utils,
-                        f_sky=f_sky,corr_indxs=self.stack_indxs,z_bins=self.tracer_utils.z_win,
-                        window_lmax=self.window_lmax,Win=Win,WT=self.WT,do_xi=self.do_xi,
+                        cov_indxs=self.cov_indxs,scheduler_info=self.scheduler_info,
+                        use_window=self.use_window,do_cov=self.do_cov,cov_utils=self.cov_utils,
+                        f_sky=self.f_sky,corr_indxs=self.stack_indxs,z_bins=self.tracer_utils.z_win,
+                        window_lmax=self.window_lmax,Win=self.Win,WT=self.WT,do_xi=self.do_xi,
                         xi_win_approx=self.xi_win_approx,do_pseudo_cl=self.do_pseudo_cl,
                         kappa_class0=self.kappa0,kappa_class_b=self.kappa_b,kappa_b_xi=self.kappa_b_xi,
-                        wigner_step=wigner_step,
-                        xi_bin_utils=self.xi_bin_utils,store_win=store_win,wigner_files=wigner_files,
+                        wigner_step=self.wigner_step,
+                        xi_bin_utils=self.xi_bin_utils,store_win=self.store_win,wigner_files=self.wigner_files,
                         bin_window=self.use_binned_l,bin_theta_window=self.use_binned_theta)
         self.bin_window=self.Win.bin_window
         win=self.Win.Win
@@ -118,41 +122,30 @@ class Skylens():
         
         print('Window done. Size:',get_size_pickle(self.Win))
         self.clean_setup()
-    
+
     def clean_setup(self):
-        atrs=['zs_bins','zg_bins','zk_bins']
+        """
+            remove some objects from self that are not required after setup.
+        """
+        atrs=['kappa_zbins','galaxy_zbins','shear_zbins','WT_kwargs','pk_params','cosmo_params']
         for atr in atrs:
             if hasattr(self,atr):
                 delattr(self,atr)
 
     def clean_non_essential(self):
+        """
+            remove some objects from that may not be required after some calculations.
+        """
         atrs=['z_bins']
         for atr in atrs:
             if hasattr(self,atr):
                 delattr(self,atr)
             if hasattr(self.tracer_utils,atr):
                 delattr(self.tracer_utils,atr)
-    
-    def get_client(self):
-        return client_get(self.scheduler_info)
-    def set_client(self):
-        self.LC=None
-        if self.scheduler_info is not None:
-            self.client=get_client(address=self.scheduler_info['address'])
-        if self.client is None:
-            ncpu=multiprocessing.cpu_count()-1
-            vmem=psutil.virtual_memory()
-            mem=str(vmem.total/(1024**3)*0.9)+'GB'
-            self.LC=LocalCluster(n_workers=1,processes=False,memory_limit=mem,threads_per_worker=ncpu,memory_spill_fraction=.99,
-               memory_monitor_interval='2000ms')
-            self.client=Client(self.LC)
-
-    def clean_client(self):
-        if not self.LC is None:
-            self.client.shutdown()
-            self.LC.close()
-            
+                
     def set_cl_funcs(self,):
+        if self.cl_func_names is None:
+            self.cl_func_names={} #we assume it is a dict below.
         self.cl_func={}
         for corr in self.corrs:
 #            self.cl_func[corr]=self.calc_cl
@@ -190,10 +183,10 @@ class Skylens():
         if self.use_binned_l or self.use_binned_theta:
             inp_args={}
             for k in local_args.keys():
-                if k=='self' or k=='client':
+                if k=='self' or k=='client' or 'yaml' in k or 'python' in k:
                     continue
-                inp_args[k]=copy.deepcopy(local_args[k])
-#             print('inp_args:',inp_args.keys())
+                inp_args[k]=copy.deepcopy(self.__dict__[k])#when passing yaml, most of input_args are updated. use updated ones
+            #print('binned_meansure',inp_args.keys())
             self.lb=np.int32((self.l_bins[1:]+self.l_bins[:-1])*.5)
             inp_args['use_binned_l']=False
             inp_args['use_binned_theta']=False
@@ -206,9 +199,7 @@ class Skylens():
                 inp_args['stack_indxs']=None
 #             del inp_args['self']
             inp_args2=copy.deepcopy(inp_args)
-            inp_args['client']=self.client
-            inp_args2['client']=self.client
-
+    
             self.kappa0=Skylens(**inp_args)  #to get unbinned c_ell and xi
 #             self.kappa0.bin_xi=False #we want to get xi_bin_utils
 
@@ -224,7 +215,6 @@ class Skylens():
                 self.thb=(theta_bins[1:]+theta_bins[:-1])*.5 #FIXME:this may not be effective theta of meaurements
                 inp_args_xi=copy.deepcopy(inp_args)
                 inp_args_xi['name']='S_b_xi'
-                
                 inp_args_xi['WT'].reset_theta_l(theta=self.thb)
                 self.kappa_b_xi=Skylens(**inp_args_xi) #to get binned xi. 
                 
@@ -233,10 +223,12 @@ class Skylens():
             self.l=self.lb*1.
             self.c_ell0=self.kappa0.cl_tomo()['cl']
             self.c_ell_b=self.kappa_b.cl_tomo()['cl']
+            print('set binned measure done')
         else:
             self.kappa_b=self
             self.kappa0=self
             self.kappa_b_xi=None
+
 
     def set_corr_indxs(self,corr_indxs=None,stack_indxs=None):
         """
@@ -249,7 +241,6 @@ class Skylens():
         """
         self.stack_indxs=stack_indxs
         self.corr_indxs=corr_indxs
-        self.cov_indxs={}
 
         if self.corrs is None:
             if bool(self.stack_indxs):
@@ -262,12 +253,17 @@ class Skylens():
                             ]
                 
         if not self.do_cov and self.corr_indxs is None:
-            self.corr_indxs=self.stack_indxs    
+            self.corr_indxs=self.stack_indxs #if no covariance, we only work with user input  stack_indxs
+                                            #for covariance, we may need additional correlation pairs, 
+                                            # which are added below.
+            
         if not self.do_cov and  (not self.corr_indxs is None):
             print('not setting corr_indxs',self.do_cov , bool(self.corr_indxs))
             return
+        
         else:
             self.corr_indxs={}
+            
         for tracer in self.tracer_utils.tracers:
             self.corr_indxs[(tracer,tracer)]=[j for j in itertools.combinations_with_replacement(
                                                     np.arange(self.tracer_utils.n_bins[tracer]),2)]
@@ -278,7 +274,7 @@ class Skylens():
 
         for tracer1 in self.tracer_utils.tracers:#zbin-indexs for cross correlations
             for tracer2 in self.tracer_utils.tracers:
-                if tracer1==tracer2:
+                if tracer1==tracer2:#already set above
                     continue
                 if self.corr_indxs.get((tracer1,tracer2)) is not None:
                     continue
@@ -288,7 +284,7 @@ class Skylens():
         
         if self.stack_indxs is None:# or not bool(self.stack_indxs):
             self.stack_indxs=self.corr_indxs
-
+        self.cov_indxs={}
         if self.do_cov:
             stack_corr_indxs=self.stack_indxs
             corrs=self.corrs
@@ -305,6 +301,9 @@ class Skylens():
                 self.cov_indxs[corr1+corr2]=cov_indxs_iter
 
     def set_WT_spins(self):
+        """
+        set the spin factors for tracer pairs, used for wigner transforms.
+        """
         self.s1_s2s={}
         for tracer1 in self.tracer_utils.tracers:#zbin-indexs for cross correlations
             for tracer2 in self.tracer_utils.tracers:
@@ -312,7 +311,16 @@ class Skylens():
         if 'shear' in self.tracer_utils.tracers:
             self.s1_s2s[('shear','shear')]=[(2,2),(2,-2)]
         self.s1_s2s[('window')]=[(0,0)]
-
+    
+    def set_WT(self):
+        """
+        Setup wigner transform based on input args, if not transform
+        class is not passed directly.
+        """
+        if self.WT is not None or self.WT_kwargs is None:
+            return
+        self.WT=wigner_transform(**self.WT_kwargs)
+        
     def set_WT_binned(self):
         """
         If we only want to compute at bin centers, wigner transform matrices need to be binned.
@@ -324,7 +332,7 @@ class Skylens():
         WT=self.WT
         self.WT_binned={corr:{} for corr in self.corrs} #intialized later.
         self.WT_binned_cov={corr:{} for corr in self.corrs}
-        client=self.get_client()
+        client=client_get(self.scheduler_info)
         if self.use_binned_theta or self.use_binned_l:
             WT.set_binned_theta(theta_bins=self.theta_bins)
             WT.set_binned_l(l_bins=self.l_bins)
@@ -336,6 +344,10 @@ class Skylens():
                 for indxs in self.corr_indxs[corr]:    
                     cl0=self.c_ell0[corr][indxs].compute()
                     cl_b=self.c_ell_b[corr][indxs].compute()
+                    wt0=cl0
+                    wt_b=1./cl_b
+                    if np.all(cl_b==0):
+                        wt_b[:]=0
                     for im in np.arange(len(s1_s2s)):
                         s1_s2=s1_s2s[im]
                         win_xi=None
@@ -345,7 +357,7 @@ class Skylens():
                         self.WT_binned[corr][s1_s2][indxs]=delayed(self.binning.bin_2d_WT)(
                                                             wig_mat=self.WT.wig_d[s1_s2],
                                                             wig_norm=self.WT.wig_norm,
-                                                            wt0=cl0,wt_b=1./cl_b,bin_utils_cl=self.cl_bin_utils,
+                                                            wt0=wt0,wt_b=wt_b,bin_utils_cl=self.cl_bin_utils,
                                                             bin_utils_xi=self.xi_bin_utils[s1_s2],
                                                             win_xi=win_xi,
                                                             use_binned_theta=self.use_binned_theta)
@@ -358,12 +370,11 @@ class Skylens():
                                 self.WT_binned_cov[corr][s1_s2][indxs]=delayed(self.binning.bin_2d_WT)(
                                                             wig_mat=self.WT.wig_d[s1_s2],
                                                             wig_norm=self.WT.wig_norm,
-                                                            wt0=cl0,wt_b=1./cl_b,bin_utils_cl=self.cl_bin_utils,
+                                                            wt0=wt0,wt_b=wt_b,bin_utils_cl=self.cl_bin_utils,
                                                             bin_utils_xi=self.xi_bin_utils[s1_s2],
                                                             win_xi=None,
                                                             use_binned_theta=self.use_binned_theta)
                         
-
     def update_zbins(self,z_bins={},tracer='shear'):
         """
         If the tracer bins need to be updated. Ex. when running chains with varying photo-z params.
@@ -379,12 +390,12 @@ class Skylens():
         """
         self.binning=binning()
         self.cl_bin_utils=None
-        client=self.get_client()
+        client=client_get(self.scheduler_info)
         if self.bin_cl or self.use_binned_l:
             self.cl_bin_utils=self.binning.bin_utils(r=self.l0,r_bins=self.l_bins,
                                                 r_dim=2,mat_dims=[1,2])
 #             self.cl_bin_utils={k:client.scatter(self.cl_bin_utils[k]) for k in self.cl_bin_utils.keys()}
-            self.cl_bin_utils=scatter_dict(self.cl_bin_utils,scheduler_info=self.scheduler_info)
+            self.cl_bin_utils=scatter_dict(self.cl_bin_utils,scheduler_info=self.scheduler_info,broadcast=True)
         self.xi_bin_utils=None
         if self.do_xi and self.bin_xi:
             self.xi_bin_utils={}
@@ -393,8 +404,42 @@ class Skylens():
                                                     r_bins=self.theta_bins,
                                                     r_dim=2,mat_dims=[1,2])
                 self.xi_bin_utils[s1_s2]=client.compute(self.xi_bin_utils[s1_s2]).result()
-                self.xi_bin_utils[s1_s2]=scatter_dict(self.xi_bin_utils[s1_s2],scheduler_info=self.scheduler_info)
-                    
+                self.xi_bin_utils[s1_s2]=scatter_dict(self.xi_bin_utils[s1_s2],scheduler_info=self.scheduler_info,broadcast=True)
+            
+    def calc_cl(self,zbin1={}, zbin2={},corr=('shear','shear'),cosmo_params=None,Ang_PS=None):#FIXME: this can be moved outside the class.thenwe don't need to serialize self.
+        """
+            Compute the angular power spectra, Cl between two source bins
+            zs1, zs2: Source bins. Dicts containing information about the source bins
+        """
+        clz=Ang_PS.clz
+        cls=clz['cls']
+        f=Ang_PS.cl_f
+        sc=zbin1['kernel_int']*zbin1['kernel_int']
+        dchi=clz['dchi']
+        cl=np.dot(cls.T*sc,dchi)
+                # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
+        return cl
+
+    def bin_cl_func(self,cl=None,cov=None):#moved out of class. This is no longer used
+        """
+            bins the tomographic power spectra
+            results: Either cl or covariance
+            bin_cl: if true, then results has cl to be binned
+            bin_cov: if true, then results has cov to be binned
+            Both bin_cl and bin_cov can be true simulatenously.
+        """
+        cl_b=None
+        if not cl is None:
+            if self.use_binned_l or not self.bin_cl:
+                cl_b=cl*1.
+            else:
+                cl_b=self.binning.bin_1d(xi=cl,bin_utils=self.cl_bin_utils)
+            return cl_b
+
+    def calc_pseudo_cl(self,cl,Win):# moved outside the class. No used now.
+        pcl=cl@Win['M']
+        return  pcl
+        
     def cl_tomo(self,cosmo_h=None,cosmo_params=None,pk_params=None,
                 corrs=None,bias_kwargs={},bias_func=None,stack_corr_indxs=None,
                 z_bins=None,Ang_PS=None):
@@ -433,7 +478,7 @@ class Skylens():
         clz=Ang_PS.clz
             
         if cosmo_h is None:
-            cosmo_h=Ang_PS.PS.cosmo_h
+            cosmo_h=Ang_PS.PS#.cosmo_h
 
         zkernel={}
         self.SN={}
@@ -536,11 +581,14 @@ class Skylens():
 
     def gather_data(self):
         client=client_get(self.scheduler_info)
-        keys=['xi_bin_utils','cl_bin_utils','Win','WT_binned']
+        keys=['xi_bin_utils','cl_bin_utils','Win','WT_binned','z_bins']
         for k in keys:
-            self.__dict__[k]=client.gather(self.__dict__[k]) #FIXME: need a function to properly gather dicts
+            if hasattr(self,k):
+                self.__dict__[k]=client.gather(self.__dict__[k]) #FIXME: need a function to properly gather dicts
         self.Ang_PS.clz=client.gather(self.Ang_PS.clz)
-        self.WT.gather_data()
+        self.tracer_utils.gather_z_bins()
+        if self.WT is not None:
+            self.WT.gather_data()
         
     def scatter_data(self):
         client=client_get(self.scheduler_info)
@@ -553,7 +601,7 @@ class Skylens():
     def tomo_short(self,cosmo_h=None,cosmo_params=None,pk_lock=None,WT_binned=None,WT=None,
                 corrs=None,bias_kwargs={},bias_func=None,stack_corr_indxs=None,
                 z_bins=None,Ang_PS=None,zkernel=None,Win=None,cl_bin_utils=None,
-                  xi_bin_utils=None):
+                  xi_bin_utils=None,pk_params=None):
         """
             
         """
@@ -561,17 +609,13 @@ class Skylens():
             corrs=self.corrs
         if stack_corr_indxs is None:
             stack_corr_indxs=self.stack_indxs
-#         if Ang_PS is None:
-#             Ang_PS=self.Ang_PS #Warning: This is dangerous. In a parallel MCMC you probably want to make a copy of Ang_PS and then pass it.
-#         if z_bins is None:
-#             z_bins=self.z_bins #Warning: This is dangerous. In a parallel MCMC, when varying z_bins params (e.g. bias) you probably want to make a copy of z_bins and then pass it.
 
         tracers=np.unique([j for i in corrs for j in i])
         
         Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_lock=pk_lock,
                                     cosmo_params=cosmo_params)
         if cosmo_h is None:
-            cosmo_h=Ang_PS.PS.cosmo_h
+            cosmo_h=Ang_PS.PS#.cosmo_h
 
         if zkernel is None:
             zkernel={}
@@ -662,7 +706,7 @@ class Skylens():
         """
 
         if cosmo_h is None:
-            cosmo_h=self.Ang_PS.PS.cosmo_h
+            cosmo_h=self.Ang_PS.PS#.cosmo_h
         if corrs is None:
             corrs=self.corrs
 
@@ -676,7 +720,7 @@ class Skylens():
         xi={}
         out={}
         zkernel=None
-        client=self.get_client()
+        client=client_get(self.scheduler_info)
         if self.use_binned_theta:
             wig_norm=1
             wig_l=self.WT.l_bins_center
@@ -693,9 +737,11 @@ class Skylens():
         for corr in corrs:
             s1_s2s=self.s1_s2s[corr]
             xi[corr]={}
+            xi[corr[::-1]]={}
             for im in np.arange(len(s1_s2s)):
                 s1_s2=s1_s2s[im]
                 xi[corr][s1_s2]={}
+                xi[corr[::-1]][s1_s2]={}
                 xi_bin_utils=None
                 if not self.use_binned_theta:
                     wig_d=self.WT.wig_d[s1_s2]
@@ -713,6 +759,7 @@ class Skylens():
 #                                                         s1_s2=s1_s2,Win=win)
                     xi[corr][s1_s2][indx]=delayed(get_xi)(cl=cl[corr][indx],wig_d=wig_d,wig_norm=wig_norm,
                                          xi_bin_utils=xi_bin_utils,bin_xi=self.bin_xi,use_binned_theta=self.use_binned_theta,Win=win)
+                    xi[corr[::-1]][s1_s2][indx[::-1]]=xi[corr][s1_s2][indx] #FIXME: s1_s2 should be reversed as well?... 
 
         print('Done xi graph',get_size(cl)/1.e6,get_size_pickle(self.cov_utils))
 #         dic=self.cov_utils.__dict__
@@ -886,6 +933,8 @@ class Skylens():
                     
                 for indx in corr_indxs[corr]:
                     D_final[i*len_bins:(i+1)*len_bins]=dat_c[indx]
+#                     if not np.all(np.isfinite(dat_c[indx])):
+#                         print('stack data not finite at',corr,indx,dat_c[indx])
                     i+=1
         print('stack got 2pt')
         if not self.do_cov:
@@ -963,17 +1012,18 @@ class Skylens():
         out={'cov':cov_final}
         out[est]=D_final
         return out
-
-def calc_cl(zbin1={}, zbin2={},corr=('shear','shear'),cosmo_params=None,clz=None,Ang_PS=None):#FIXME: this can be moved outside the class.thenwe don't need to serialize self.
+    
+def calc_cl(zbin1={}, zbin2={},corr=('shear','shear'),cosmo_params=None,clz=None,Ang_PS=None):
     """
         Compute the angular power spectra, Cl between two source bins
         zs1, zs2: Source bins. Dicts containing information about the source bins
     """
     cls=clz['cls']
     f=clz['cl_f']
-    sc=zbin1['kernel_int']*zbin1['kernel_int']
+    sc=zbin1['kernel_int']*zbin2['kernel_int']
     dchi=clz['dchi']
     cl=np.dot(cls.T*sc,dchi)
+#     cl/=f**2 #accounted for in kernel
             # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
     return cl
 
@@ -1011,8 +1061,6 @@ def bin_cl_func(cl,use_binned_l=False,bin_cl=False,cl_bin_utils=None):
 
 def get_xi(cl=None,wig_d=None,cl_kwargs={},wig_norm=1,
           xi_bin_utils=None,bin_xi=None,use_binned_theta=None,Win=None):
-#     if cl is None:
-#         cl=calc_cl(**cl_kwargs)
     xi=projected_correlation(cl=cl,wig_d=wig_d,norm=wig_norm)
     xib=bin_xi_func(xi=xi,Win=Win,xi_bin_utils=xi_bin_utils,bin_xi=bin_xi,use_binned_theta=use_binned_theta)
     return xib

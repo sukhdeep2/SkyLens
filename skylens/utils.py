@@ -1,9 +1,17 @@
-import sys, os, gc, threading, subprocess,pickle,multiprocessing
+import sys, os, gc, threading, subprocess,pickle,multiprocessing,dask
 import numpy as np
 from dask.distributed import Client,get_client
 from distributed import LocalCluster
+from collections.abc import Mapping #to check for dicts
+from distributed.client import Future
+
 # print('pid: ',pid, sys.version)
+
 def thread_count():
+    """
+        Get the number of threads spawned by the process. 
+        This was useful for certain diagnostics.
+    """
     pid=os.getpid()
     nlwp=subprocess.run(['ps', '-o', 'nlwp', str(pid)], stdout=subprocess.PIPE).stdout.decode('utf-8').split('\n')[1]
     nlwp=int(nlwp)
@@ -36,16 +44,29 @@ def get_size(obj, seen=None): #https://stackoverflow.com/questions/449560/how-do
         return size
     
 def get_size_pickle(obj):
+    """
+        Get the size of an object via pickle.
+    """
     yy=pickle.dumps(obj)
     return np.around(sys.getsizeof(yy)/1.e6,decimals=3)
 
-def dict_size_pickle(obj,print_prefact=''): #useful for some memory diagnostics
-    print(print_prefact,'dict full size ',get_size_pickle(obj))
-    for k in obj.keys():
-        if isinstance(obj[k],dict):
-            dict_size_pickle(obj[k])
+def dict_size_pickle(dic,print_prefact='',depth=2): #useful for some memory diagnostics
+    """
+        Get a size of the dictionary using pickle. Will also output size of 
+        dict elements depending on depth.
+    """
+    print(print_prefact,'dict full size ',get_size_pickle(dic))
+    if not isinstance(dic,dict):
+        print(dic, 'is not a dict',depth)
+        return 
+    if depth <=0:
+        return
+    for k,v in dic.items():
+        if isinstance(v,dict) and depth>0:
+            dict_size_pickle(v,print_prefact=print_prefact+' '+str(k),depth=depth-1)
         else:
-            print(print_prefact,'dict obj size: ',k, get_size_pickle(dict_size_pickle(obj[k])))
+            print(print_prefact,'dict obj size: ',k, get_size_pickle(v))
+    return
 
 def chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
@@ -58,22 +79,38 @@ def chunks(lst, n):
 def pickle_deepcopy(obj):
        return pickle.loads(pickle.dumps(obj, -1))
 
-def scatter_dict(dic,scheduler_info=None,depth=10): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
+def scatter_dict(dic,scheduler_info=None,depth=2,broadcast=False,return_workers=False,workers=None): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
     """
         depth: Need to think this through. It appears dask can see one level of depth when scattering and gathering, but not more.
     """
-    client=client_get(scheduler_info=scheduler_info)
-    for k in dic.keys():
-        if isinstance(dic[k],dict) and depth>0:
-            dic[k]=scatter_dict(dic[k],scheduler_info=scheduler_info,depth=depth-1)
-        else:
-            dic[k]=client.scatter(dic[k])
+    if dic is None:
+        print('scatter_dict got empty dictionary')
+    else:
+        client=client_get(scheduler_info=scheduler_info)
+        for k in dic.keys():
+            if isinstance(dic[k],dict) and depth>0:
+                dic[k],workers=scatter_dict(dic[k],scheduler_info=scheduler_info,depth=depth-1,broadcast=broadcast,return_workers=True,workers=workers)
+            elif isinstance(dic[k],Future): #don't want future of future.
+#                 print('scatter dict was passed a future, gathering and re-scattering', k)
+                dic[k]=client.gather(dic[k])
+                dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
+                workers=list(client.who_has(dic[k]).values())[0]
+            else:
+                dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
+                workers=list(client.who_has(dic[k]).values())[0]
+    #             print('scatter-dict ',k,workers)
+    if return_workers:
+        return dic,workers
     return dic
 
 def gather_dict(dic,scheduler_info=None,depth=0): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
+                                                    #we can use client.who_has()
     """
         depth: Need to think this through. It appears dask can see one level of depth when scattering and gathering, but not more.
     """
+    if dic is None:
+        print('gather_dict got empty dictionary')
+        return dic
     client=client_get(scheduler_info=scheduler_info)
     for k in dic.keys():
         if isinstance(dic[k],dict) and depth>0:
@@ -83,30 +120,53 @@ def gather_dict(dic,scheduler_info=None,depth=0): #FIXME: This needs some improv
     return dic
 
 def client_get(scheduler_info=None):
+    """
+        Get the dask client running on the scheduler
+    """
     if scheduler_info is not None:
         client=get_client(address=scheduler_info['address'])
     else:
         client=get_client()
     return client
 
-worker_kwargs={'memory_spill_fraction':.75,'memory_target_fraction':.99,'memory_pause_fraction':1}
+def clean_client(scheduler_info=None):
+    if scheduler_info is not None:
+        client=client_get(scheduler_info=scheduler_info)
+        self.client.shutdown() #this will close the scheduler as well.
+
+
+worker_kwargs={}#{'memory_spill_fraction':.95,'memory_target_fraction':.95,'memory_pause_fraction':1}
 def start_client(Scheduler_file=None,local_directory=None,ncpu=None,n_workers=1,threads_per_worker=None,
-                  worker_kwargs=worker_kwargs,LocalCluster_kwargs={},dashboard_address=8801,memory_limit='120gb'):
+                  worker_kwargs=worker_kwargs,LocalCluster_kwargs={},dashboard_address=8801,
+                 memory_limit='120gb',processes=False):
+    """
+        Start a dask client. If no schduler is passed, a new local cluster is started.
+    """
     LC=None
+    if local_directory is None:
+        local_directory='./temp_skylens/pid'+str(os.getpid())+'/'
+    try:  
+        os.makedirs(local_directory)  
+    except Exception as error:  
+        print('error in creating local directory: ',local_directory,error) 
     if threads_per_worker is None:
         if ncpu is None:
             ncpu=multiprocessing.cpu_count()-1
         threads_per_worker=ncpu
+    if n_workers is None:
+        n_workers=1
     if Scheduler_file is None:
                 #     dask_initialize(nthreads=27,local_directory=dask_dir)
                 #     client = Client()
-        LC=LocalCluster(n_workers=n_workers,processes=False,threads_per_worker=threads_per_worker,
+#         dask.config.set(scheduler='threads')
+        LC=LocalCluster(n_workers=n_workers,processes=processes,threads_per_worker=threads_per_worker,
                         local_directory=local_directory,dashboard_address=dashboard_address,
                         memory_limit=memory_limit,**LocalCluster_kwargs,**worker_kwargs
                    )
         client=Client(LC)
     else:
         client=Client(scheduler_file=Scheduler_file,processes=False)
+    client.wait_for_workers(n_workers=1)
     scheduler_info=client.scheduler_info()
     scheduler_info['file']=Scheduler_file
     return LC,scheduler_info #client can be obtained from client_get
