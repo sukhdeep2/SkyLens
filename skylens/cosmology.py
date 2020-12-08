@@ -330,8 +330,8 @@ class EH_pk(): #eisenstein_hu power spectra https://arxiv.org/pdf/astro-ph/97091
         alpha_c=a1**-bf*a2**(-bf**3)
         
         b1 = 0.944/(1 + (458*self.Om_h2)**-.708)
-        b2 = (0.395*self.Om_h2)**-.0266 #this is correct. nbodykit has a mistake
-#         b2 = 0.395 * self.Om_h2 ** -0.0266 #nbodykit
+#         b2 = (0.395*self.Om_h2)**-.0266 #this is in paper.
+        b2 = 0.395 * self.Om_h2 ** -0.0266 #from nbodykit
         beta_c=1/(1+b1*((1-bf)**b2)-1)
         f=1./(1+(self.k*self.sd/5.4)**4)
         self.cdm_f=f

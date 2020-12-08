@@ -4,7 +4,12 @@ from dask.distributed import Client,get_client
 from distributed import LocalCluster
 from collections.abc import Mapping #to check for dicts
 # print('pid: ',pid, sys.version)
+
 def thread_count():
+    """
+        Get the number of threads spawned by the process. 
+        This was useful for certain diagnostics.
+    """
     pid=os.getpid()
     nlwp=subprocess.run(['ps', '-o', 'nlwp', str(pid)], stdout=subprocess.PIPE).stdout.decode('utf-8').split('\n')[1]
     nlwp=int(nlwp)
@@ -37,10 +42,17 @@ def get_size(obj, seen=None): #https://stackoverflow.com/questions/449560/how-do
         return size
     
 def get_size_pickle(obj):
+    """
+        Get the size of an object via pickle.
+    """
     yy=pickle.dumps(obj)
     return np.around(sys.getsizeof(yy)/1.e6,decimals=3)
 
 def dict_size_pickle(dic,print_prefact='',depth=2): #useful for some memory diagnostics
+    """
+        Get a size of the dictionary using pickle. Will also output size of 
+        dict elements depending on depth.
+    """
     print(print_prefact,'dict full size ',get_size_pickle(dic))
     if not isinstance(dic,dict):
         print(dic, 'is not a dict',depth)
@@ -101,16 +113,28 @@ def gather_dict(dic,scheduler_info=None,depth=0): #FIXME: This needs some improv
     return dic
 
 def client_get(scheduler_info=None):
+    """
+        Get the dask client running on the scheduler
+    """
     if scheduler_info is not None:
         client=get_client(address=scheduler_info['address'])
     else:
         client=get_client()
     return client
 
+def clean_client(scheduler_info=None):
+    if scheduler_info is not None:
+        client=client_get(scheduler_info=scheduler_info)
+        self.client.shutdown() #this will close the scheduler as well.
+
+
 worker_kwargs={}#{'memory_spill_fraction':.95,'memory_target_fraction':.95,'memory_pause_fraction':1}
 def start_client(Scheduler_file=None,local_directory=None,ncpu=None,n_workers=1,threads_per_worker=None,
                   worker_kwargs=worker_kwargs,LocalCluster_kwargs={},dashboard_address=8801,
                  memory_limit='120gb',processes=False):
+    """
+        Start a dask client. If no schduler is passed, a new local cluster is started.
+    """
     LC=None
     if local_directory is None:
         local_directory='./temp_skylens/pid'+str(os.getpid())+'/'
@@ -135,6 +159,7 @@ def start_client(Scheduler_file=None,local_directory=None,ncpu=None,n_workers=1,
         client=Client(LC)
     else:
         client=Client(scheduler_file=Scheduler_file,processes=False)
+    client.wait_for_workers(n_workers=1)
     scheduler_info=client.scheduler_info()
     scheduler_info['file']=Scheduler_file
     return LC,scheduler_info #client can be obtained from client_get

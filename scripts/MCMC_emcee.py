@@ -24,7 +24,6 @@ import argparse
 
 if __name__=='__main__':
     
-    
     test_run=False
     
     parser = argparse.ArgumentParser()
@@ -52,118 +51,46 @@ if __name__=='__main__':
     do_pseudo_cl=not do_xi
     use_binned_theta=use_binned_l
 
-    nzbins=5
-    lmax_cl=2000
-
-
     nwalkers=100
     nsteps=100
-
-    ncpu=multiprocessing.cpu_count()-1
-    vmem=psutil.virtual_memory()
-    mem=str(vmem.total/(1024**3)*0.95)+'GB'
-    memory='120gb'#'120gb'
-
+    yml_file='./mcmc.yml'
+    python_file='mcmc_args.py'
     if test_run:
         nzbins=2
-        lmax_cl=200
-    #     memory='20gb'
-    #     ncpu=4
         nwalkers=10
         nsteps=10
- 
+        yml_file='./mcmc_test.yml'
+        python_file='mcmc_test_args.py'
+     
+    ncpu=25
     # os.environ["OMP_NUM_THREADS"] = "1"
-    LC,scheduler_info=start_client(Scheduler_file=Scheduler_file,local_directory=dask_dir,ncpu=None,n_workers=25,threads_per_worker=1,
-                                  memory_limit=memory,dashboard_address=8801,processes=True)
+    LC,scheduler_info=start_client(Scheduler_file=Scheduler_file,local_directory=dask_dir,ncpu=None,n_workers=ncpu,threads_per_worker=1,
+                                  memory_limit='120gb',dashboard_address=8801,processes=True)
     client=client_get(scheduler_info=scheduler_info)
-    client.wait_for_workers(n_workers=1)
     print('client: ',client)#,dask_dir,scheduler_info)
-
+ 
     lock = None #Lock(name="Why_Camb_Why",client=client)
     #We get segmentation fault if camb is not under lock and multiple instances are called (tested on single node).
     # Why camb is called, multiple instances run, but they all rely on same underlying fortran objects and there are race conditions.
     # I tried pickling camb, but Camb cannot be pickled because it's a fortran wrapper and pickle doesn't really know what to do with it. deepcopy throws same error too.
     # deepcopy of Ang_PS doesn't capture it because there is no camb object stored as part of PS. It is simply called.
 
-    wigner_files={}
-    wig_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
-    wigner_files[0]= wig_home+'dask_wig3j_l3500_w2100_0_reorder.zarr'
-    wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 
-    bin_cl=True
-    lmin_cl=2
-    l0=np.arange(lmin_cl,lmax_cl)
-
-    lmin_cl_Bins=lmin_cl+10
-    lmax_cl_Bins=lmax_cl-10
-    Nl_bins=25
-    l_bins=np.int64(np.logspace(np.log10(lmin_cl_Bins),np.log10(lmax_cl_Bins),Nl_bins+1))
-    lb=np.sqrt(l_bins[1:]*l_bins[:-1])
-
-    l=np.unique(np.int64(np.logspace(np.log10(lmin_cl),np.log10(lmax_cl),Nl_bins*20))) #if we want to use fewer ell
-    bin_cl=True
-
-    xi_win_approx=True
-    bin_xi=True
-    xi_SN_analytical=True
-    th_min=25/60
-    th_max=250./60
-    n_th_bins=20
-    th_bins=np.logspace(np.log10(th_min),np.log10(th_max),n_th_bins+1)
-    th=np.logspace(np.log10(th_min),np.log10(th_max),n_th_bins*40)
-    thb=np.sqrt(th_bins[1:]*th_bins[:-1])
-
-    WT_kwargs={'l':l0,'theta':th*d2r,'s1_s2':[(2,2),(2,-2),(0,0),(0,2)]}
-    WT=wigner_transform(wig_d_taper_order_low=6,wig_d_taper_order_high=8,**WT_kwargs)
-
-    do_cov=True
-
-    SSV_cov=False
-    tidal_SSV_cov=SSV_cov
-    Tri_cov=SSV_cov
-
-    use_window=True
-    store_win=True
-
-    nside=32
-    window_lmax=nside
-
-    zs_bin=lsst_source_tomo_bins(nbins=nzbins,use_window=use_window,nside=nside)
-
-    do_cov=True
-
-    SSV_cov=False
-    bin_cl=True
-    do_cov=True
-    Tri_cov=False
-
-    corr_ggl=('galaxy','shear')
-    corr_gg=('galaxy','galaxy')
-    corr_ll=('shear','shear')
-    corrs=[corr_ll,corr_ggl,corr_gg]
-
-    pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'camb_pk'}
+#     skylens_args=parse_yaml(file_name=yml_file)
+    skylens_args=parse_python(file_name=python_file)
+    skylens_args['do_xi']=do_xi
+    skylens_args['do_pseudo_cl']=do_pseudo_cl
+    skylens_args['use_binned_theta']=use_binned_theta
+    skylens_args['use_binned_l']=use_binned_l
     if eh_pk:
         print('mcmc will use eh_pk')
-        pk_params['pk_func']='eh_pk'
-    power_spectra_kwargs={'pk_params':pk_params} #{'pk_lock':lock}
-
-    kappa0=Skylens(zs_bins=zs_bin,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zs_bin,
-                   use_window=use_window,Tri_cov=Tri_cov,
-                   use_binned_l=True,wigner_files=wigner_files, #binned_l here is true because we cannot fit everything in memory otherwise
-                   SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=0.35,
-                   store_win=store_win,window_lmax=window_lmax,
-                   sparse_cov=True,corrs=corrs,
-                   do_xi=do_xi,bin_xi=bin_xi,theta_bins=th_bins,WT=WT,
-                    use_binned_theta=True,
-                    nz_PS=100,do_pseudo_cl=do_pseudo_cl,xi_win_approx=True,
-                    xi_SN_analytical=xi_SN_analytical,power_spectra_kwargs=power_spectra_kwargs,
-                    scheduler_info=scheduler_info
-                   )
+        skylens_args['pk_params']['pk_func']='eh_pk'
+    skylens_args['scheduler_info']=scheduler_info
+    
+    kappa0=Skylens(**skylens_args)
     print('kappa0 size',get_size_pickle(kappa0))#,kappa0.Win)
     print('kappa0.Ang_PS size',get_size_pickle(kappa0.Ang_PS))
-    # client.restart() #can't do this with futures
-    #xi0t=kappa0.tomo_short()
+    
     if do_xi:
         print('MCMC getting xi0G')
         xi0G=kappa0.xi_tomo()
@@ -171,43 +98,26 @@ if __name__=='__main__':
         xi_cov=client.compute(xi0G['stack']).result()
         cov_inv=np.linalg.inv(xi_cov['cov'].todense())
         data=xi_cov['xi']
-    #     for k in xi0G.keys():
-    #         client.cancel(xi0G[k])
-    #     del xi0G
     else:
         print('MCMC getting cl0G')
         cl0G=kappa0.cl_tomo()
-    #     print('MCMC getting pcl',cl0G.keys(),kappa0.Win['cl'][corr_ll][(0,0)])
-    #     pcl=client.compute(cl0G['pseudo_cl_b']).result()
         print('MCMC getting stack')
         cl_cov=client.compute(cl0G['stack']).result()
         cov_inv=np.linalg.inv(cl_cov['cov'].todense())
         data=cl_cov['pcl_b']
-    #     del cl0G
+        
     kappa0.gather_data()
     print('Got data and cov')
     if not np.all(np.isfinite(data)):
         x=np.isfinite(data)
         print('data problem',data[~x],np.where(x))
-    #Win={'cl':client.gather(kappa0.Win['cl'])}
+
     Win=None
     del kappa0
-#     client.restart()
-#     client.wait_for_workers(n_workers=1)
-    do_cov=False
-    #kappa0.do_cov=False
-    kappa0=Skylens(zs_bins=zs_bin,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, zg_bins=zs_bin,
-                   use_window=use_window,Tri_cov=Tri_cov,
-                    use_binned_l=use_binned_l,wigner_files=wigner_files,#covariance is false, binned_l false should be ok
-                    SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=0.35,
-                    store_win=store_win,window_lmax=window_lmax,
-                    sparse_cov=True,corrs=corrs,
-                    do_xi=do_xi,bin_xi=bin_xi,theta_bins=th_bins,WT=WT,
-                     use_binned_theta=use_binned_theta,
-                     nz_PS=100,do_pseudo_cl=do_pseudo_cl,xi_win_approx=True,
-                     xi_SN_analytical=xi_SN_analytical,power_spectra_kwargs=power_spectra_kwargs,
-                    Win=Win,scheduler_info=scheduler_info
-                    )
+    
+    skylens_args['do_cov']=False
+
+    kappa0=Skylens(**skylens_args)
     # kappa0.Win={'cl':client.gather(kappa0.Win['cl'])}
     Win=client.gather(kappa0.Win)
     kappa0.gather_data()
@@ -221,7 +131,7 @@ if __name__=='__main__':
 
     cosmo_fid=kappa0.Ang_PS.PS.cosmo_params
 
-    params_order=['b1_{i}'.format(i=i) for i in np.arange(zs_bin['n_bins'])]#,'Ase9','Om']
+    params_order=['b1_{i}'.format(i=i) for i in np.arange(kappa0.tracer_utils.z_bins['galaxy']['n_bins'])]#,'Ase9','Om']
 
     priors_max=np.ones(len(params_order))*2
     priors_min=np.ones(len(params_order))*.5
@@ -231,7 +141,8 @@ if __name__=='__main__':
         priors_max=np.append(priors_max,pf*2)
         priors_min=np.append(priors_min,pf*.5)
 
-    zs_bin1=copy.deepcopy(zs_bin)
+    zs_bin1=copy.deepcopy(client.gather(kappa0.tracer_utils.z_bins['shear']))
+    zs_bin=copy.deepcopy(zs_bin1)
     del_k=['window','window_cl']
     for k in del_k:
         if zs_bin1.get(k) is not None:

@@ -11,7 +11,6 @@ from skylens.tracer_utils import *
 from astropy.cosmology import Planck15 as cosmo
 from astropy.table import Table
 cosmo_h_PL=cosmo.clone(H0=100)
-from skylens.skylens_main import *
 from dask.distributed import Client,get_client
 import healpy as hp
 import sys
@@ -77,12 +76,13 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None):
     
     return zs,p_zs
 
-def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False,scheduler_info=None,mask=None):
+def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,SN=None,unit_win=False,scheduler_info=None,mask=None):
+    from skylens.skylens_main import Skylens
     w_lmax=3*nside-1
     l0=np.arange(3*nside-1,dtype='int')
     corr=('galaxy','galaxy')
     
-    kappa0=Skylens(zg_bins=zs_bins,do_cov=False,bin_cl=False,l_bins=None,l=l0, zs_bins=None,use_window=False,
+    kappa0=Skylens(galaxy_zbins=zs_bins,do_cov=False,bin_cl=False,l_bins=None,l=l0,use_window=False,
                    corrs=[corr],f_sky=f_sky)
     cl0G=kappa0.cl_tomo()
     
@@ -107,6 +107,8 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
     
     for i in np.arange(zs_bins['n_bins']):
         cl_i=client.compute(cl0G['cl'][corr][(i,i)]).result()
+        if SN is not None:
+            cl_i+=SN[0,i,i]
         if unit_win:
             cl_map=hp.ma(np.ones(12*nside*nside))
 #             cl_i=1
@@ -286,6 +288,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     zs_bins['bias_func']='constant_bias'
     if use_window:
         zs_bins=set_window(zs_bins=zs_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
+                           SN=zs_bins['SN']['galaxy'],
                            window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info)
     return zs_bins
 

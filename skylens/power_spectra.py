@@ -1,3 +1,6 @@
+#Todo:
+# - Allow for passing arguments to camb directly via cosmo_params  
+
 """
 Class to compute the matter power spectra. Includes wrappers over class, camb, CCL and Bayonic physics PC's (Hung-Jin's method.)
 """
@@ -39,7 +42,7 @@ cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817
                 'Ase9':2.2,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
                 'OmR':cosmo.Ogamma0+cosmo.Onu0,'w':-1,'wa':0,'Tcmb':cosmo.Tcmb0})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
-pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'camb_pk_too_many_z','halofit_version':'takahashi'}
+pk_params_default={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'camb_pk_too_many_z','halofit_version':'takahashi'}
 
 # baryonic scenario option:
 # "owls_AGN","owls_DBLIMFV1618","owls_NOSN","owls_NOSN_NOZCOOL","owls_NOZCOOL","owls_REF","owls_WDENS"
@@ -89,10 +92,18 @@ class_accuracy_settings={ #from Vanessa. To avoid class errors due to compiler i
             }
 
 class Power_Spectra(cosmology):
-    def __init__(self,cosmo_params=cosmo_fid,pk_params=pk_params,#cosmo=cosmo,
+    def __init__(self,cosmo_params=None,pk_params=None,#cosmo=cosmo,
                  silence_camb=True,SSV_cov=False,scenario=None,
                  logger=None):
         self.__dict__.update(locals()) #assign all input args to the class as properties
+        if self.pk_params is None:
+            self.pk_params=pk_params_default
+            pk_params=pk_params_default
+            print('pk_params dict was none, intialized with default')
+        if self.cosmo_params is None:
+            self.cosmo_params=cosmo_fid
+            cosmo_params=cosmo_fid
+            print('cosmo_params dict was none, intialized with default')
         super().__init__(cosmo_params=cosmo_params)
         self.name='PS'
         pk_func=pk_params.get('pk_func')
@@ -104,6 +115,8 @@ class Power_Spectra(cosmology):
         if not pk_params is None:
             self.kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),
             pk_params['nk'])
+            if pk_params.get('halofit_version') is None:
+                pk_params['halofit_version']='takahashi'
     
     def get_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False,pk_lock=None):
         pk_func=self.pk_func
@@ -169,19 +182,6 @@ class Power_Spectra(cosmology):
         DZ=self.DZ_approx(z=z)
         pk=pk0[None,:]*DZ[:,None]
         return pk*cosmo_params['h']**3,kh
-#     def DZ_int(self,z=[0],cosmo=None): #linear growth factor.. full integral.. eq 63 in Lahav and suto
-#         if not cosmo:
-#             cosmo=self.cosmo
-#         def intf(z):
-#             return (1+z)/(cosmo.H(z).value)**3
-#         j=0
-#         Dz=np.zeros_like(z,dtype='float32')
-
-#         for i in z:
-#             Dz[j]=cosmo.H(i).value*scipy_int1d(intf,i,np.inf,epsrel=1.e-6,epsabs=1.e-6)[0]
-#             j=j+1
-#         Dz*=(2.5*cosmo.Om0*cosmo.H0.value**2)
-#         return Dz/Dz[0]
 
     def ccl_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
         if not cosmo_params:
@@ -242,11 +242,11 @@ class Power_Spectra(cosmology):
 
         if pk_params['non_linear']==1:
             pars.NonLinear = model.NonLinear_both
-            pars.NonLinearModel.set_params(halofit_version=pk_params['halofit_version'])#FIXME... make this an input
+            pars.NonLinearModel.set_params(halofit_version=pk_params['halofit_version'])
         else:
             pars.NonLinear = model.NonLinear_none
 
-        results = camb.get_results(pars) #This is the time consuming part.. pk add little more (~5%).. others are negligible.... error when run in parallel??
+        results = camb.get_results(pars) #This is the time consuming part.. pk add little more (~5%).. others are negligible.... error when run in parallel threads??
 
         kh, z2, pk =results.get_matter_power_spectrum(minkh=pk_params['kmin'],
                                                         maxkh=pk_params['kmax'],

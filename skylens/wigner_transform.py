@@ -25,10 +25,17 @@ class wigner_transform():
         self.nscatter=0
 #         self.theta=theta
         for (m1,m2) in s1_s2:
+            if self.wig_d.get((m1,m2)) is not None:
+                continue
             self.wig_d[(m1,m2)]=wigner_d_parallel(m1,m2,theta,self.l,ncpu=ncpu)
             self.theta[(m1,m2)]=theta #FIXME: Ugly
             self.theta_deg[(m1,m2)]=theta/d2r #FIXME: Ugly
             self.wig_d_smoothing(s1_s2=(m1,m2))
+            
+            self.wig_d[(m2,m1)]=self.wig_d[(m1,m2)]
+            self.theta[(m2,m1)]=self.theta[(m1,m2)]
+            self.theta_deg[(m2,m1)]=self.theta_deg[(m1,m2)]
+
         self.scatter_data()
     
     def scatter_data(self):

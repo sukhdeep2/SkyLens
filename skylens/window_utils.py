@@ -27,7 +27,7 @@ class window_utils():
                 do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,WT=None,xi_bin_utils=None,do_xi=False,
                 store_win=False,Win=None,wigner_files=None,step=None,xi_win_approx=False,
                 cov_indxs=None,client=None,scheduler_info=None,wigner_step=None,
-                kappa_b_xi=None,bin_theta_window=False,njobs_submit=100,zarr_parallel_read=15,
+                kappa_b_xi=None,bin_theta_window=False,njobs_submit=100,zarr_parallel_read=25,
                 kappa_class0=None,kappa_class_b=None,bin_window=True,do_pseudo_cl=True):
 
         self.__dict__.update(locals()) #assign all input args to the class as properties
@@ -40,8 +40,9 @@ class window_utils():
 
         self.step=wigner_step
         if step is None:
-            self.step=np.int32(150.*((1000./nl)**2)*(30./nwl)) #small step is useful for lower memory load
+            self.step=np.int32(200.*((2000./nl)**2)*(100./nwl)) #small step is useful for lower memory load
             self.step=np.int32(min(self.step,nl+1))
+            self.step=np.int32(max(self.step,1))
 #         self.step=50
             
         self.lms=np.int32(np.arange(nl,step=self.step))
@@ -78,6 +79,7 @@ class window_utils():
             if xi_bin_utils is not None:
                 xibu=xi_bin_utils[(0,0)]
             self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,z_bins=z_bins,WT_kwargs=WT_kwargs,xi_bin_utils=xibu,use_bag=use_bag)
+            #FIXME: with store win, we can remove zs_win after this.
         if self.Win is None and self.use_window and self.do_pseudo_cl: #pseudo_cl window
             if self.do_xi:
                 print('Warning: window for xi is different from cl.')
@@ -188,9 +190,9 @@ class window_utils():
         self.wig_3j_2={}
         self.wig_3j_1={}
         self.mf_pm={}
-        sem_lock = Semaphore(max_leases=self.zarr_parallel_read, name="database",client=client_get(self.scheduler_info))
+        self.sem_lock = Semaphore(max_leases=self.zarr_parallel_read, name="database",client=client_get(self.scheduler_info))
         for lm in self.lms:
-            self.wig_3j_2[lm]=delayed(self.set_wig3j_step_multiplied)(lm=lm,sem_lock=sem_lock)
+            self.wig_3j_2[lm]=delayed(self.set_wig3j_step_multiplied)(lm=lm,sem_lock=self.sem_lock)
             self.mf_pm[lm]=delayed(self.set_window_pm_step)(lm=lm)
             
         self.wig_s1s2s={}
@@ -1065,6 +1067,10 @@ class window_utils():
         return Win
 
     def get_coupling_lm_all_win(self,Win_cl,Win_cov,lm,wig_3j_2_lm,mf_pm,cl_bin_utils=None):
+        if wig_3j_2_lm is None:
+            wig_3j_2_lm=self.set_wig3j_step_multiplied(lm=lm,sem_lock=self.sem_lock)
+            mf_pm=self.set_window_pm_step(lm=lm)
+
         Win_lm={}
         Win_lm['cl']=[self.get_cl_coupling_lm(None,Wc,lm,wig_3j_2_lm,mf_pm,cl_bin_utils=cl_bin_utils) for Wc in Win_cl]
         if self.do_cov:
@@ -1098,7 +1104,8 @@ class window_utils():
             Win_lm={}
             workers=list(client.scheduler_info()['workers'].keys())
             nworkers=len(workers)
-            njobs=nworkers #self.njobs_submit
+#             njobs=nworkers*1 #self.njobs_submit
+            njobs=self.njobs_submit
             
             worker_i=0
             job_i=0
@@ -1109,8 +1116,9 @@ class window_utils():
                 t1=time.time()
                 Win_cl_lm[lm]={}
                 Win_lm[lm]={}
-
-                Win_lm[lm]=delayed(self.get_coupling_lm_all_win)(Win_cl,Win_cov,lm,self.wig_3j_2[lm],self.mf_pm[lm],cl_bin_utils=cl_bin_utils)
+                
+                Win_lm[lm]=delayed(self.get_coupling_lm_all_win)(Win_cl,Win_cov,lm,None,None,cl_bin_utils=cl_bin_utils)
+#                 Win_lm[lm]=delayed(self.get_coupling_lm_all_win)(Win_cl,Win_cov,lm,self.wig_3j_2[lm],self.mf_pm[lm],cl_bin_utils=cl_bin_utils)
 #### Donot delete
                 if self.store_win:  
                    client_func=client.compute
@@ -1119,8 +1127,8 @@ class window_utils():
                    Win_lm[lm]=client_func(Win_lm[lm],timeout=200,workers=(workers[worker_i%nworkers]),allow_other_workers=False)
                    print('done lm cl+cov graph',lm,time.time()-t1,get_size_pickle(self.get_cl_coupling_lm),workers[worker_i%nworkers])
                    worker_i+=1
+                   job_i+=1
                    lm_submitted+=[lm]
-                   time.sleep(2)
                    if job_i>=njobs or lm==self.lms[-1]:
                        for lmi in lm_submitted:
                            wait(Win_lm[lmi])
