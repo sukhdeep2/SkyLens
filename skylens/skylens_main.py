@@ -241,7 +241,7 @@ class Skylens():
         """
         self.stack_indxs=stack_indxs
         self.corr_indxs=corr_indxs
-
+        self.cov_indxs=None
         if self.corrs is None:
             if bool(self.stack_indxs):
                 self.corrs=list(corr_indxs.keys())
@@ -554,7 +554,7 @@ class Skylens():
                 for indxs in cov_indxs_iter:
                     if self.use_window:
                         Win_cl1i=Win_cl1[(indxs[0],indxs[1])]
-                        Win_cl2i=Win_cl2[(indxs[0],indxs[1])]
+                        Win_cl2i=Win_cl2[(indxs[2],indxs[3])]
                         Win_covi=Win_cov[indxs]
                     else:
                         Win_cl1i,Win_cl2i,Win_covi=None,None,None

@@ -94,7 +94,7 @@ class_accuracy_settings={ #from Vanessa. To avoid class errors due to compiler i
 class Power_Spectra(cosmology):
     def __init__(self,cosmo_params=None,pk_params=None,#cosmo=cosmo,
                  silence_camb=True,SSV_cov=False,scenario=None,
-                 logger=None):
+                 logger=None,z_max=4):
         self.__dict__.update(locals()) #assign all input args to the class as properties
         if self.pk_params is None:
             self.pk_params=pk_params_default
@@ -104,7 +104,7 @@ class Power_Spectra(cosmology):
             self.cosmo_params=cosmo_fid
             cosmo_params=cosmo_fid
             print('cosmo_params dict was none, intialized with default')
-        super().__init__(cosmo_params=cosmo_params)
+        super().__init__(cosmo_params=cosmo_params,z_max=z_max)
         self.name='PS'
         pk_func=pk_params.get('pk_func')
         pk_func_default=self.camb_pk_too_many_z

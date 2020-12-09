@@ -94,6 +94,8 @@ class Tracer_utils():
         client=client_get(self.scheduler_info)
         for tracer in self.tracers:
             self.z_bins[tracer]=client.gather(self.z_bins[tracer])
+            if self.z_win is not None:
+                self.z_win[tracer]=client.gather(self.z_win[tracer])
         
     def set_z_window(self,):
         """
@@ -161,6 +163,8 @@ class Tracer_utils():
         zl=Ang_PS.z
         if z_bins is None:
             z_bins=self.get_z_bins(tracer=tracer)
+            if not delayed_compute:
+                z_bins=gather_dict(z_bins,scheduler_info=self.scheduler_info)
         n_bins=z_bins['n_bins']
         kernel={}
         for i in np.arange(n_bins):
@@ -191,7 +195,8 @@ def sigma_crit(zl=[],zs=[],cosmo_h=None):
     ds=cosmo_h.comoving_transverse_distance(zs)
     dl=cosmo_h.comoving_transverse_distance(zl)
     ddls=1.-np.multiply.outer(1./ds,dl)#(ds-dl)/ds
-#     w=(3./2.)*((cosmo_h.H0/c)**2)*(1+zl)*dl/Rho_crit100 #(cosmo_h)
+    x=ds==0
+    ddls[x,:]=0
     w=sigma_crit_norm100*(1+zl)*dl
     sigma_c=1./(ddls*w)
     x=ddls<=0 #zs<zl
@@ -284,7 +289,6 @@ def set_lensing_kernel(cosmo_h=None,zl=None,tracer=None,l=None,z_bin=None,kernel
         mag_fact=z_bin['mag_fact']
         spin_tracer='kappa'
     spin_fact=spin_factor(l,tracer=spin_tracer)
-
     kernel['Gkernel']=mag_fact*rho/sigma_crit(zl=zl,zs=z_bin['z'],
                                                 cosmo_h=cosmo_h)
     kernel['Gkernel_int']=np.dot(z_bin['pzdz'],kernel['Gkernel'])
@@ -293,7 +297,7 @@ def set_lensing_kernel(cosmo_h=None,zl=None,tracer=None,l=None,z_bin=None,kernel
     if z_bin['Norm']==0:#FIXME
         kernel['Gkernel_int'][:]=0
     kernel['Gkernel_int']=np.outer(spin_fact,kernel['Gkernel_int'])
-    del kernel['Gkernel']
+#     del kernel['Gkernel']
     return kernel
 
 def set_galaxy_kernel(cosmo_h=None,zl=None,tracer=None,l=None,z_bin=None,kernel=None):

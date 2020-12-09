@@ -76,7 +76,7 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None):
     
     return zs,p_zs
 
-def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,SN=None,unit_win=False,scheduler_info=None,mask=None):
+def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False,scheduler_info=None,mask=None):
     from skylens.skylens_main import Skylens
     w_lmax=3*nside-1
     l0=np.arange(3*nside-1,dtype='int')
@@ -107,8 +107,11 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
     
     for i in np.arange(zs_bins['n_bins']):
         cl_i=client.compute(cl0G['cl'][corr][(i,i)]).result()
-        if SN is not None:
-            cl_i+=SN[0,i,i]
+        if np.any(np.isnan(cl_i)):
+            print('survey utils, set_window:',cl_i)
+#             print(zs_bins[i])
+#             print(client.compute(cl0G['zkernel']['galaxy'][i]).result())
+            crash
         if unit_win:
             cl_map=hp.ma(np.ones(12*nside*nside))
 #             cl_i=1
@@ -176,7 +179,7 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
 
 
 def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,scheduler_info=None,
-                    zp_sigma=None,zs=None,n_zs=100,z_bins=None,f_sky=0.3,nside=256,use_window=False,
+                    zp_sigma=None,zs=None,n_zs=100,z_bins=None,f_sky=0.3,nside=256,use_window=False,z_true_max=5,
                     mask_start_pix=0,window_cl_fact=None,bg1=1,AI=0,AI_z=0,shear_m_bias=1,l=None,mag_fact=0,
                      sigma_gamma=0.26,k_max=0.3,unit_win=False,use_shot_noise=True,**kwargs):
     """
@@ -201,7 +204,9 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
         sigma_max=0
         if zp_sigma is not None:
             sigma_max=max(np.atleast_1d(zp_sigma))*5
-        zs=np.linspace( max(0.05,min(zp)-sigma_max), max(zp)+sigma_max,n_zs)
+        zs=np.linspace( max(0.01,min(zp)-sigma_max), max(zp)+sigma_max,len(zp)+2)#n_zs)
+        zs=zs[zs<=z_true_max]
+    print('source_tomo_bins, zmax',zs.max(),max(zp),sigma_max)
     dzs=np.gradient(zs)
     dzp=np.gradient(zp) if len(zp)>1 else [1]
     zp=np.array(zp)
@@ -288,7 +293,6 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     zs_bins['bias_func']='constant_bias'
     if use_window:
         zs_bins=set_window(zs_bins=zs_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
-                           SN=zs_bins['SN']['galaxy'],
                            window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info)
     return zs_bins
 
@@ -415,7 +419,7 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
 z_many=np.linspace(0,4,5000)
 
 def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=None,z_bins=None,
-                          window_cl_fact=None,ztrue_func=ztrue_given_pz_Gaussian,z_sigma_power=1,
+                          window_cl_fact=None,ztrue_func=ztrue_given_pz_Gaussian,z_true_max=5,z_sigma_power=1,
                           f_sky=0.3,nside=256,zp=None,pzs=None,use_window=False,mask_start_pix=0,
                           l=None,sigma_gamma=0.26,AI=0,AI_z=0,mag_fact=0,k_max=0.3,
                           scheduler_info=None,
@@ -458,7 +462,7 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
 
     return source_tomo_bins(zp=z,p_zp=pzs,ns=ns0,nz_bins=nbins,mag_fact=mag_fact,
                          ztrue_func=ztrue_func,zp_bias=z_bias,window_cl_fact=window_cl_fact,
-                        zp_sigma=z_sigma,z_bins=z_bins,f_sky=f_sky,nside=nside,
+                        zp_sigma=z_sigma,z_bins=z_bins,f_sky=f_sky,nside=nside,z_true_max=z_true_max,
                            use_window=use_window,mask_start_pix=mask_start_pix,k_max=k_max,
                            l=l,sigma_gamma=sigma_gamma,AI=AI,AI_z=AI_z,unit_win=unit_win
                             ,use_shot_noise=use_shot_noise,scheduler_info=scheduler_info,**kwargs)

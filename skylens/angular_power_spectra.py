@@ -18,7 +18,6 @@ class Angular_power_spectra():
                 z_PS=None,nz_PS=100,log_z_PS=2,z_PS_max=None,logger=None,window_l=None,
                 SSV_cov=False,tracer='kappa',cov_utils=None):
         self.logger=logger
-        self.PS=Power_Spectra(SSV_cov=SSV_cov,**power_spectra_kwargs)
         self.l=l
         self.window_l=window_l
         self.cl_f=(l+0.5)**2/(l*(l+1.)) # cl correction from Kilbinger+ 2017
@@ -30,8 +29,8 @@ class Angular_power_spectra():
         self.clz=None
         self.cov_utils=cov_utils
         self.set_z_PS(z=z_PS,nz=nz_PS,log_z=log_z_PS,z_max=z_PS_max)
-
         self.dz=np.gradient(self.z)
+        self.PS=Power_Spectra(SSV_cov=SSV_cov,z_max=self.z.max(),**power_spectra_kwargs)
 
     def set_z_PS(self,z=None,nz=10,log_z=2,z_max=None):
         """

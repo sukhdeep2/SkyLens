@@ -37,8 +37,7 @@ class cosmology():
                  astropy_cosmo=None,**kwargs):
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.c=3*10**5
-        self._z=np.arange(start=0,stop=z_max,step=dz)
-        self._dz=np.gradient(self._z)
+        self.set_z(z_max=z_max)
         self.comoving_distance=self.comoving_distance_trapz
         self.efunc=self.E_z
         if self.use_astropy:
@@ -54,6 +53,14 @@ class cosmology():
                 self.comoving_transverse_distance=self.astropy_cosmo.comoving_transverse_distance
         self.set_cosmology(cosmo_params=cosmo_params)
 
+    def set_z(self,z_max=None):
+        self._z_max=z_max
+        self._z=np.arange(start=0,stop=z_max+self.dz*2,step=self.dz)
+        self._dz=np.gradient(self._z)
+        print('cosmology interpolation range',self._z.min(),self._z.max())
+        if hasattr(self,'_dc'):
+            del self._dc
+    
     def set_cosmology(self,cosmo_params=None):
         if cosmo_params is None:
             return
@@ -173,11 +180,13 @@ class cosmology():
         return ez*self.Dh
 
     def comoving_distance_trapz(self,z=[0]): #line of sight comoving distance... computed as sum         
+#         if max(z)>self._z_max: #race condition
+#             self.set_z(max(z))
         if not hasattr(self,'_dc'):
             ez_inv=self.E_z_inv(self._z)*self._dz
             self._dc=np.cumsum(ez_inv)-ez_inv
             self._dc*=self.Dh
-        dc=np.interp(z,xp=self._z,fp=self._dc,left=np.nan,right=np.nan)
+        dc=np.interp(z,xp=self._z,fp=self._dc,left=0,right=np.nan)
         return dc
 
     

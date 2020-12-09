@@ -96,9 +96,13 @@ def scatter_dict(dic,scheduler_info=None,depth=2,broadcast=False,return_workers=
                 dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
                 workers=list(client.who_has(dic[k]).values())[0]
             else:
-                dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
+                if isinstance(dic[k], np.ma.MaskedArray):
+                    print('scatter-dict got masked array: ',k,type(dic[k]),' will be scattered with filled values ')
+                    dic[k]=client.scatter(dic[k].filled(),broadcast=broadcast,workers=workers)
+                else:
+                    dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
                 workers=list(client.who_has(dic[k]).values())[0]
-    #             print('scatter-dict ',k,workers)
+#                 print('scatter-dict ',k,workers)
     if return_workers:
         return dic,workers
     return dic
