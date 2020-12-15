@@ -102,8 +102,8 @@ class Skylens():
 
         self.Win=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,s1_s2s=self.s1_s2s,
                         cov_indxs=self.cov_indxs,scheduler_info=self.scheduler_info,
-                        use_window=self.use_window,do_cov=self.do_cov,cov_utils=self.cov_utils,
-                        f_sky=self.f_sky,corr_indxs=self.stack_indxs,z_bins=self.tracer_utils.z_win,
+                        use_window=self.use_window,do_cov=self.do_cov,#cov_utils=self.cov_utils,f_sky=self.f_sky,
+                        corr_indxs=self.stack_indxs,z_bins=self.tracer_utils.z_win,
                         window_lmax=self.window_lmax,Win=self.Win,WT=self.WT,do_xi=self.do_xi,
                         xi_win_approx=self.xi_win_approx,do_pseudo_cl=self.do_pseudo_cl,
                         kappa_class0=self.kappa0,kappa_class_b=self.kappa_b,kappa_b_xi=self.kappa_b_xi,
@@ -594,7 +594,8 @@ class Skylens():
         client=client_get(self.scheduler_info)
         keys=['xi_bin_utils','cl_bin_utils','Win','WT_binned']
         for k in keys:
-            self.__dict__[k]=client.scatter(self.__dict__[k])
+            if hasattr(self,k):
+                self.__dict__[k]=client.scatter(self.__dict__[k])
         self.WT.scatter_data()
         
         
@@ -626,9 +627,11 @@ class Skylens():
                         bias_func='constant_bias'
                         bias_kwargs={'b1':1,'b2':1}
         if self.do_xi:
-            return self.xi_tomo_short(corrs=corrs,stack_corr_indxs=stack_corr_indxs,zkernel=zkernel,Ang_PS=Ang_PS,Win=Win,WT_binned=WT_binned,WT=WT,xi_bin_utils=xi_bin_utils)
+            return self.xi_tomo_short(corrs=corrs,stack_corr_indxs=stack_corr_indxs,zkernel=zkernel,
+                                      Ang_PS=Ang_PS,Win=Win,WT_binned=WT_binned,WT=WT,xi_bin_utils=xi_bin_utils)
         else:
-            return self.cl_tomo_short(corrs=corrs,stack_corr_indxs=stack_corr_indxs,zkernel=zkernel,Ang_PS=Ang_PS,Win=Win,cl_bin_utils=cl_bin_utils)
+            return self.cl_tomo_short(corrs=corrs,stack_corr_indxs=stack_corr_indxs,
+                                      zkernel=zkernel,Ang_PS=Ang_PS,Win=Win,cl_bin_utils=cl_bin_utils)
     
     def cl_tomo_short(self,corrs=None,stack_corr_indxs=None,Ang_PS=None,zkernel=None,cosmo_params=None,Win=None,cl_bin_utils=None):
         """

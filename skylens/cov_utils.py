@@ -10,6 +10,7 @@ from scipy.special import jn, jn_zeros
 from skylens.wigner_functions import *
 from skylens.binning import *
 from skylens.cov_tri import *
+from skylens.utils import *
 import healpy as hp
 
 d2r=np.pi/180.
@@ -41,9 +42,9 @@ class Covariance_utils():
 #         if use_window and use_binned_l:
 #             dl=np.sqrt(np.gradient(self.l))
 #             self.dl_norm=np.outer(dl,dl)
+#         dict_size_pickle(self.__dict__,print_prefact='cov utils self size: ',depth=2)
 
-
-    def set_window_params(self):
+    def set_window_params(self): #FIXME: size issues for large computes
         """
             set survey area and analytical window power spectra 
             based on f_sky input. f_sky can be a float or a 
@@ -51,6 +52,8 @@ class Covariance_utils():
             pairs and quadruples (four tracers, for covariance).
         """
         if self.f_sky is None:
+            return
+        if self.use_window:
             return
         if isinstance(self.f_sky,float):
             self.Om_W=4*np.pi*self.f_sky

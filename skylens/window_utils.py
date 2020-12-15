@@ -2,6 +2,7 @@
         # - Allow windows to be read from a file.
         
 import dask
+import cProfile,pstats
 from dask import delayed
 import sparse
 from skylens.wigner_transform import *
@@ -12,7 +13,7 @@ import healpy as hp
 from scipy.interpolate import interp1d
 import warnings,logging
 from distributed import LocalCluster
-from dask.distributed import Client,get_client,wait,Semaphore
+from dask.distributed import Client,get_client,Semaphore
 import zarr
 from dask.threaded import get
 from distributed.client import Future
@@ -24,8 +25,8 @@ import copy
 import psutil
 
 class window_utils():
-    def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,corrs=None,s1_s2s=None,use_window=None,f_sky=None,
-                do_cov=False,cov_utils=None,corr_indxs=None,z_bins=None,WT=None,xi_bin_utils=None,do_xi=False,
+    def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,corrs=None,s1_s2s=None,use_window=None,#f_sky=None,cov_utils=None,
+                do_cov=False,corr_indxs=None,z_bins=None,WT=None,xi_bin_utils=None,do_xi=False,
                 store_win=False,Win=None,wigner_files=None,step=None,xi_win_approx=False,
                 cov_indxs=None,client=None,scheduler_info=None,wigner_step=None,
                 kappa_b_xi=None,bin_theta_window=False,njobs_submit=100,zarr_parallel_read=25,
@@ -41,7 +42,7 @@ class window_utils():
 
         self.step=wigner_step
         if step is None:
-            self.step=np.int32(200.*((2000./nl)**2)*(100./nwl)) #small step is useful for lower memory load
+            self.step=np.int32(100.*((2000./nl)**2)*(100./nwl)) #small step is useful for lower memory load
             self.step=np.int32(min(self.step,nl+1))
             self.step=np.int32(max(self.step,1))
 #         self.step=50
@@ -52,7 +53,7 @@ class window_utils():
         self.c_ell0=None
         self.c_ell_b=None
 
-        del self.kappa_class0,self.kappa_class_b,self.kappa_b_xi,self.z_bins
+        del self.kappa_class0,self.kappa_class_b,self.kappa_b_xi,self.z_bins#,self.cov_utils,self.f_sky #fixme: remove from args
         self.cl_bin_utils=None
         if bin_window:
             self.binnings=binning()
@@ -254,63 +255,6 @@ class window_utils():
         W[~x]=1. #mask = 0,1
         fsky=(~x).mean()
         return fsky,W#.astype('int16')
-
-    def get_window_power_cl(self,corr_indxs,c_ell0=None,c_ell_b=None,z_bin1=None,z_bin2=None,
-                           WT_kwargs=None,xi_bin_utils=None):#corr={},indxs={}):
-        """
-        Get the cross power spectra of windows given two tracers.
-        Note that noise and signal have different windows and power spectra for both 
-        cases. 
-        Spin factors and binning weights if needed are also set here.
-        """
-#         print('getting window power cl',WT_kwargs)
-        corr=(corr_indxs[0],corr_indxs[1])
-        indxs=(corr_indxs[2],corr_indxs[3])
-        win={}
-        win['corr']=corr
-        win['indxs']=indxs
-
-        s1s2=np.absolute(self.s1_s2s[corr]).flatten()
-        W_pm=0
-        if np.sum(s1s2)!=0:
-            W_pm=2 #we only deal with E mode\
-            if corr==('shearB','shearB'):
-                W_pm=-2
-        if self.do_xi:
-            W_pm=0 #for xi estimators, there is no +/-. Note that this will result in wrong thing for pseudo-C_ell.
-                    #FIXME: hence pseudo-C_ell and xi together are not supported right now
-
-#         z_bin1=self.z_bins[corr[0]][indxs[0]]
-#         z_bin2=self.z_bins[corr[1]][indxs[1]]
-
-        win[12]={} #to keep some naming uniformity with the covariance window
-        win[12]['cl']=hp.anafast(map1=z_bin1['window'],map2=z_bin2['window'],
-                                 lmax=self.window_lmax)[self.window_l]
-
-        if corr[0]==corr[1] and indxs[0]==indxs[1]:
-            map1=np.sqrt(z_bin1['window'])
-            mask=z_bin1['window']==hp.UNSEEN
-            map1[mask]=hp.UNSEEN
-            win[12]['N']=hp.anafast(map1=map1,lmax=self.window_lmax)[self.window_l]
-
-        win['binning_util']=None
-        win['bin_wt']=None
-        if self.bin_window:
-            cl0=c_ell0[corr][indxs]
-            cl_b=c_ell_b[corr][indxs]
-            win['bin_wt']={'wt_b':1./cl_b,'wt0':cl0}
-            if np.all(cl_b==0):#avoid nan
-                win['bin_wt']={'wt_b':cl_b,'wt0':cl0}
-            
-        win['W_pm']=W_pm
-        win['s1s2']=s1s2
-        if self.do_xi:
-            th,win['xi']=self.WT.projected_correlation(cl=win[12]['cl'],**WT_kwargs)#this is ~f_sky
-            win['xi_b']=self.binning.bin_1d(xi=win['xi'],bin_utils=xi_bin_utils) #xi_bin_utils[(0,0)]
-
-        win['M']={} #self.coupling_matrix_large(win['cl'], s1s2,wig_3j_2=wig_3j_2,W_pm=W_pm)*(2*self.l[:,None]+1) #FIXME: check ordering
-        win['M_noise']=None
-        return win
 
     def get_cl_coupling_lm(self,corr_indxs,win,lm,wig_3j_2_lm,mf_pm,cl_bin_utils=None):
         """
@@ -532,232 +476,6 @@ class window_utils():
         bin_wt_xi['xi_b14']={s:xi_b[(corr[0],corr[3])][s][(indxs[0],indxs[3])]for s in xi0[(corr[0],corr[3])].keys()}
         bin_wt_xi['xi_b23']={s:xi_b[(corr[1],corr[2])][s][(indxs[1],indxs[2])] for s in xi0[(corr[1],corr[2])].keys()}
         return bin_wt_xi
-
-    
-    def get_window_power_cov(self,corr_indxs,bin_wt_cl=None,bin_wt_xi=None,z_bins={},
-                            WT_kwargs=None,xi_bin_utils=None):#corr1=None,corr2=None,indxs1=None,indxs2=None):
-        """
-        Compute window power spectra what will be used in the covariance calculations. 
-        For covariances, we have four windows. Pairs of them are first multiplied together and
-        then a power spectra is computed. 
-        Separate calculations are done for different combinations of tracers (13-24 and 14-23) which
-        are further split into different combinations of noise and signal (signal-signal, noise-noise) 
-        and noise-signal.
-        """
-        t0=time.time()
-#         print('getting window power cov',corr_indxs)
-        corr1=(corr_indxs[0],corr_indxs[1])
-        corr2=(corr_indxs[2],corr_indxs[3])
-        indxs1=(corr_indxs[4],corr_indxs[5])
-        indxs2=(corr_indxs[6],corr_indxs[7])
-        win={}
-        corr=corr1+corr2
-        indxs=indxs1+indxs2
-        win['corr1']=corr1
-        win['corr2']=corr2
-        win['indxs1']=indxs1
-        win['indxs2']=indxs2
-        win['corr_indxs']=corr_indxs
-
-        def get_window_spins(cov_indxs=[(0,2),(1,3)]):    #W +/- factors based on spin
-            W_pm=[0]
-            if self.do_xi:
-                return W_pm#for xi estimators, there is no +/-. Note that this will result in wrong thing for pseudo-C_ell.
-                    #FIXME: hence pseudo-C_ell and xi together are not supported right now
-
-            s=[np.sum(self.s1_s2s[corr1]),np.sum(self.s1_s2s[corr2])]
-
-            if s[0]==2 and s[1]==2: #gE,gE
-                W_pm=[2]
-            elif 4 in s and 2 in s: #EE,gE
-                W_pm=[2]
-            elif 0 in s and 2 in s: #gg,gE
-                W_pm=[2]
-            elif 4 in s and 0 in s: #EE,gg
-                W_pm=[2]
-                for i in np.arange(2):
-                    if indxs[cov_indxs[i][0]]==indxs[cov_indxs[i][1]] and s[i]==4: #auto correlation, include B modes
-                        W_pm=[2,-2]
-            elif s[0]==4 and s[1]==4: #EE,EE
-                W_pm=[2]
-                for i in np.arange(2):
-                    if indxs[cov_indxs[i][0]]==indxs[cov_indxs[i][1]] and s[i]==4: #auto correlation, include B modes
-                        W_pm=[2,-2]
-
-            return W_pm
-
-
-        s1s2s={}
-
-        s1s2s[1324]=np.array([self.cov_s1s2s(corr=(corr[0],corr[2])), #13
-                              self.cov_s1s2s(corr=(corr[1],corr[3])) #24
-                              ])
-
-        s1s2s[1423]=np.array([self.cov_s1s2s(corr=(corr[0],corr[3])), #14
-                              self.cov_s1s2s(corr=(corr[1],corr[2])) #23
-                            ])
-
-        W_pm={} #W +/- factors based on spin
-        W_pm[1324]=get_window_spins(cov_indxs=[(0,2),(1,3)])
-        W_pm[1423]=get_window_spins(cov_indxs=[(0,3),(1,2)])
-        
-        z_bin1=z_bins[0]
-        z_bin2=z_bins[1]
-        z_bin3=z_bins[2]
-        z_bin4=z_bins[3]
-#         z_bin1=self.z_bins[corr[0]][indxs[0]]
-#         z_bin2=self.z_bins[corr[1]][indxs[1]]
-#         z_bin3=self.z_bins[corr[2]][indxs[2]]
-#         z_bin4=self.z_bins[corr[3]][indxs[3]]
-        t1=time.time()
-        win[1324]={}
-        win[1423]={}
-        t2=time.time()   
-        if self.do_pseudo_cl:
-            win[1324]['clcl']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin3['window']),
-                                     map2=self.multiply_window(z_bin2['window'],z_bin4['window']),
-                                     lmax=self.window_lmax
-                            )[self.window_l]
-
-            if corr[0]==corr[2] and indxs[0]==indxs[2]: #noise X cl
-                win[1324]['Ncl']=hp.anafast(map1=z_bin1['window'],
-                                     map2=self.multiply_window(z_bin2['window'],z_bin4['window']),
-                                     lmax=self.window_lmax
-                            )[self.window_l]
-            if corr[1]==corr[3] and indxs[1]==indxs[3]:#noise X cl
-                win[1324]['clN']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin3['window']),
-                                     map2=z_bin2['window'],
-                                     lmax=self.window_lmax
-                            )[self.window_l]
-            if corr[0]==corr[2] and indxs[0]==indxs[2] and corr[1]==corr[3] and indxs[1]==indxs[3]: #noise X noise
-                win[1324]['NN']=hp.anafast(map1=z_bin1['window'],
-                                     map2=z_bin2['window'],
-                                     lmax=self.window_lmax
-                            )[self.window_l]
-
-            win[1423]['clcl']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin4['window']),
-                                     map2=self.multiply_window(z_bin2['window'],z_bin3['window']),
-                                     lmax=self.window_lmax
-                                )[self.window_l]
-
-            if corr[0]==corr[3] and indxs[0]==indxs[3]: #noise14 X cl
-                win[1423]['Ncl']=hp.anafast(map1=z_bin1['window'],
-                                     map2=self.multiply_window(z_bin2['window'],z_bin3['window']),
-                                     lmax=self.window_lmax
-                            )[self.window_l]
-            if corr[1]==corr[2] and indxs[1]==indxs[2]:#noise23 X cl
-                win[1423]['clN']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin4['window']),
-                                     map2=z_bin2['window'],
-                                     lmax=self.window_lmax
-                            )[self.window_l]
-            if corr[0]==corr[3] and indxs[0]==indxs[3] and corr[1]==corr[2] and indxs[1]==indxs[2]: #noise X noise
-                win[1423]['NN']=hp.anafast(map1=z_bin1['window'],
-                                     map2=z_bin2['window'],
-                                     lmax=self.window_lmax
-                            )[self.window_l]
-
-
-            win['binning_util']=None
-            win['bin_wt']=bin_wt_cl
-#             if self.bin_window:  #FIXME: this will be used to get an approximation, because we donot save unbinned covariance
-        t3=time.time()   
-        win['f_sky12'],mask12=self.mask_comb(z_bin1['window'],z_bin2['window'],
-                                     )#For SSC
-        win['f_sky34'],mask34=self.mask_comb(z_bin3['window'],z_bin4['window']
-                                     )
-        win['mask_comb_cl']=hp.anafast(map1=mask12,
-                                 map2=mask34,
-                                 lmax=self.window_lmax
-                            ) #based on 4.34 of https://arxiv.org/pdf/1711.07467.pdf
-        win['Om_w12']=win['f_sky12']*4*np.pi
-        win['Om_w34']=win['f_sky34']*4*np.pi
-        del mask12,mask34
-        win['M']={1324:{},1423:{}}
-
-        for k in win[1324].keys():
-            win['M'][1324][k]={wp:{} for wp in W_pm[1324]}
-        for k in win[1423].keys():
-            win['M'][1423][k]={wp:{} for wp in W_pm[1423]}
-
-        win['xi']={12:{},34:{}}
-        win['xi_b']={12:{},34:{}}
-        win['xi_b_th']={12:{},34:{}}
-        cl12={}
-        cl34={}
-        if self.do_xi:
-                k='clcl'
-                cl12[k]=hp.anafast(map1=z_bin1['window'],map2=z_bin2['window'],lmax=self.window_lmax
-                        )[self.window_l]
-                cl34[k]=hp.anafast(map1=z_bin3['window'],map2=z_bin4['window'],lmax=self.window_lmax
-                        )[self.window_l]
-                if corr[0]==corr[2] and indxs[0]==indxs[2]: #noise X cl
-                    k='Ncl'
-                    m1=np.sqrt(z_bin1['window'])
-                    m3=np.sqrt(z_bin3['window'])
-                    m1[z_bin1['window']==hp.UNSEEN]=hp.UNSEEN
-                    m3[z_bin3['window']==hp.UNSEEN]=hp.UNSEEN
-                    cl12[k]=hp.anafast(map1=m1,map2=z_bin2['window'],lmax=self.window_lmax
-                            )[self.window_l]
-                    cl34[k]=hp.anafast(map1=m3,map2=z_bin4['window'],lmax=self.window_lmax
-                            )[self.window_l]
-                if corr[1]==corr[3] and indxs[1]==indxs[3]:#noise X cl
-                    k='clN'
-                    m2=np.sqrt(z_bin2['window'])
-                    m4=np.sqrt(z_bin4['window'])
-                    m2[z_bin2['window']==hp.UNSEEN]=hp.UNSEEN
-                    m4[z_bin4['window']==hp.UNSEEN]=hp.UNSEEN
-                    cl12[k]=hp.anafast(map1=m2,map2=z_bin1['window'],lmax=self.window_lmax
-                            )[self.window_l]
-                    cl34[k]=hp.anafast(map1=m4,map2=z_bin3['window'],lmax=self.window_lmax
-                            )[self.window_l]
-                if corr[0]==corr[2] and indxs[0]==indxs[2] and corr[1]==corr[3] and indxs[1]==indxs[3]: #noise X noise
-                    k='NN'
-                    m2=np.sqrt(z_bin2['window'])
-                    m4=np.sqrt(z_bin4['window'])
-                    m1=np.sqrt(z_bin1['window'])
-                    m3=np.sqrt(z_bin3['window'])
-                    m1[z_bin1['window']==hp.UNSEEN]=hp.UNSEEN
-                    m3[z_bin3['window']==hp.UNSEEN]=hp.UNSEEN
-                    m2[z_bin2['window']==hp.UNSEEN]=hp.UNSEEN
-                    m4[z_bin4['window']==hp.UNSEEN]=hp.UNSEEN
-                    cl12[k]=hp.anafast(map1=m2,map2=m1,lmax=self.window_lmax
-                            )[self.window_l]
-                    cl34[k]=hp.anafast(map1=m4,map2=m3,lmax=self.window_lmax
-                            )[self.window_l]
-                for k in cl12.keys():
-                    th,win['xi'][12][k]=self.WT.projected_correlation(cl=cl12[k],**WT_kwargs)
-                    th,win['xi'][34][k]=self.WT.projected_correlation(cl=cl34[k],**WT_kwargs)
-                    if self.bin_theta_window:
-                        win['xi'][12][k]=self.binning.bin_1d(xi=win['xi'][12][k],bin_utils=xi_bin_utils)
-                        win['xi'][34][k]=self.binning.bin_1d(xi=win['xi'][34][k],bin_utils=xi_bin_utils)
-#             if self.bin_theta_window: #FIXME: Following NEEDS fixing
-#                 for s1 in self.s1_s2s[corr1]:
-#                     for s2 in self.s1_s2s[corr2]:
-#                         bin_wt_xi={}
-#                         bin_wt_xi['xi12']=xi0[corr1][s1][indxs1]
-#                         bin_wt_xi['xi34']=xi0[corr2][s2][indxs2]
-#                         bin_wt_xi['xi_b12']=xi_b[corr1][s1][indxs1]
-#                         bin_wt_xi['xi_b34']=xi_b[corr2][s2][indxs2]
-
-                
-#                         bin_wt_xi1324={'wt0':np.sqrt(bin_wt_xi['xi12']*bin_wt_xi['xi34'])} 
-#                         bin_wt_xi1324['wt_b']=1./np.sqrt(bin_wt_xi['xi_b12']*bin_wt_xi['xi_b34'])
-#                         bin_wt_xi1423=bin_wt_xi1324 #{'wt0':np.sqrt(win['bin_wt']['cl14']*win['bin_wt']['cl23'])} 
-# #                         bin_wt_xi1423['wt_b']=1./np.sqrt(win['bin_wt']['cl_b14']*win['bin_wt']['cl_b23'])
-#                         win['xi_b_th'][1324]['bin_wt_xi1324']=bin_wt_xi1324
-#                         win['xi_b_th'][1423]['bin_wt_xi1423']=bin_wt_xi1423
-#                         for k in win[1324].keys():
-#                             win['xi_b_th'][1324][k][s1+s2]=self.binnings.bin_2d_coupling(M=win['xi'][1324][k],bin_utils=self.xi_bin_utils[s1],
-#                             partial_bin_side=None,lm=None,lm_step=None,wt0=bin_wt_xi1324['wt0'],wt_b=bin_wt_xi1324['wt_b'],cov=False)
-#                         for k in win[1423].keys():
-#                             win['xi_b_th'][1423][k][s1+s2]=self.binnings.bin_2d_coupling(M=win['xi'][1423][k],bin_utils=self.xi_bin_utils[s1],
-#                             partial_bin_side=None,lm=None,lm_step=None,wt0=bin_wt_xi1423['wt0'],wt_b=bin_wt_xi1423['wt_b'],cov=False)
-
-        win['W_pm']=W_pm
-        win['s1s2']=s1s2s
-#         print('get_window_power_cov, times',t1-t0,t2-t0,time.time()-t0)
-#         print('get_window_power_cov, size',get_size_pickle(win),get_size_pickle(z_bin1),time.time()-t0)
-        return win
 
     def get_cov_coupling_lm(self,corr_indxs,win_all,lm,wig_3j_2,mf_pm,cl_bin_utils=None):
         """
@@ -985,12 +703,17 @@ class window_utils():
                 self.xi0=scatter_dict(self.xi0,scheduler_info=self.scheduler_info,broadcast=True,depth=2)
                 self.xi_b=scatter_dict(self.xi_b,scheduler_info=self.scheduler_info,broadcast=True,depth=2)
 
-                
+        self.cov_keys=[]
+        Win_cov=None
+        if self.do_cov:
+            for corr in self.cov_indxs.keys():
+                self.cov_keys+=[corr+indx for indx in self.cov_indxs[corr]]
+        WU=client.scatter(self,broadcast=True)
         if use_bag:
             z_bin1=dask.bag.from_sequence( [z_bins[ck[0]][ck[2]] for ck in self.cl_keys ],npartitions=npartitions)
             z_bin2=dask.bag.from_sequence( [z_bins[ck[1]][ck[3]] for ck in self.cl_keys ],npartitions=npartitions)
-            Win_cl=self.cl_bag.map(self.get_window_power_cl,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,z_bin1=z_bin1,z_bin2=z_bin2,
-                                        WT_kwargs=WT_kwargs['cl'],xi_bin_utils=xi_bin_utils)
+            Win_cl=self.cl_bag.map(get_window_power_cl,WU,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,z_bin1=z_bin1,z_bin2=z_bin2,
+                                        WT_kwargs=WT_kwargs['cl'],xi_bin_utils=xi_bin_utils) #FIXME: right ordering of args
 #this can be slow... https://stackoverflow.com/questions/64559993/what-happens-during-dask-client-map-call
         else:
             Win_cl=[]
@@ -999,25 +722,25 @@ class window_utils():
                 indx=(ck[2],ck[3])
                 c_ell0={corr:{indx:self.c_ell0[corr][indx]}} if self.c_ell0 is not None else None
                 c_ell_b={corr:{indx:self.c_ell_b[corr][indx]}}if self.c_ell_b is not None else None
-                Win_cl+=[delayed(self.get_window_power_cl)(ck,c_ell0=c_ell0,c_ell_b=c_ell_b,
+                Win_cl+=[delayed(get_window_power_cl)(ck,WU,c_ell0=c_ell0,c_ell_b=c_ell_b,
                                                            z_bin1=z_bins[ck[0]][ck[2]],z_bin2=z_bins[ck[1]][ck[3]],
                                                            WT_kwargs=WT_kwargs['cl'],
                                                            xi_bin_utils=xi_bin_utils) ]
         print('cl bags done',time.time()-t1,get_size_pickle(self),get_size_pickle(c_ell0),get_size_pickle(WT_kwargs))
-#         dict_size_pickle(self.__dict__,print_prefact='window_cl self size: ',depth=2)
+        dict_size_pickle(self.__dict__,print_prefact='window_cl self size: ',depth=2)
         self.cov_keys=[]
         Win_cov=None
         if self.do_cov:
             for corr in self.cov_indxs.keys():
-                self.cov_keys+=[corr+indx for indx in self.cov_indxs[corr]]
-                self.cov_bag=dask.bag.from_sequence(self.cov_keys,npartitions=npartitions)
+#                 self.cov_keys+=[corr+indx for indx in self.cov_indxs[corr]]
                 if use_bag:
+                    self.cov_bag=dask.bag.from_sequence(self.cov_keys,npartitions=npartitions)
                     z_bin4=dask.bag.from_sequence([ {0:z_bins[ck[0]][ck[4]],
                               1:z_bins[ck[1]][ck[5]],
                               2:z_bins[ck[2]][ck[6]],
                               3:z_bins[ck[3]][ck[7]]}
                             for ck in self.cov_keys],npartitions=npartitions)
-                    Win_cov=self.cov_bag.map(self.get_window_power_cov,
+                    Win_cov=self.cov_bag.map(get_window_power_cov,WU,
                                                   c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,xi0=self.xi0,xi_b=self.xi_b,
                                                  z_bins=z_bin4,WT_kwargs=WT_kwargs['cov'],xi_bin_utils=xi_bin_utils)
                 else:
@@ -1025,12 +748,13 @@ class window_utils():
                     for ck in self.cov_keys:
                         bin_wt_cl=self.cov_binning_cl_wt(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)
                         bin_wt_xi=self.cov_binning_xi_wt(ck,xi0=self.xi0,xi_b=self.xi_b)
-                        Win_cov+=[delayed(self.get_window_power_cov)(ck,bin_wt_cl=bin_wt_cl,bin_wt_xi=bin_wt_xi,
+                        Win_cov+=[delayed(get_window_power_cov)(ck,WU,bin_wt_cl=bin_wt_cl,bin_wt_xi=bin_wt_xi,
                                                                     z_bins={0:z_bins[ck[0]][ck[4]],
                                                                             1:z_bins[ck[1]][ck[5]],
                                                                             2:z_bins[ck[2]][ck[6]],
                                                                             3:z_bins[ck[3]][ck[7]]},
                                                                     WT_kwargs=WT_kwargs['cov'],xi_bin_utils=xi_bin_utils) ]
+                        
                 # ^ is super slow for very large number of covariances. ^^ helps because dask effectively bunches up delayed.
                 # ^ is better for smaller computes. ^^ for very large ones.
                 # FIXME: We can probably implement custom partitions, bunching up covariances from same tracers to make things more efficient.
@@ -1043,25 +767,33 @@ class window_utils():
             if use_bag:
                 client_func=client.persist
             Win_cl=client_func(Win_cl)
-            wait(Win_cl,timeout=200*len(self.cl_keys))
+            wait_futures(Win_cl)
             if not use_bag:
-                Win_cl=client.gather(Win_cl)
-                Win_cl=client.scatter(Win_cl,broadcast=True)
+                client.replicate(Win_cl)
+#                 print('set_window_cl',client.who_has(Win_cl[0]))
+#                 Win_cl=client.gather(Win_cl)
+#                 Win_cl=client.scatter(Win_cl,broadcast=True)
             i_job=0
             if self.do_cov and not use_bag:
                 win_cov_t=[]
                 while i_job<len(self.cov_keys): #large number of jobs can make dask cluster unstable.
-                    win_cov_t+=client_func(Win_cov[i_job:i_job+njobs])
-                    wait(win_cov_t,timeout=200*njobs)
+#                     with cProfile.Profile() as pr:
+                    win_cov_ti=client_func(Win_cov[i_job:i_job+njobs],optimize_graph=True,traverse=False) #optimize_graph=False,traverse=False doesnot help
+                    wait_futures(win_cov_ti)
+                    win_cov_t+=win_cov_ti
                     i_job+=njobs
-#                 Win_cov=win_cov_t
-                Win_cov=client.gather(win_cov_t)
+#                     stats = pstats.Stats(pr).sort_stats('cumtime')
+#                     print('set_window_cl profile ',stats.print_stats())
+                Win_cov=win_cov_t
+                client.replicate(Win_cov)
+#                 Win_cov=client.gather(win_cov_t)
 #                 print('window power size',get_size_pickle(Win_cov))
-                Win_cov=client.scatter(Win_cov,broadcast=True)
+#                 Win_cov=client.scatter(Win_cov,broadcast=True)
             elif self.do_cov and use_bag:
                 Win_cov=client_func(Win_cov)
         self.Win_cov=Win_cov
         self.Win_cl=Win_cl
+        print('set_window_cl done',time.time()-t1)
         
     def combine_coupling_cl_cov(self,win_cl_lm,win_cov_lm):
         Win={}
@@ -1077,19 +809,6 @@ class window_utils():
         if self.do_cov:
             Win['cov']=self.combine_coupling_cov_xi(win_cov)
         return Win
-
-    def get_coupling_lm_all_win(self,Win_cl,Win_cov,lm,wig_3j_2_lm,mf_pm,cl_bin_utils=None):
-        if wig_3j_2_lm is None:
-            wig_3j_2_lm=self.set_wig3j_step_multiplied(lm=lm,sem_lock=self.sem_lock)
-            mf_pm=self.set_window_pm_step(lm=lm)
-
-        Win_lm={}
-        Win_lm['cl']=[self.get_cl_coupling_lm(None,Wc,lm,wig_3j_2_lm,mf_pm,cl_bin_utils=cl_bin_utils) for Wc in Win_cl]
-        if self.do_cov:
-            Win_lm['cov']=[self.get_cov_coupling_lm(None,Wc,lm,wig_3j_2_lm,mf_pm,cl_bin_utils=cl_bin_utils) for Wc in Win_cov]
-        wig_3j_2_lm=None
-        mf_pm=None
-        return Win_lm
     
     def set_store_window(self,corrs=None,corr_indxs=None,client=None,cl_bin_utils=None,use_bag=True):
         """
@@ -1107,6 +826,7 @@ class window_utils():
         self.Win={'cl':{}}
         Win_cl=self.Win_cl
         Win_cov=self.Win_cov
+        WU=client.scatter(self,broadcast=True)
 #         client.replicate(Win_cov)
 #         client.replicate(Win_cl)
 #         print(client.who_has(Win_cl[0]))
@@ -1129,7 +849,7 @@ class window_utils():
                 Win_cl_lm[lm]={}
                 Win_lm[lm]={}
                 
-                Win_lm[lm]=delayed(self.get_coupling_lm_all_win)(Win_cl,Win_cov,lm,None,None,cl_bin_utils=cl_bin_utils)
+                Win_lm[lm]=delayed(get_coupling_lm_all_win)(WU,Win_cl,Win_cov,lm,None,None,cl_bin_utils=cl_bin_utils)
 #                 Win_lm[lm]=delayed(self.get_coupling_lm_all_win)(Win_cl,Win_cov,lm,self.wig_3j_2[lm],self.mf_pm[lm],cl_bin_utils=cl_bin_utils)
 #### Donot delete
                 if self.store_win:  
@@ -1275,3 +995,311 @@ class window_utils():
         for k in keys:
             if hasattr(self,k):
                 del self.__dict__[k]
+
+
+def get_coupling_lm_all_win(WU,Win_cl,Win_cov,lm,wig_3j_2_lm,mf_pm,cl_bin_utils=None):
+    self=WU
+    if wig_3j_2_lm is None:
+        wig_3j_2_lm=self.set_wig3j_step_multiplied(lm=lm,sem_lock=self.sem_lock)
+        mf_pm=self.set_window_pm_step(lm=lm)
+
+    Win_lm={}
+    Win_lm['cl']=[self.get_cl_coupling_lm(None,Wc,lm,wig_3j_2_lm,mf_pm,cl_bin_utils=cl_bin_utils) for Wc in Win_cl]
+    if self.do_cov:
+        Win_lm['cov']=[self.get_cov_coupling_lm(None,Wc,lm,wig_3j_2_lm,mf_pm,cl_bin_utils=cl_bin_utils) for Wc in Win_cov]
+    wig_3j_2_lm=None
+    mf_pm=None
+    return Win_lm
+
+                
+                
+def get_window_power_cl(corr_indxs,WU,c_ell0=None,c_ell_b=None,z_bin1=None,z_bin2=None,
+                       WT_kwargs=None,xi_bin_utils=None):#corr={},indxs={}):
+    """
+    Get the cross power spectra of windows given two tracers.
+    Note that noise and signal have different windows and power spectra for both 
+    cases. 
+    Spin factors and binning weights if needed are also set here.
+    """
+#         print('getting window power cl',WT_kwargs)
+    self=WU
+    corr=(corr_indxs[0],corr_indxs[1])
+    indxs=(corr_indxs[2],corr_indxs[3])
+    win={}
+    win['corr']=corr
+    win['indxs']=indxs
+
+    s1s2=np.absolute(self.s1_s2s[corr]).flatten()
+    W_pm=0
+    if np.sum(s1s2)!=0:
+        W_pm=2 #we only deal with E mode\
+        if corr==('shearB','shearB'):
+            W_pm=-2
+    if self.do_xi:
+        W_pm=0 #for xi estimators, there is no +/-. Note that this will result in wrong thing for pseudo-C_ell.
+                #FIXME: hence pseudo-C_ell and xi together are not supported right now
+
+#         z_bin1=self.z_bins[corr[0]][indxs[0]]
+#         z_bin2=self.z_bins[corr[1]][indxs[1]]
+
+    win[12]={} #to keep some naming uniformity with the covariance window
+    win[12]['cl']=hp.anafast(map1=z_bin1['window'],map2=z_bin2['window'],
+                             lmax=self.window_lmax)[self.window_l]
+
+    if corr[0]==corr[1] and indxs[0]==indxs[1]:
+        map1=np.sqrt(z_bin1['window'])
+        mask=z_bin1['window']==hp.UNSEEN
+        map1[mask]=hp.UNSEEN
+        win[12]['N']=hp.anafast(map1=map1,lmax=self.window_lmax)[self.window_l]
+
+    win['binning_util']=None
+    win['bin_wt']=None
+    if self.bin_window:
+        cl0=c_ell0[corr][indxs]
+        cl_b=c_ell_b[corr][indxs]
+        win['bin_wt']={'wt_b':1./cl_b,'wt0':cl0}
+        if np.all(cl_b==0):#avoid nan
+            win['bin_wt']={'wt_b':cl_b,'wt0':cl0}
+
+    win['W_pm']=W_pm
+    win['s1s2']=s1s2
+    if self.do_xi:
+        th,win['xi']=self.WT.projected_correlation(cl=win[12]['cl'],**WT_kwargs)#this is ~f_sky
+        win['xi_b']=self.binning.bin_1d(xi=win['xi'],bin_utils=xi_bin_utils) #xi_bin_utils[(0,0)]
+
+    win['M']={} #self.coupling_matrix_large(win['cl'], s1s2,wig_3j_2=wig_3j_2,W_pm=W_pm)*(2*self.l[:,None]+1) #FIXME: check ordering
+    win['M_noise']=None
+    return win
+
+
+
+def get_window_power_cov(corr_indxs,WU,bin_wt_cl=None,bin_wt_xi=None,z_bins={},
+                        WT_kwargs=None,xi_bin_utils=None):#corr1=None,corr2=None,indxs1=None,indxs2=None):
+    """
+    Compute window power spectra what will be used in the covariance calculations. 
+    For covariances, we have four windows. Pairs of them are first multiplied together and
+    then a power spectra is computed. 
+    Separate calculations are done for different combinations of tracers (13-24 and 14-23) which
+    are further split into different combinations of noise and signal (signal-signal, noise-noise) 
+    and noise-signal.
+    """
+    self=WU
+#         pr = cProfile.Profile()
+#         pr.enable()
+    t0=time.time()
+#         print('getting window power cov',corr_indxs)
+    corr1=(corr_indxs[0],corr_indxs[1])
+    corr2=(corr_indxs[2],corr_indxs[3])
+    indxs1=(corr_indxs[4],corr_indxs[5])
+    indxs2=(corr_indxs[6],corr_indxs[7])
+    win={}
+    corr=corr1+corr2
+    indxs=indxs1+indxs2
+    win['corr1']=corr1
+    win['corr2']=corr2
+    win['indxs1']=indxs1
+    win['indxs2']=indxs2
+    win['corr_indxs']=corr_indxs
+
+    def get_window_spins(cov_indxs=[(0,2),(1,3)]):    #W +/- factors based on spin
+        W_pm=[0]
+        if self.do_xi:
+            return W_pm#for xi estimators, there is no +/-. Note that this will result in wrong thing for pseudo-C_ell.
+                #FIXME: hence pseudo-C_ell and xi together are not supported right now
+
+        s=[np.sum(self.s1_s2s[corr1]),np.sum(self.s1_s2s[corr2])]
+
+        if s[0]==2 and s[1]==2: #gE,gE
+            W_pm=[2]
+        elif 4 in s and 2 in s: #EE,gE
+            W_pm=[2]
+        elif 0 in s and 2 in s: #gg,gE
+            W_pm=[2]
+        elif 4 in s and 0 in s: #EE,gg
+            W_pm=[2]
+            for i in np.arange(2):
+                if indxs[cov_indxs[i][0]]==indxs[cov_indxs[i][1]] and s[i]==4: #auto correlation, include B modes
+                    W_pm=[2,-2]
+        elif s[0]==4 and s[1]==4: #EE,EE
+            W_pm=[2]
+            for i in np.arange(2):
+                if indxs[cov_indxs[i][0]]==indxs[cov_indxs[i][1]] and s[i]==4: #auto correlation, include B modes
+                    W_pm=[2,-2]
+
+        return W_pm
+
+
+    s1s2s={}
+
+    s1s2s[1324]=np.array([self.cov_s1s2s(corr=(corr[0],corr[2])), #13
+                          self.cov_s1s2s(corr=(corr[1],corr[3])) #24
+                          ])
+
+    s1s2s[1423]=np.array([self.cov_s1s2s(corr=(corr[0],corr[3])), #14
+                          self.cov_s1s2s(corr=(corr[1],corr[2])) #23
+                        ])
+
+    W_pm={} #W +/- factors based on spin
+    W_pm[1324]=get_window_spins(cov_indxs=[(0,2),(1,3)])
+    W_pm[1423]=get_window_spins(cov_indxs=[(0,3),(1,2)])
+
+    z_bin1=z_bins[0]
+    z_bin2=z_bins[1]
+    z_bin3=z_bins[2]
+    z_bin4=z_bins[3]
+#         z_bin1=self.z_bins[corr[0]][indxs[0]]
+#         z_bin2=self.z_bins[corr[1]][indxs[1]]
+#         z_bin3=self.z_bins[corr[2]][indxs[2]]
+#         z_bin4=self.z_bins[corr[3]][indxs[3]]
+    t1=time.time()
+    win[1324]={}
+    win[1423]={}
+    t2=time.time()   
+    if self.do_pseudo_cl:
+        win[1324]['clcl']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin3['window']),
+                                 map2=self.multiply_window(z_bin2['window'],z_bin4['window']),
+                                 lmax=self.window_lmax
+                        )[self.window_l]
+
+        if corr[0]==corr[2] and indxs[0]==indxs[2]: #noise X cl
+            win[1324]['Ncl']=hp.anafast(map1=z_bin1['window'],
+                                 map2=self.multiply_window(z_bin2['window'],z_bin4['window']),
+                                 lmax=self.window_lmax
+                        )[self.window_l]
+        if corr[1]==corr[3] and indxs[1]==indxs[3]:#noise X cl
+            win[1324]['clN']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin3['window']),
+                                 map2=z_bin2['window'],
+                                 lmax=self.window_lmax
+                        )[self.window_l]
+        if corr[0]==corr[2] and indxs[0]==indxs[2] and corr[1]==corr[3] and indxs[1]==indxs[3]: #noise X noise
+            win[1324]['NN']=hp.anafast(map1=z_bin1['window'],
+                                 map2=z_bin2['window'],
+                                 lmax=self.window_lmax
+                        )[self.window_l]
+
+        win[1423]['clcl']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin4['window']),
+                                 map2=self.multiply_window(z_bin2['window'],z_bin3['window']),
+                                 lmax=self.window_lmax
+                            )[self.window_l]
+
+        if corr[0]==corr[3] and indxs[0]==indxs[3]: #noise14 X cl
+            win[1423]['Ncl']=hp.anafast(map1=z_bin1['window'],
+                                 map2=self.multiply_window(z_bin2['window'],z_bin3['window']),
+                                 lmax=self.window_lmax
+                        )[self.window_l]
+        if corr[1]==corr[2] and indxs[1]==indxs[2]:#noise23 X cl
+            win[1423]['clN']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin4['window']),
+                                 map2=z_bin2['window'],
+                                 lmax=self.window_lmax
+                        )[self.window_l]
+        if corr[0]==corr[3] and indxs[0]==indxs[3] and corr[1]==corr[2] and indxs[1]==indxs[2]: #noise X noise
+            win[1423]['NN']=hp.anafast(map1=z_bin1['window'],
+                                 map2=z_bin2['window'],
+                                 lmax=self.window_lmax
+                        )[self.window_l]
+
+
+        win['binning_util']=None
+        win['bin_wt']=bin_wt_cl
+#             if self.bin_window:  #FIXME: this will be used to get an approximation, because we donot save unbinned covariance
+    t3=time.time()   
+    win['f_sky12'],mask12=self.mask_comb(z_bin1['window'],z_bin2['window'],
+                                 )#For SSC
+    win['f_sky34'],mask34=self.mask_comb(z_bin3['window'],z_bin4['window']
+                                 )
+    win['mask_comb_cl']=hp.anafast(map1=mask12,
+                             map2=mask34,
+                             lmax=self.window_lmax
+                        ) #based on 4.34 of https://arxiv.org/pdf/1711.07467.pdf
+    win['Om_w12']=win['f_sky12']*4*np.pi
+    win['Om_w34']=win['f_sky34']*4*np.pi
+    del mask12,mask34
+    win['M']={1324:{},1423:{}}
+
+    for k in win[1324].keys():
+        win['M'][1324][k]={wp:{} for wp in W_pm[1324]}
+    for k in win[1423].keys():
+        win['M'][1423][k]={wp:{} for wp in W_pm[1423]}
+
+    win['xi']={12:{},34:{}}
+    win['xi_b']={12:{},34:{}}
+    win['xi_b_th']={12:{},34:{}}
+    cl12={}
+    cl34={}
+    if self.do_xi:
+            k='clcl'
+            cl12[k]=hp.anafast(map1=z_bin1['window'],map2=z_bin2['window'],lmax=self.window_lmax
+                    )[self.window_l]
+            cl34[k]=hp.anafast(map1=z_bin3['window'],map2=z_bin4['window'],lmax=self.window_lmax
+                    )[self.window_l]
+            if corr[0]==corr[2] and indxs[0]==indxs[2]: #noise X cl
+                k='Ncl'
+                m1=np.sqrt(z_bin1['window'])
+                m3=np.sqrt(z_bin3['window'])
+                m1[z_bin1['window']==hp.UNSEEN]=hp.UNSEEN
+                m3[z_bin3['window']==hp.UNSEEN]=hp.UNSEEN
+                cl12[k]=hp.anafast(map1=m1,map2=z_bin2['window'],lmax=self.window_lmax
+                        )[self.window_l]
+                cl34[k]=hp.anafast(map1=m3,map2=z_bin4['window'],lmax=self.window_lmax
+                        )[self.window_l]
+            if corr[1]==corr[3] and indxs[1]==indxs[3]:#noise X cl
+                k='clN'
+                m2=np.sqrt(z_bin2['window'])
+                m4=np.sqrt(z_bin4['window'])
+                m2[z_bin2['window']==hp.UNSEEN]=hp.UNSEEN
+                m4[z_bin4['window']==hp.UNSEEN]=hp.UNSEEN
+                cl12[k]=hp.anafast(map1=m2,map2=z_bin1['window'],lmax=self.window_lmax
+                        )[self.window_l]
+                cl34[k]=hp.anafast(map1=m4,map2=z_bin3['window'],lmax=self.window_lmax
+                        )[self.window_l]
+            if corr[0]==corr[2] and indxs[0]==indxs[2] and corr[1]==corr[3] and indxs[1]==indxs[3]: #noise X noise
+                k='NN'
+                m2=np.sqrt(z_bin2['window'])
+                m4=np.sqrt(z_bin4['window'])
+                m1=np.sqrt(z_bin1['window'])
+                m3=np.sqrt(z_bin3['window'])
+                m1[z_bin1['window']==hp.UNSEEN]=hp.UNSEEN
+                m3[z_bin3['window']==hp.UNSEEN]=hp.UNSEEN
+                m2[z_bin2['window']==hp.UNSEEN]=hp.UNSEEN
+                m4[z_bin4['window']==hp.UNSEEN]=hp.UNSEEN
+                cl12[k]=hp.anafast(map1=m2,map2=m1,lmax=self.window_lmax
+                        )[self.window_l]
+                cl34[k]=hp.anafast(map1=m4,map2=m3,lmax=self.window_lmax
+                        )[self.window_l]
+            for k in cl12.keys():
+                th,win['xi'][12][k]=self.WT.projected_correlation(cl=cl12[k],**WT_kwargs)
+                th,win['xi'][34][k]=self.WT.projected_correlation(cl=cl34[k],**WT_kwargs)
+                if self.bin_theta_window:
+                    win['xi'][12][k]=self.binning.bin_1d(xi=win['xi'][12][k],bin_utils=xi_bin_utils)
+                    win['xi'][34][k]=self.binning.bin_1d(xi=win['xi'][34][k],bin_utils=xi_bin_utils)
+#             if self.bin_theta_window: #FIXME: Following NEEDS fixing
+#                 for s1 in self.s1_s2s[corr1]:
+#                     for s2 in self.s1_s2s[corr2]:
+#                         bin_wt_xi={}
+#                         bin_wt_xi['xi12']=xi0[corr1][s1][indxs1]
+#                         bin_wt_xi['xi34']=xi0[corr2][s2][indxs2]
+#                         bin_wt_xi['xi_b12']=xi_b[corr1][s1][indxs1]
+#                         bin_wt_xi['xi_b34']=xi_b[corr2][s2][indxs2]
+
+
+#                         bin_wt_xi1324={'wt0':np.sqrt(bin_wt_xi['xi12']*bin_wt_xi['xi34'])} 
+#                         bin_wt_xi1324['wt_b']=1./np.sqrt(bin_wt_xi['xi_b12']*bin_wt_xi['xi_b34'])
+#                         bin_wt_xi1423=bin_wt_xi1324 #{'wt0':np.sqrt(win['bin_wt']['cl14']*win['bin_wt']['cl23'])} 
+# #                         bin_wt_xi1423['wt_b']=1./np.sqrt(win['bin_wt']['cl_b14']*win['bin_wt']['cl_b23'])
+#                         win['xi_b_th'][1324]['bin_wt_xi1324']=bin_wt_xi1324
+#                         win['xi_b_th'][1423]['bin_wt_xi1423']=bin_wt_xi1423
+#                         for k in win[1324].keys():
+#                             win['xi_b_th'][1324][k][s1+s2]=self.binnings.bin_2d_coupling(M=win['xi'][1324][k],bin_utils=self.xi_bin_utils[s1],
+#                             partial_bin_side=None,lm=None,lm_step=None,wt0=bin_wt_xi1324['wt0'],wt_b=bin_wt_xi1324['wt_b'],cov=False)
+#                         for k in win[1423].keys():
+#                             win['xi_b_th'][1423][k][s1+s2]=self.binnings.bin_2d_coupling(M=win['xi'][1423][k],bin_utils=self.xi_bin_utils[s1],
+#                             partial_bin_side=None,lm=None,lm_step=None,wt0=bin_wt_xi1423['wt0'],wt_b=bin_wt_xi1423['wt_b'],cov=False)
+
+    win['W_pm']=W_pm
+    win['s1s2']=s1s2s
+#         pr.disable()
+#         stats = pstats.Stats(pr).sort_stats('cumtime')
+#         print('get_window_power_cov prof ',stats.print_stats())
+#         print('get_window_power_cov, times',t1-t0,t2-t0,time.time()-t0)
+#         print('get_window_power_cov, size',get_size_pickle(win),get_size_pickle(z_bin1),time.time()-t0)
+    return win

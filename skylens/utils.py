@@ -1,6 +1,6 @@
-import sys, os, gc, threading, subprocess,pickle,multiprocessing,dask
+import sys, os, gc, threading, subprocess,pickle,multiprocessing,dask,time
 import numpy as np
-from dask.distributed import Client,get_client
+from dask.distributed import Client,get_client,wait
 from distributed import LocalCluster
 from collections.abc import Mapping #to check for dicts
 from distributed.client import Future
@@ -96,8 +96,9 @@ def scatter_dict(dic,scheduler_info=None,depth=2,broadcast=False,return_workers=
                 dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
                 workers=list(client.who_has(dic[k]).values())[0]
             else:
-                if isinstance(dic[k], np.ma.MaskedArray):
-                    print('scatter-dict got masked array: ',k,type(dic[k]),' will be scattered with filled values ')
+                if isinstance(dic[k], np.ma.MaskedArray): #there is a numpy bug that creates problems inside dask scatter.
+                        #https://github.com/numpy/numpy/issues/10217
+#                     print('scatter-dict got masked array: ',k,type(dic[k]),' will be scattered with filled values ')
                     dic[k]=client.scatter(dic[k].filled(),broadcast=broadcast,workers=workers)
                 else:
                     dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
@@ -106,6 +107,13 @@ def scatter_dict(dic,scheduler_info=None,depth=2,broadcast=False,return_workers=
     if return_workers:
         return dic,workers
     return dic
+
+def wait_futures(futures,sleep_time=1):
+#     wait(futures,timeout=200*len(futures))
+    all_done=False
+    while not all_done:
+        time.sleep(sleep_time)
+        all_done=np.all([future.status=='finished' for future in futures])
 
 def gather_dict(dic,scheduler_info=None,depth=0): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
                                                     #we can use client.who_has()

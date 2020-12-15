@@ -1,4 +1,5 @@
 import yaml
+import types
 import astropy.cosmology
 from skylens.wigner_transform import *
 from skylens.utils import *
@@ -37,6 +38,8 @@ def parse_dict(dic={}):
     skylens_kwargs={}
     for k in skylens_args_names:
         skylens_kwargs[k]=dic.get(k)
+        if isinstance(skylens_kwargs[k],types.ModuleType):
+            skylens_kwargs[k]=None #remove objects obtained from imports
     return skylens_kwargs
         
 def parse_python(file_name=None):

@@ -67,6 +67,8 @@ class Angular_power_spectra():
         """
         if pk_params is None:
             pk_params=self.PS.pk_params
+        if cosmo_params is None:
+            cosmo_params=self.PS.cosmo_params
         if self.clz is not None:
             if pk_params ==self.PS.pk_params and cosmo_params==self.PS.cosmo_params:
 #                 print('angular_power_z: Pk same as before, not recomputing')

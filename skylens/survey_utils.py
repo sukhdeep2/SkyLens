@@ -76,13 +76,13 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None):
     
     return zs,p_zs
 
-def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False,scheduler_info=None,mask=None):
+def set_window(shear_zbins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False,scheduler_info=None,mask=None):
     from skylens.skylens_main import Skylens
     w_lmax=3*nside-1
     l0=np.arange(3*nside-1,dtype='int')
     corr=('galaxy','galaxy')
     
-    kappa0=Skylens(galaxy_zbins=zs_bins,do_cov=False,bin_cl=False,l_bins=None,l=l0,use_window=False,
+    kappa0=Skylens(galaxy_zbins=shear_zbins,do_cov=False,bin_cl=False,l_bins=None,l=l0,use_window=False,
                    corrs=[corr],f_sky=f_sky,scheduler_info=scheduler_info)
     cl0G=kappa0.cl_tomo()
     
@@ -97,26 +97,26 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
     cl_map0=hp.ma(np.ones(npix0))
     cl_map0[~mask]=hp.UNSEEN
 
-#     zs_bins['mask']=cl_map0
-#     zs_bins['window0_alm']=hp.map2alm(cl_map0)
+#     shear_zbins['mask']=cl_map0
+#     shear_zbins['window0_alm']=hp.map2alm(cl_map0)
 
     if scheduler_info is None:
         client=get_client()
     else:
         client=get_client(address=scheduler_info['address'])
     
-    for i in np.arange(zs_bins['n_bins']):
+    for i in np.arange(shear_zbins['n_bins']):
         cl_i=client.compute(cl0G['cl'][corr][(i,i)]).result()
         if np.any(np.isnan(cl_i)):
             print('survey utils, set_window:',cl_i)
-#             print(zs_bins[i])
+#             print(shear_zbins[i])
 #             print(client.compute(cl0G['zkernel']['galaxy'][i]).result())
             crash
         if unit_win:
             cl_map=hp.ma(np.ones(12*nside*nside))
 #             cl_i=1
         else:            
-            cl_i+=zs_bins['SN']['galaxy'][:,i,i]
+            cl_i+=shear_zbins['SN']['galaxy'][:,i,i]
 #             alms_i=hp.sphtfunc.synalm(cl_i,lmax=w_lmax,)
             if window_cl_fact is not None:
 #                 alms_i=hp.sphtfunc.almxfl(alms_i,window_cl_fact)
@@ -132,15 +132,15 @@ def set_window(zs_bins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=No
         cl_map_noise=np.sqrt(cl_map)
         cl_map_noise[~mask]=hp.UNSEEN
         # cl_map.mask=mask
-        zs_bins[i]['window_cl0']=cl_i
-        zs_bins[i]['window']=cl_map
-#         zs_bins[i]['window_alm']=hp.map2alm(cl_map)
-#         zs_bins[i]['window_alm_noise']=hp.map2alm(cl_map_noise)
+        shear_zbins[i]['window_cl0']=cl_i
+        shear_zbins[i]['window']=cl_map
+#         shear_zbins[i]['window_alm']=hp.map2alm(cl_map)
+#         shear_zbins[i]['window_alm_noise']=hp.map2alm(cl_map_noise)
     del cl0G,kappa0
-    return zs_bins
+    return shear_zbins
 
 
-def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
+def zbin_pz_norm(shear_zbins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
                  AI_z=0,mag_fact=0,shear_m_bias=1,k_max=0.3):
     dzs=np.gradient(zs) if len(zs)>1 else 1
 
@@ -158,24 +158,24 @@ def zbin_pz_norm(zs_bins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
     x= p_zs>-1 #1.e-10
     if x.sum()==0:
         print('zbin_pz_norm cutting z',zs,p_zs)
-    zs_bins[i]['z']=zs[x]
-    zs_bins[i]['dz']=np.gradient(zs_bins[i]['z']) if len(zs_bins[i]['z'])>1 else 1
-    zs_bins[i]['nz']=nz[x]
-    zs_bins[i]['ns']=ns
-    zs_bins[i]['W']=1.
-    zs_bins[i]['pz']=p_zs[x]*zs_bins[i]['W']
-    zs_bins[i]['pzdz']=zs_bins[i]['pz']*zs_bins[i]['dz']
-    zs_bins[i]['Norm']=np.sum(zs_bins[i]['pzdz'])
-    zs_bins[i]['b1']=bg1
-    zs_bins[i]['bz1']=bg1*np.ones_like(zs_bins[i]['pz'])
-    zs_bins[i]['AI']=AI
-    zs_bins[i]['AI_z']=AI_z
-    zs_bins[i]['mag_fact']=mag_fact
-    zs_bins[i]['shear_m_bias']=shear_m_bias #default value is 1. This is really 1+m
-    zm=np.sum(zs_bins[i]['z']*zs_bins[i]['pzdz'])/zs_bins[i]['Norm']
-    zs_bins[i]['lm']=k_max*cosmo_h.comoving_transverse_distance(zm).value
-    zs_bins[i]['k_max']=k_max
-    return zs_bins
+    shear_zbins[i]['z']=zs[x]
+    shear_zbins[i]['dz']=np.gradient(shear_zbins[i]['z']) if len(shear_zbins[i]['z'])>1 else 1
+    shear_zbins[i]['nz']=nz[x]
+    shear_zbins[i]['ns']=ns
+    shear_zbins[i]['W']=1.
+    shear_zbins[i]['pz']=p_zs[x]*shear_zbins[i]['W']
+    shear_zbins[i]['pzdz']=shear_zbins[i]['pz']*shear_zbins[i]['dz']
+    shear_zbins[i]['Norm']=np.sum(shear_zbins[i]['pzdz'])
+    shear_zbins[i]['b1']=bg1
+    shear_zbins[i]['bz1']=bg1*np.ones_like(shear_zbins[i]['pz'])
+    shear_zbins[i]['AI']=AI
+    shear_zbins[i]['AI_z']=AI_z
+    shear_zbins[i]['mag_fact']=mag_fact
+    shear_zbins[i]['shear_m_bias']=shear_m_bias #default value is 1. This is really 1+m
+    zm=np.sum(shear_zbins[i]['z']*shear_zbins[i]['pzdz'])/shear_zbins[i]['Norm']
+    shear_zbins[i]['lm']=k_max*cosmo_h.comoving_transverse_distance(zm).value
+    shear_zbins[i]['k_max']=k_max
+    return shear_zbins
 
 
 def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,scheduler_info=None,
@@ -192,7 +192,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
                 tomography is based on lens redshift, then this arrays contains those redshifts.
         ns: The number density for each bin to compute shape noise.
     """
-    zs_bins={}
+    shear_zbins={}
 
     if nz_bins is None:
         nz_bins=1
@@ -204,7 +204,8 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
         sigma_max=0
         if zp_sigma is not None:
             sigma_max=max(np.atleast_1d(zp_sigma))*5
-        zs=np.linspace( max(0.01,min(zp)-sigma_max), max(zp)+sigma_max,len(zp)+2)#n_zs)
+#         zs=np.linspace( max(0.01,min(zp)-sigma_max), max(zp)+sigma_max,len(zp)+2)#n_zs)
+        zs=np.linspace(min(zp),z_true_max,n_zs)
         zs=zs[zs<=z_true_max]
     print('source_tomo_bins, zmax',zs.max(),max(zp),sigma_max)
     dzs=np.gradient(zs)
@@ -218,15 +219,15 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     zmax=max(z_bins)
 
     l=[1] if l is None else l
-    zs_bins['SN']={}
-    zs_bins['SN']['galaxy']=np.zeros((len(l),nz_bins,nz_bins))
-    zs_bins['SN']['shear']=np.zeros((len(l),nz_bins,nz_bins))
-    zs_bins['SN']['kappa']=np.zeros((len(l),nz_bins,nz_bins))
+    shear_zbins['SN']={}
+    shear_zbins['SN']['galaxy']=np.zeros((len(l),nz_bins,nz_bins))
+    shear_zbins['SN']['shear']=np.zeros((len(l),nz_bins,nz_bins))
+    shear_zbins['SN']['kappa']=np.zeros((len(l),nz_bins,nz_bins))
 
     pop_keys=[]
 
     for i in np.arange(nz_bins):
-        zs_bins[i]={}
+        shear_zbins[i]={}
         indx=zp.searchsorted(z_bins[i:i+2])
 
         if ztrue_func is None:
@@ -242,18 +243,18 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
                             bias=zp_bias[indx[0]:indx[1]],
                             sigma=zp_sigma[indx[0]:indx[1]],zs=zs)
 
-        zs_bins=zbin_pz_norm(zs_bins=zs_bins,bin_indx=i,zs=zs,p_zs=p_zs,ns=ns_i,bg1=bg1,
+        shear_zbins=zbin_pz_norm(shear_zbins=shear_zbins,bin_indx=i,zs=zs,p_zs=p_zs,ns=ns_i,bg1=bg1,
                              AI=AI,AI_z=AI_z,mag_fact=mag_fact,shear_m_bias=shear_m_bias,
                              k_max=k_max)
         #sc=1./lu.sigma_crit(zl=zl_kernel,zs=zs[x],cosmo_h=cosmo_h)
-        #zs_bins[i]['lens_kernel']=np.dot(zs_bins[i]['pzdz'],sc)
+        #shear_zbins[i]['lens_kernel']=np.dot(shear_zbins[i]['pzdz'],sc)
 
-#         print(zmax,zs_bins[i]['z'])
-        if zs_bins[i]['z'].size>0:
-            zmax=max([zmax,max(zs_bins[i]['z'])])
+#         print(zmax,shear_zbins[i]['z'])
+        if shear_zbins[i]['z'].size>0:
+            zmax=max([zmax,max(shear_zbins[i]['z'])])
         else:
             pop_keys+=[i]
-        if zs_bins[i]['Norm']==0:
+        if shear_zbins[i]['Norm']==0:
             print('empty bin',i)
             pop_keys+=[i]
         
@@ -265,36 +266,36 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     #     for i in np.arange(nz_bins):
     #         if i in pop_keys:
     #             continue
-    #         zs_bins[ib]=copy.deepcopy(zs_bins[i])
+    #         shear_zbins[ib]=copy.deepcopy(shear_zbins[i])
     #         ib+=1
         
     #     for i in np.arange(ib,nz_bins):
-    #         del zs_bins[i]
+    #         del shear_zbins[i]
     #     nz_bins-=len(pop_keys)
 
     for i in np.arange(nz_bins):
         if use_shot_noise:
-            zs_bins['SN']['galaxy'][:,i,i]=galaxy_shot_noise_calc(zg1=zs_bins[i],zg2=zs_bins[i])
-            zs_bins['SN']['shear'][:,i,i]=shear_shape_noise_calc(zs1=zs_bins[i],zs2=zs_bins[i],
+            shear_zbins['SN']['galaxy'][:,i,i]=galaxy_shot_noise_calc(zg1=shear_zbins[i],zg2=shear_zbins[i])
+            shear_zbins['SN']['shear'][:,i,i]=shear_shape_noise_calc(zs1=shear_zbins[i],zs2=shear_zbins[i],
                                                                  sigma_gamma=sigma_gamma)
-            zs_bins['SN']['kappa'][:,i,i]=shear_shape_noise_calc(zs1=zs_bins[i],zs2=zs_bins[i],
+            shear_zbins['SN']['kappa'][:,i,i]=shear_shape_noise_calc(zs1=shear_zbins[i],zs2=shear_zbins[i],
                                                                  sigma_gamma=sigma_gamma) #FIXME: This is almost certainly not correct
 
 
-    zs_bins['n_bins']=nz_bins #easy to remember the counts
-#     zs_bins['z_lens_kernel']=zl_kernel
-    zs_bins['zmax']=zmax
-    zs_bins['zp']=zp
-    zs_bins['zs']=zs
-    zs_bins['pz']=p_zp
-    zs_bins['z_bins']=z_bins
-    zs_bins['zp_sigma']=zp_sigma
-    zs_bins['zp_bias']=zp_bias
-    zs_bins['bias_func']='constant_bias'
+    shear_zbins['n_bins']=nz_bins #easy to remember the counts
+#     shear_zbins['z_lens_kernel']=zl_kernel
+    shear_zbins['zmax']=zmax
+    shear_zbins['zp']=zp
+    shear_zbins['zs']=zs
+    shear_zbins['pz']=p_zp
+    shear_zbins['z_bins']=z_bins
+    shear_zbins['zp_sigma']=zp_sigma
+    shear_zbins['zp_bias']=zp_bias
+    shear_zbins['bias_func']='constant_bias'
     if use_window:
-        zs_bins=set_window(zs_bins=zs_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
+        shear_zbins=set_window(shear_zbins=shear_zbins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
                            window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info)
-    return zs_bins
+    return shear_zbins
 
 def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
                         zp_sigma=None,cosmo_h=None,z_bins=None,scheduler_info=None):
@@ -313,16 +314,16 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
 
     z_bins=np.linspace(min(zp),max(zp)*0.9,nz_bins) if z_bins is None else z_bins
 
-    zs_bins0=source_tomo_bins(zp=zp,p_zp=p_zp,zp_bias=zp_bias,zp_sigma=zp_sigma,ns=ns,nz_bins=1,scheduler_info=scheduler_info)
+    shear_zbins0=source_tomo_bins(zp=zp,p_zp=p_zp,zp_bias=zp_bias,zp_sigma=zp_sigma,ns=ns,nz_bins=1,scheduler_info=scheduler_info)
     lu=tracer_utils()
 
     if cosmo_h is None:
         cosmo_h=cosmo_h_PL
 
-    zs=zs_bins0[0]['z']
-    p_zs=zs_bins0[0]['z']
-    dzs=zs_bins0[0]['dz']
-    zs_bins={}
+    zs=shear_zbins0[0]['z']
+    p_zs=shear_zbins0[0]['z']
+    dzs=shear_zbins0[0]['dz']
+    shear_zbins={}
 
     zl=np.linspace(0,2,50)
     sc=1./lu.sigma_crit(zl=zl,zs=zs,cosmo_h=cosmo_h)
@@ -330,23 +331,23 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
 
     for i in np.arange(nz_bins):
         i=np.int(i)
-        zs_bins[i]=copy.deepcopy(zs_bins0[0])
-        zs_bins[i]['W']=1./lu.sigma_crit(zl=z_bins[i],zs=zs,cosmo_h=cosmo_h)
-        zs_bins[i]['W']*=scW
-        zs_bins[i]['pz']*=zs_bins[i]['W']
+        shear_zbins[i]=copy.deepcopy(shear_zbins0[0])
+        shear_zbins[i]['W']=1./lu.sigma_crit(zl=z_bins[i],zs=zs,cosmo_h=cosmo_h)
+        shear_zbins[i]['W']*=scW
+        shear_zbins[i]['pz']*=shear_zbins[i]['W']
 
-        x= zs_bins[i]['pz']>-1 #1.e-10 # FIXME: for shape noise we check equality of 2 z arrays. Thats leads to null shape noise when cross the bins in covariance
+        x= shear_zbins[i]['pz']>-1 #1.e-10 # FIXME: for shape noise we check equality of 2 z arrays. Thats leads to null shape noise when cross the bins in covariance
         for v in ['z','pz','dz','W','nz']:
-            zs_bins[i][v]=zs_bins[i][v][x]
+            shear_zbins[i][v]=shear_zbins[i][v][x]
 
-        zs_bins[i]['pzdz']=zs_bins[i]['pz']*zs_bins[i]['dz']
-        zs_bins[i]['Norm']=np.sum(zs_bins[i]['pzdz'])
-        # zs_bins[i]['pz']/=zs_bins[i]['Norm']
-        zs_bins[i]['lens_kernel']=np.dot(zs_bins[i]['pzdz'],sc)/zs_bins[i]['Norm']
-    zs_bins['n_bins']=nz_bins #easy to remember the counts
-    zs_bins['z_lens_kernel']=zl
-    zs_bins['z_bins']=z_bins
-    return zs_bins
+        shear_zbins[i]['pzdz']=shear_zbins[i]['pz']*shear_zbins[i]['dz']
+        shear_zbins[i]['Norm']=np.sum(shear_zbins[i]['pzdz'])
+        # shear_zbins[i]['pz']/=shear_zbins[i]['Norm']
+        shear_zbins[i]['lens_kernel']=np.dot(shear_zbins[i]['pzdz'],sc)/shear_zbins[i]['Norm']
+    shear_zbins['n_bins']=nz_bins #easy to remember the counts
+    shear_zbins['z_lens_kernel']=zl
+    shear_zbins['z_bins']=z_bins
+    return shear_zbins
 
 
 def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bias=None,
@@ -363,7 +364,7 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
                 tomography is based on lens redshift, then this arrays contains those redshifts.
         ns: The number density for each bin to compute shot noise.
     """
-    zg_bins={}
+    galaxy_zbins={}
 
     if nz_bins is None:
         nz_bins=1
@@ -382,7 +383,7 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
     cosmo_h=cosmo_h_PL
 
     for i in np.arange(nz_bins):
-        zg_bins[i]={}
+        galaxy_zbins[i]={}
         indx=zp.searchsorted(z_bins[i:i+2])
 
         if ztrue_func is None:
@@ -399,44 +400,44 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
                             sigma=zp_sigma[indx[0]:indx[1]],zg=zg,ns=ns_i)
         
         x= p_zg>1.e-10
-        zg_bins[i]['z']=zg[x]
-        zg_bins[i]['dz']=np.gradient(zg_bins[i]['z']) if len(zg_bins[i]['z'])>1 else 1
-        zg_bins[i]['nz']=nz[x]
-        zg_bins[i]['W']=1.
-        zg_bins[i]['pz']=p_zg[x]*zg_bins[i]['W']
-        zg_bins[i]['pzdz']=zg_bins[i]['pz']*zg_bins[i]['dz']
-        zg_bins[i]['Norm']=np.sum(zg_bins[i]['pzdz'])
+        galaxy_zbins[i]['z']=zg[x]
+        galaxy_zbins[i]['dz']=np.gradient(galaxy_zbins[i]['z']) if len(galaxy_zbins[i]['z'])>1 else 1
+        galaxy_zbins[i]['nz']=nz[x]
+        galaxy_zbins[i]['W']=1.
+        galaxy_zbins[i]['pz']=p_zg[x]*galaxy_zbins[i]['W']
+        galaxy_zbins[i]['pzdz']=galaxy_zbins[i]['pz']*galaxy_zbins[i]['dz']
+        galaxy_zbins[i]['Norm']=np.sum(galaxy_zbins[i]['pzdz'])
         
-        zmax=max([zmax,max(zg_bins[i]['z'])])
-    zg_bins['zmax']=zmax
-    zg_bins['n_bins']=nz_bins #easy to remember the counts
+        zmax=max([zmax,max(galaxy_zbins[i]['z'])])
+    galaxy_zbins['zmax']=zmax
+    galaxy_zbins['n_bins']=nz_bins #easy to remember the counts
     if use_window:
-        zg_bins=set_window(zs_bins=zg_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
+        galaxy_zbins=set_window(shear_zbins=galaxy_zbins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
                            window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info
                            )
-    return zg_bins
+    return galaxy_zbins
 
 z_many=np.linspace(0,4,5000)
 
-def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=None,z_bins=None,
+def lsst_source_tomo_bins(zmin=0.1,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=None,z_bins=None,
                           window_cl_fact=None,ztrue_func=ztrue_given_pz_Gaussian,z_true_max=5,z_sigma_power=1,
-                          f_sky=0.3,nside=256,zp=None,pzs=None,use_window=False,mask_start_pix=0,
+                          f_sky=0.3,nside=256,zp=None,pzp=None,use_window=False,mask_start_pix=0,
                           l=None,sigma_gamma=0.26,AI=0,AI_z=0,mag_fact=0,k_max=0.3,
-                          scheduler_info=None,
+                          scheduler_info=None,n_zs=None,
                           unit_win=False,use_shot_noise=True,**kwargs):
 
     z=zp
     if zp is None:
         z=z_many[np.where(np.logical_and(z_many>=zmin, z_many<=zmax))]
-    if pzs is None:
-        pzs=lsst_pz_source(z=z)
-    N1=np.sum(pzs)
+    if pzp is None:
+        pzp=lsst_pz_source(z=z)
+    N1=np.sum(pzp)
 
     x=z>zmin
     x*=z<zmax
     z=z[x]
-    pzs=pzs[x]
-    ns0=ns0*np.sum(pzs)/N1
+    pzp=pzp[x]
+    ns0=ns0*np.sum(pzp)/N1
     print('ns0: ',ns0)
 
     if z_bins is None:
@@ -460,7 +461,8 @@ def lsst_source_tomo_bins(zmin=0.3,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
         except: #FIXME: Ugly
             do_nothing=1
 
-    return source_tomo_bins(zp=z,p_zp=pzs,ns=ns0,nz_bins=nbins,mag_fact=mag_fact,
+    return source_tomo_bins(zp=z,p_zp=pzp,ns=ns0,nz_bins=nbins,mag_fact=mag_fact,
+                            n_zs=n_zs,
                          ztrue_func=ztrue_func,zp_bias=z_bias,window_cl_fact=window_cl_fact,
                         zp_sigma=z_sigma,z_bins=z_bins,f_sky=f_sky,nside=nside,z_true_max=z_true_max,
                            use_window=use_window,mask_start_pix=mask_start_pix,k_max=k_max,
@@ -542,7 +544,7 @@ def DES_lens_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None
     z_bins['nz']=nz
     z_bins['zmax']=zmax
     if use_window:
-        z_bins=set_window(zs_bins=z_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
+        z_bins=set_window(shear_zbins=z_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
                            window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info)
     return z_bins
 
@@ -589,7 +591,7 @@ def DES_bins(fname='~/Cloud/Dropbox/DES/2pt_NG_mcal_final_7_11.fits',l=None,sigm
     z_bins['nz']=nz
     z_bins['zmax']=zmax
     if use_window:
-        z_bins=set_window(zs_bins=z_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
+        z_bins=set_window(shear_zbins=z_bins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
                            window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info)
     return z_bins
 
@@ -627,24 +629,24 @@ def Kids_bins(kids_fname='/home/deep/data/KiDS-450/Nz_DIR/Nz_DIR_Mean/Nz_DIR_z{z
     return z_bins
 
 def cmb_bins(zs=1100,l=None):
-    zs_bins={}
-    zs_bins[0]={}
+    shear_zbins={}
+    shear_zbins[0]={}
 
-    zs_bins=zbin_pz_norm(zs_bins=zs_bins,bin_indx=0,zs=np.atleast_1d(zs),p_zs=np.atleast_1d(1),
+    shear_zbins=zbin_pz_norm(shear_zbins=shear_zbins,bin_indx=0,zs=np.atleast_1d(zs),p_zs=np.atleast_1d(1),
                          ns=0,bg1=1)
-    zs_bins['n_bins']=1 #easy to remember the counts
-    zs_bins['zmax']=[1100]
-    zs_bins['zp_sigma']=0
-    zs_bins['zp_bias']=0
-    zs_bins['nz']=0
+    shear_zbins['n_bins']=1 #easy to remember the counts
+    shear_zbins['zmax']=[1100]
+    shear_zbins['zp_sigma']=0
+    shear_zbins['zp_bias']=0
+    shear_zbins['nz']=0
 
     cmb = StageIVCMB(beam=3., noise=1., lMin=30., lMaxT=3.e3, lMaxP=5.e3)
     cmbLensRec = CMBLensRec(cmb, save=False)
     SN=cmbLensRec.fN_k_mv(l)
-    zs_bins['SN']={}
-    zs_bins['SN']['kappa']=SN.reshape(len(SN),1,1)
-    zs_bins['SN']['galaxy']=SN.reshape(len(SN),1,1)*0
-    return zs_bins
+    shear_zbins['SN']={}
+    shear_zbins['SN']['kappa']=SN.reshape(len(SN),1,1)
+    shear_zbins['SN']['galaxy']=SN.reshape(len(SN),1,1)*0
+    return shear_zbins
 
 
 def combine_zbins(z_bins1={},z_bins2={}):

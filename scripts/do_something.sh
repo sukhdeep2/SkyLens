@@ -1,9 +1,9 @@
 #!/bin/bash -l
 #SBATCH -q RM
-#SBATCH -J test
+#SBATCH -J fish
 #SBATCH -e /verafs/scratch/phy200040p/sukhdeep/job_logs/do_something.err
 #SBATCH -o /verafs/scratch/phy200040p/sukhdeep/job_logs/do_something.out
-#SBATCH -t 20:00:00
+#SBATCH -t 30:00:00
 #SBATCH -N 1
 #SBATCH -n 28
 ##SBATCH -A phy200040p
