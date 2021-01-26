@@ -108,15 +108,35 @@ def scatter_dict(dic,scheduler_info=None,depth=2,broadcast=False,return_workers=
         return dic,workers
     return dic
 
-def wait_futures(futures,sleep_time=1):
+
+def replicate_dict(dic,scheduler_info=None,workers=None,branching_factor=1): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
+    """
+        depth: Need to think this through. It appears dask can see one level of depth when scattering and gathering, but not more.
+    """
+    if dic is None:
+        print('replicate_dict got empty dictionary')
+    else:
+        print('replicate_dict: ',dic)
+        client=client_get(scheduler_info=scheduler_info)
+        if isinstance(dic,dict):
+            for k in dic.keys():
+                dic[k]=replicate_dict(dic[k],scheduler_info=scheduler_info,workers=workers,branching_factor=branching_factor)
+        elif isinstance(dic,Future): #don't want future of future.
+            dic=client.replicate(dic,workers=workers,branching_factor=branching_factor)
+        else:
+            print('replicate_dict: not a future or dict',dic[k])
+    return dic
+
+
+def wait_futures(futures,sleep_time=.05,threshold=0.5):
 #     wait(futures,timeout=200*len(futures))
     all_done=False
     while not all_done:
         time.sleep(sleep_time)
-        all_done=np.all([future.status=='finished' for future in futures])
+        all_done=np.mean([future.status=='finished' for future in futures])>threshold
+#         all_done=np.all([future.status=='finished' for future in futures])
 
-def gather_dict(dic,scheduler_info=None,depth=0): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
-                                                    #we can use client.who_has()
+def gather_dict(dic,scheduler_info=None): 
     """
         depth: Need to think this through. It appears dask can see one level of depth when scattering and gathering, but not more.
     """
@@ -124,11 +144,16 @@ def gather_dict(dic,scheduler_info=None,depth=0): #FIXME: This needs some improv
         print('gather_dict got empty dictionary')
         return dic
     client=client_get(scheduler_info=scheduler_info)
-    for k in dic.keys():
-        if isinstance(dic[k],dict) and depth>0:
-            dic[k]=gather_dict(dic[k],scheduler_info=scheduler_info,depth=depth-1)
-        else:
-            dic[k]=client.gather(dic[k])
+    if isinstance(dic,Future):
+        dic=client.gather(dic) #this may not always be clean for nested dicts
+#     else:
+    if isinstance(dic,dict):
+        for k in dic.keys():
+            if isinstance(dic[k],dict):
+                dic[k]=gather_dict(dic[k],scheduler_info=scheduler_info)
+            elif isinstance(dic[k],Future):
+                dic[k]=client.gather(dic[k])
+                dic[k]=gather_dict(dic[k],scheduler_info=scheduler_info)
     return dic
 
 def client_get(scheduler_info=None):
@@ -169,6 +194,7 @@ def start_client(Scheduler_file=None,local_directory=None,ncpu=None,n_workers=1,
     if n_workers is None:
         n_workers=1
     if Scheduler_file is None:
+        print('Start_client: No scheduler file, will start local cluster at ',local_directory)
                 #     dask_initialize(nthreads=27,local_directory=dask_dir)
                 #     client = Client()
 #         dask.config.set(scheduler='threads')
@@ -178,6 +204,7 @@ def start_client(Scheduler_file=None,local_directory=None,ncpu=None,n_workers=1,
                    )
         client=Client(LC)
     else:
+        print('Start_client: Using scheduler file', Scheduler_file)
         client=Client(scheduler_file=Scheduler_file,processes=False)
     client.wait_for_workers(n_workers=1)
     scheduler_info=client.scheduler_info()

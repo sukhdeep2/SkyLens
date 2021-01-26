@@ -18,7 +18,7 @@ import faulthandler; faulthandler.enable()
     # problem is likely to be in some package
 
 if __name__=='__main__':
-    test=False
+    test=True
 
     Desi=True
     Fmost=False
@@ -97,7 +97,7 @@ if __name__=='__main__':
     #window
     use_window=do_pseudo_cl
     unit_window=False
-    nside=32 #32
+    nside=1024 #32
     window_lmax=nside #30
 
     print('doing nside',nside,window_lmax,use_binned_l)
@@ -141,6 +141,8 @@ if __name__=='__main__':
         l0,l_bins,l=get_cl_ells(lmax_cl=lmax_cl,Nl_bins=Nl_bins,lmin_cl=lmin_cl,bin_cl=bin_cl)
         shear_n_zbins=2
         galaxy_n_zbins=2
+        nside=32
+        window_lmax=nside
         if Desi:
             galaxyD_n_zbins['elg']=1
             galaxyD_n_zbins['lrg']=0
@@ -184,7 +186,7 @@ if __name__=='__main__':
     if use_window and store_win:
         fname_out='win_'+fname_out
         try:
-    #         crash
+#             crash
             with open(fname_win,'rb') as of:
                 WIN=pickle.load(of)
             print('window read')
@@ -196,13 +198,13 @@ if __name__=='__main__':
     fname_cl=file_home+'/cl_cov_'+fname_out
 
     try:
-    #     crash
+#         crash
         with open(fname_cl,'rb') as of:
             cl_all=pickle.load(of)
         cl_L=cl_all['cl_L']
-        cl_L_lsst=cl_all['cl_L_lsst']
+        #cl_L_lsst=cl_all['cl_L_lsst']
         z_bins_kwargs=cl_all['z_bins']
-        z_bins_lsst_kwargs=cl_all['z_bins_lsst']
+        #z_bins_lsst_kwargs=cl_all['z_bins_lsst']
         print('read cl / cov from file: ',fname_cl)
     except Exception as err:
         print('cl not found. Will compute',fname_cl,err)
@@ -248,11 +250,11 @@ if __name__=='__main__':
             pickle.dump(cl_all,of)
 
         if save_win:
-            win_all={'full':client.gather(kappa_class.Win)}#,'lsst':client.gather(kappa_class_lsst.Win)}
+            win_all={'full':gather_dict(kappa_class.Win,scheduler_info=kappa_class.scheduler_info)}#,'lsst':client.gather(kappa_class_lsst.Win)}
             with open(fname_win,'wb') as of:
                 pickle.dump(win_all,of)
             WIN=win_all
-        del kappa_class, kappa_class_lsst
+        del kappa_class  #,kappa_class_lsst
 
     if sparse_cov:
         cov_p_inv_test1=np.linalg.inv(cl_L['cov'].todense())
@@ -286,7 +288,6 @@ if __name__=='__main__':
 #                                               Win=WIN['lsst'],store_win=store_win,do_cov=do_cov,n_zs_shear=n_zs_shear,n_zs_galaxy=n_zs_galaxy,
 #                                               z_bins_kwargs=z_bins_lsst_kwargs,Skylens_kwargs=Skylens_kwargs)#reset after cl,cov calcs
 
-
     # sigma_68=-0.1*(1+z) + 0.12*(1+z)**2 #https://arxiv.org/pdf/1708.01532.pdf
     priors={}
 
@@ -313,6 +314,7 @@ if __name__=='__main__':
     for i in np.arange(10): #photo-z bias
         priors['pz_b_l_'+str(i)]=0.0001
 
+    pp_s=photoz_prior(kappa_class=kappa_class,Skylens_kwargs0=Skylens_kwargs,z_bins_kwargs=z_bins_kwargs,key_label='nz_s_')
     pp_s={}
     for i in np.arange(z_bins_kwargs['shear_zbins']['n_bins']): #photo-z bias
         pp_s[i]=sigma_photoz(z_bins_kwargs['shear_zbins'][i])

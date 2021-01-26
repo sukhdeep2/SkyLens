@@ -438,10 +438,11 @@ class Covariance_utils():
         return G[1324]+G[1423]
 
     
-    def cov_four_kernels(self,z_bins={},clz=None):
+    def cov_four_kernels(self,z_bins={},Ang_PS=None):
         """
         product of four tracer kernels, for non-gaussian covariance.
         """
+        clz=Ang_PS.clz
         zs1=z_bins[0]
         zs2=z_bins[1]
         zs3=z_bins[2]
@@ -506,153 +507,156 @@ class Covariance_utils():
             cov_b=self.binning.bin_2d(cov=cov,bin_utils=cl_bin_utils)
         return cov_b
     
-    def cl_cov(self,zs_indx,z_bins=None,sig_cL=None,cls=None, tracers=[],Win_cov=None,Win_cl1=None,Win_cl2=None,
-               cov_utils=None,clz=None,SN=None,cl_bin_utils=None):
-        """
-            Computes the covariance between any two tomographic power spectra.
-            cls: tomographic cls already computed before calling this function
-            zs_indx: 4-d array, noting the indices of the source bins involved
-            in the tomographic cls for which covariance is computed.
-            For ex. covariance between 12, 56 tomographic cross correlations
-            involve 1,2,5,6 source bins
-        """
-        cov={}
-        cov['z_indx']=zs_indx
-        cov['tracers']=tracers
-        cov['final']=None
+def cl_cov(zs_indx,CU,z_bins=None,sig_cL=None,cls=None, tracers=[],Win_cov=None,Win_cl1=None,Win_cl2=None,
+           cov_utils=None,Ang_PS=None,SN=None,cl_bin_utils=None):
+    """
+        Computes the covariance between any two tomographic power spectra.
+        cls: tomographic cls already computed before calling this function
+        zs_indx: 4-d array, noting the indices of the source bins involved
+        in the tomographic cls for which covariance is computed.
+        For ex. covariance between 12, 56 tomographic cross correlations
+        involve 1,2,5,6 source bins
+    """
+    self=CU
+    clz=Ang_PS.clz
+    cov={}
+    cov['z_indx']=zs_indx
+    cov['tracers']=tracers
+    cov['final']=None
 
-        cov['G']=None
-        cov['G1324_B']=None;cov['G1423_B']=None
+    cov['G']=None
+    cov['G1324_B']=None;cov['G1423_B']=None
 
-        Win=None
-        if Win_cov is not None:
-            Win=Win_cov
+    Win=None
+    if Win_cov is not None:
+        Win=Win_cov
 
-        if self.use_window and self.do_pseudo_cl:
-            cov['G1324'],cov['G1423']=self.cl_gaussian_cov_window(cls,SN,
-                                            tracers,zs_indx,Win,)
+    if self.use_window and self.do_pseudo_cl:
+        cov['G1324'],cov['G1423']=self.cl_gaussian_cov_window(cls,SN,
+                                        tracers,zs_indx,Win,)
+    else:
+        fs=self.f_sky
+        if self.do_xi and self.xi_win_approx and self.use_window : #in this case we need to use a separate function directly from xi_cov
+            cov['G1324']=0
+            cov['G1423']=0
         else:
-            fs=self.f_sky
-            if self.do_xi and self.xi_win_approx and self.use_window : #in this case we need to use a separate function directly from xi_cov
-                cov['G1324']=0
-                cov['G1423']=0
-            else:
-                cov['G1324'],cov['G1423']=self.cl_gaussian_cov(cls,SN,tracers,zs_indx)
-        cov['G']=cov['G1324']+cov['G1423']
-        cov['final']=cov['G']
-        cov['SSC'],cov['Tri']=self.cl_cov_connected(zs_indx=zs_indx,cls=cls,clz=clz, tracers=tracers,sig_cL=sig_cL)#,Win_cov=None,Win_cl=None)
-        if self.use_window and (self.SSV_cov or self.Tri_cov) and self.do_pseudo_cl: #Check: This is from writing p-cl as M@cl... cov(p-cl)=M@cov(cl)@M.T ... separate  M when different p-cl
-            M1=Win_cl1['M'] #12
-            M2=Win_cl2['M'] #34
-            if self.use_binned_l:
-                for k in ['SSC','Tri']:
-                    cov[k]=self.bin_cl_cov_func(cov=cov[k])
-            cov['final']=cov['G']+ M1@(cov['SSC']+cov['Tri'])@M2.T
-        else:
-            cov['final']=cov['G']+cov['SSC']+cov['Tri']
-
-        if not self.do_xi:
-            cov['G1324']=None #save memory
-            cov['G1423']=None
-
-        for k in ['final','G','SSC','Tri']:#no need to bin G1324 and G1423
-            if self.bin_cl:
-                cov[k+'_b']=self.bin_cl_cov_func(cov=cov[k],cl_bin_utils=cl_bin_utils)
-            else:
-                cov[k+'_b']=cov[k]
-
-            if self.sparse_cov and cov[k+'_b'] is not None:
-                if k!='final':
-                    # print('deleting',k)
-                    cov[k+'_b']=None
-                    continue
-                cov[k+'_b']=sparse.COO(cov[k+'_b'])
-            if not self.do_xi and self.bin_cl:
-                del cov[k]
-        return cov
-
-    def xi_cov(self,cov_indx,cov_cl=None,cls={},s1_s2=None,s1_s2_cross=None,
-               corr1=[],corr2=[], Win_cov=None,Win_cl1=None,Win_cl2=None,SN=None,
-              z_bins=None,sig_cL=None,WT=None,WT_kwargs={},xi_bin_utils=None,clz=None):
-        """
-            Computes covariance of xi, by performing 2-D hankel transform on covariance of Cl.
-            In current implementation of hankel transform works only for s1_s2=s1_s2_cross.
-            So no cross covariance between xi+ and xi-.
-        """
-
-        z_indx=cov_indx
-        indxs_1=(z_indx[0],z_indx[1])
-        indxs_2=(z_indx[2],z_indx[3])
-
-        tracers=corr1+corr2
-        if s1_s2_cross is None:
-            s1_s2_cross=s1_s2
-        cov_xi={}
-
-        if self.WT.name=='Hankel' and s1_s2!=s1_s2_cross:
-            n=len(self.theta_bins)-1
-            cov_xi['final']=np.zeros((n,n))
-            return cov_xi
-
-        SN1324=0
-        SN1423=0
-        wig_d1=None
-        wig_d2=None
+            cov['G1324'],cov['G1423']=self.cl_gaussian_cov(cls,SN,tracers,zs_indx)
+    cov['G']=cov['G1324']+cov['G1423']
+    cov['final']=cov['G']
+    cov['SSC'],cov['Tri']=self.cl_cov_connected(zs_indx=zs_indx,cls=cls,clz=clz, tracers=tracers,sig_cL=sig_cL)#,Win_cov=None,Win_cl=None)
+    if self.use_window and (self.SSV_cov or self.Tri_cov) and self.do_pseudo_cl: #Check: This is from writing p-cl as M@cl... cov(p-cl)=M@cov(cl)@M.T ... separate  M when different p-cl
+        M1=Win_cl1['M'] #12
+        M2=Win_cl2['M'] #34
         if self.use_binned_l:
-            wig_d1=WT_kwargs['wig_d1']
-            wig_d2=WT_kwargs['wig_d2']
+            for k in ['SSC','Tri']:
+                cov[k]=self.bin_cl_cov_func(cov=cov[k])
+        cov['final']=cov['G']+ M1@(cov['SSC']+cov['Tri'])@M2.T
+    else:
+        cov['final']=cov['G']+cov['SSC']+cov['Tri']
+
+    if not self.do_xi:
+        cov['G1324']=None #save memory
+        cov['G1423']=None
+
+    for k in ['final','G','SSC','Tri']:#no need to bin G1324 and G1423
+        if self.bin_cl:
+            cov[k+'_b']=self.bin_cl_cov_func(cov=cov[k],cl_bin_utils=cl_bin_utils)
+        else:
+            cov[k+'_b']=cov[k]
+
+        if self.sparse_cov and cov[k+'_b'] is not None:
+            if k!='final':
+                # print('deleting',k)
+                cov[k+'_b']=None
+                continue
+            cov[k+'_b']=sparse.COO(cov[k+'_b'])
+        if not self.do_xi and self.bin_cl:
+            del cov[k]
+    return cov
+
+def xi_cov(cov_indx,CU,cov_cl=None,cls={},s1_s2=None,s1_s2_cross=None,
+           corr1=[],corr2=[], Win_cov=None,Win_cl1=None,Win_cl2=None,SN=None,
+          z_bins=None,sig_cL=None,WT=None,WT_kwargs={},xi_bin_utils=None,Ang_PS=None):
+    """
+        Computes covariance of xi, by performing 2-D hankel transform on covariance of Cl.
+        In current implementation of hankel transform works only for s1_s2=s1_s2_cross.
+        So no cross covariance between xi+ and xi-.
+    """
+    clz=Ang_PS.clz
+    self=CU
+    z_indx=cov_indx
+    indxs_1=(z_indx[0],z_indx[1])
+    indxs_2=(z_indx[2],z_indx[3])
+
+    tracers=corr1+corr2
+    if s1_s2_cross is None:
+        s1_s2_cross=s1_s2
+    cov_xi={}
+
+    if self.WT.name=='Hankel' and s1_s2!=s1_s2_cross:
+        n=len(self.theta_bins)-1
+        cov_xi['final']=np.zeros((n,n))
+        return cov_xi
+
+    SN1324=0
+    SN1423=0
+    wig_d1=None
+    wig_d2=None
+    if self.use_binned_l:
+        wig_d1=WT_kwargs['wig_d1']
+        wig_d2=WT_kwargs['wig_d2']
 #             wig_d1=WT_binned_cov[corr1][s1_s2][indxs_1]
 #             wig_d2=self.WT_binned_cov[corr2][s1_s2_cross][indxs_2]
 
-        Win=None
-    #         if self.use_window and self.store_win:
-    #             Win_cov=self.Win.Win['cov'][tracers]
-        if Win_cov is not None:
-            Win=Win_cov#[z_indx]
+    Win=None
+#         if self.use_window and self.store_win:
+#             Win_cov=self.Win.Win['cov'][tracers]
+    if Win_cov is not None:
+        Win=Win_cov#[z_indx]
 
 #         WT_kwargs={'l_cl':self.l,'s1_s2':s1_s2,'s1_s2_cross':s1_s2_cross,'wig_d1':wig_d1,'wig_d2':wig_d2}
-        bf=1
-        if np.all(np.array(tracers)=='shear') and not s1_s2==s1_s2_cross: #cross between xi+ and xi-
-            bf=-1
+    bf=1
+    if np.all(np.array(tracers)=='shear') and not s1_s2==s1_s2_cross: #cross between xi+ and xi-
+        bf=-1
 
-        cov_xi['G']=self.xi_gaussian_cov(cls,SN,tracers,z_indx,Win,WT_kwargs,bf)
+    cov_xi['G']=self.xi_gaussian_cov(cls,SN,tracers,z_indx,Win,WT_kwargs,bf)
 
+    if not self.use_binned_theta:
+        cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=xi_bin_utils)
+
+    cov_xi['SSC']=0
+    cov_xi['Tri']=0
+
+    if cov_cl is None:
+        cov_cl={}
+        cov_cl['SSC'],cov_cl['Tri']=self.cl_cov_connected(zs_indx=cov_indx,cls=cls,Win_cov=Win_cov,tracers=corr1+corr2,Win_cl=None,sig_cL=sig_cL,clz=clz)
+
+    if self.SSV_cov:
+        th0,cov_xi['SSC']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
+                                                        s1_s2_cross=s1_s2_cross,
+                                                        wig_d1=wig_d1,
+                                                        wig_d2=wig_d2,
+                                                        cl_cov=cov_cl['SSC'])
         if not self.use_binned_theta:
-            cov_xi['G']=self.binning.bin_2d(cov=cov_xi['G'],bin_utils=xi_bin_utils)
+            cov_xi['SSC']=self.binning.bin_2d(cov=cov_xi['SSC'],bin_utils=xi_bin_utils)
+    if self.Tri_cov:
+        th0,cov_xi['Tri']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
+                                                        s1_s2_cross=s1_s2_cross,
+                                                        wig_d1=wig_d1,
+                                                        wig_d2=wig_d2,
+                                                        cl_cov=cov_cl['Tri'])
+        if not self.use_binned_theta:
+            cov_xi['Tri']=self.binning.bin_2d(cov=cov_xi['Tri'],bin_utils=xi_bin_utils)
 
-        cov_xi['SSC']=0
-        cov_xi['Tri']=0
+    cov_xi['final']=cov_xi['G']+cov_xi['SSC']+cov_xi['Tri']
+    if self.use_window and self.xi_win_approx:
+        cov_xi['G']/=(Win_cl1['xi_b']*Win_cl2['xi_b'])
+        cov_xi['final']/=(Win_cl1['xi_b']*Win_cl2['xi_b'])
 
-        if cov_cl is None:
-            cov_cl={}
-            cov_cl['SSC'],cov_cl['Tri']=self.cl_cov_connected(zs_indx=cov_indx,cls=cls,Win_cov=Win_cov,tracers=corr1+corr2,Win_cl=None,sig_cL=sig_cL,clz=clz)
+    if self.sparse_cov:
+        for k in ['G','SSC','Tri','final']:
+#                 print('xi_cov',corr1,corr2,indxs_1,indxs_2,cov_xi[k].shape,self.WT.theta[(0,0)].shape)
+            if  np.atleast_1d(cov_xi[k]).ndim>1:
+                cov_xi[k]=sparse.COO(cov_xi[k])
 
-        if self.SSV_cov:
-            th0,cov_xi['SSC']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
-                                                            s1_s2_cross=s1_s2_cross,
-                                                            wig_d1=wig_d1,
-                                                            wig_d2=wig_d2,
-                                                            cl_cov=cov_cl['SSC'])
-            if not self.use_binned_theta:
-                cov_xi['SSC']=self.binning.bin_2d(cov=cov_xi['SSC'],bin_utils=xi_bin_utils)
-        if self.Tri_cov:
-            th0,cov_xi['Tri']=self.WT.projected_covariance2(l_cl=self.l,s1_s2=s1_s2,
-                                                            s1_s2_cross=s1_s2_cross,
-                                                            wig_d1=wig_d1,
-                                                            wig_d2=wig_d2,
-                                                            cl_cov=cov_cl['Tri'])
-            if not self.use_binned_theta:
-                cov_xi['Tri']=self.binning.bin_2d(cov=cov_xi['Tri'],bin_utils=xi_bin_utils)
-
-        cov_xi['final']=cov_xi['G']+cov_xi['SSC']+cov_xi['Tri']
-        if self.use_window and self.xi_win_approx:
-            cov_xi['G']/=(Win_cl1['xi_b']*Win_cl2['xi_b'])
-            cov_xi['final']/=(Win_cl1['xi_b']*Win_cl2['xi_b'])
-
-        if self.sparse_cov:
-            for k in ['G','SSC','Tri','final']:
-    #                 print('xi_cov',corr1,corr2,indxs_1,indxs_2,cov_xi[k].shape,self.WT.theta[(0,0)].shape)
-                if  np.atleast_1d(cov_xi[k]).ndim>1:
-                    cov_xi[k]=sparse.COO(cov_xi[k])
-
-        return cov_xi
+    return cov_xi

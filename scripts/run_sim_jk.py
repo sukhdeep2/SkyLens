@@ -97,7 +97,6 @@ else:
 subsample=False
 do_cov_jk=False #compute covariance coupling matrices
 
-
 lognormal_scale=2
 
 nside=1024
@@ -1018,7 +1017,7 @@ def sim_cl_xi(nsim=150,do_norm=False,cl0=None,kappa_class=None,fsky=f_sky,zbins=
                  int(getrusage(RUSAGE_SELF).ru_maxrss/1024./1024.)
                  )
             del futures
-            gc.collect()
+#             gc.collect()
             print('done map ',i, thread_count(),'mem, peak mem: ',format_bytes(proc.memory_info().rss),
                  int(getrusage(RUSAGE_SELF).ru_maxrss/1024./1024.)
                  )

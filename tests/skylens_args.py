@@ -108,7 +108,7 @@ f_sky=0.35 #if there is no window. This can also be a dictionary for different c
 """generate simulated samples"""
 #for this example. You should define your own tracer_zbins
 nzbins=2
-shear_zbins=lsst_source_tomo_bins(nbins=nzbins,use_window=use_window,nside=nside,scheduler_info=scheduler_info)
+shear_zbins=lsst_source_tomo_bins(nbins=nzbins,use_window=use_window,nside=nside,scheduler_info=scheduler_info,n_zs=100)
 galaxy_zbins=shear_zbins
 """tracer_zbins are expected to be nested dictionaries with following structure:
 tracer_zbin={ n_bins: 2, #total number of z_bins

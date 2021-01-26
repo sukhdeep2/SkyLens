@@ -159,8 +159,6 @@ class Tracer_utils():
         Set the tracer kernels. This includes the local kernel, e.g. galaxy density, IA and also the lensing 
         kernel. Galaxies have magnification bias.
         """
-        cosmo_h=Ang_PS.PS#.cosmo_h
-        zl=Ang_PS.z
         if z_bins is None:
             z_bins=self.get_z_bins(tracer=tracer)
             if not delayed_compute:
@@ -169,21 +167,21 @@ class Tracer_utils():
         kernel={}
         for i in np.arange(n_bins):
             if delayed_compute:
-                kernel[i]=delayed(self.zkernel_func[tracer])(self.l,cosmo_h=cosmo_h,zl=zl,tracer=tracer,z_bin=z_bins[i])
+                kernel[i]=delayed(self.zkernel_func[tracer])(Ang_PS=Ang_PS,tracer=tracer,z_bin=z_bins[i])
             else:
-                kernel[i]=self.zkernel_func[tracer](self.l,cosmo_h=cosmo_h,zl=zl,tracer=tracer,z_bin=z_bins[i])
+                kernel[i]=self.zkernel_func[tracer](Ang_PS=Ang_PS,tracer=tracer,z_bin=z_bins[i])
         return kernel
    
             
-def set_kernel(l,cosmo_h=None,zl=None,tracer=None,z_bin=None):
+def set_kernel(Ang_PS=None,tracer=None,z_bin=None):
     """
     Set the tracer kernels. This includes the local kernel, e.g. galaxy density, IA and also the lensing 
     kernel. Galaxies have magnification bias.
     """
 #     print('set_kernel')
     kernel={}
-    kernel=set_lensing_kernel(cosmo_h=cosmo_h,zl=zl,tracer=tracer,z_bin=z_bin,l=l,kernel=kernel)
-    kernel=set_galaxy_kernel(cosmo_h=cosmo_h,zl=zl,tracer=tracer,z_bin=z_bin,l=l,kernel=kernel)
+    kernel=set_lensing_kernel(Ang_PS=Ang_PS,tracer=tracer,z_bin=z_bin,kernel=kernel)
+    kernel=set_galaxy_kernel(Ang_PS=Ang_PS,tracer=tracer,z_bin=z_bin,kernel=kernel)
     kernel['kernel_int']=kernel['Gkernel_int']+kernel['gkernel_int']
 #     del kernel['Gkernel_int'],kernel['gkernel_int']
     return kernel
@@ -274,13 +272,17 @@ def spin_factor(l,tracer=None):
 
     return F
 
-def set_lensing_kernel(cosmo_h=None,zl=None,tracer=None,l=None,z_bin=None,kernel=None):
+def set_lensing_kernel(Ang_PS=None,tracer=None,z_bin=None,kernel=None):
     """
         Compute rho/Sigma_crit for each source bin at every lens redshift where power spectra is computed.
         cosmo_h: cosmology to compute Sigma_crit
     """
 #     kernel=z_bin
 #     rho=Rho_crit(cosmo_h=cosmo_h)*cosmo_h.Om0
+    cosmo_h=Ang_PS.PS#.cosmo_h
+    zl=Ang_PS.z
+    l=Ang_PS.l
+
     rho=Rho_crit100*cosmo_h.Om
     mag_fact=1
     spin_tracer=tracer
@@ -300,13 +302,17 @@ def set_lensing_kernel(cosmo_h=None,zl=None,tracer=None,l=None,z_bin=None,kernel
 #     del kernel['Gkernel']
     return kernel
 
-def set_galaxy_kernel(cosmo_h=None,zl=None,tracer=None,l=None,z_bin=None,kernel=None):
+def set_galaxy_kernel(Ang_PS=None,tracer=None,l=None,z_bin=None,kernel=None):
     """
         set the galaxy position kernel (also for IA). This is function is form bias(z)*dn/dz*f(\chi).
     """
+    cosmo_h=Ang_PS.PS#.cosmo_h
+    zl=Ang_PS.z
+    l=Ang_PS.l
+    
     IA_const=0.0134*cosmo_h.Om
     b_const=1
-#     z_bins=self.get_z_bins(tracer=tracer)
+
     if tracer=='shear' or tracer=='kappa': # kappa maps can have AI. For CMB, set AI=0 in the z_bin properties.
         bias_func=NLA_amp_z
         b_const=IA_const

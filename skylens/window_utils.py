@@ -18,21 +18,31 @@ import zarr
 from dask.threaded import get
 from distributed.client import Future
 import time,gc
-from multiprocessing import Pool,cpu_count
+from multiprocessing import cpu_count
+from multiprocessing.pool import ThreadPool as Pool
 from skylens.utils import *
 import pickle
 import copy
 import psutil
+from itertools import islice
 
 class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,corrs=None,s1_s2s=None,use_window=None,#f_sky=None,cov_utils=None,
                 do_cov=False,corr_indxs=None,z_bins=None,WT=None,xi_bin_utils=None,do_xi=False,
                 store_win=False,Win=None,wigner_files=None,step=None,xi_win_approx=False,
                 cov_indxs=None,client=None,scheduler_info=None,wigner_step=None,
-                kappa_b_xi=None,bin_theta_window=False,njobs_submit=100,zarr_parallel_read=25,
+                kappa_b_xi=None,bin_theta_window=False,njobs_submit_per_worker=10,zarr_parallel_read=25,
                 kappa_class0=None,kappa_class_b=None,bin_window=True,do_pseudo_cl=True):
 
         self.__dict__.update(locals()) #assign all input args to the class as properties
+        if scheduler_info is not None:
+            workers=list(scheduler_info['workers'].keys())
+            nworkers=len(workers)
+        else:
+            nworkers=10 #assume, to decide number of jobs to submit
+        
+        self.njobs_submit=njobs_submit_per_worker*nworkers
+        
         self.binning=binning()
         
         nl=len(self.l)
@@ -42,13 +52,15 @@ class window_utils():
 
         self.step=wigner_step
         if step is None:
-            self.step=np.int32(100.*((2000./nl)**2)*(100./nwl)) #small step is useful for lower memory load
+            self.step=np.int32(200.*((2000./nl)**2)*(100./nwl)) #small step is useful for lower memory load
+            if nl/self.step<nworkers:
+                self.step=np.int32(nl/nworkers)
             self.step=np.int32(min(self.step,nl+1))
             self.step=np.int32(max(self.step,1))
 #         self.step=50
-            
+        print('Win gen: step size',self.step,nl,nwl,nworkers)#,self.lms)    
         self.lms=np.int32(np.arange(nl,step=self.step))
-        print('Win gen: step size',self.step,self.do_pseudo_cl,xi_win_approx,nl,nwl)#,self.lms)
+        
 
         self.c_ell0=None
         self.c_ell_b=None
@@ -86,6 +98,11 @@ class window_utils():
                 xibu=xi_bin_utils[(0,0)]
             self.set_window_cl(corrs=corrs,corr_indxs=corr_indxs,z_bins=z_bins,WT_kwargs=WT_kwargs,xi_bin_utils=xibu,use_bag=use_bag)
             #FIXME: with store win, we can remove zs_win after this.
+#             print('window_utils',z_bins)
+#             z_bins=client.cancel(z_bins)
+            z_bins=gather_dict(z_bins,scheduler_info=self.scheduler_info)
+            z_bins=None
+#             z_bins=scatter_dict(z_bins,scheduler_info=self.scheduler_info,broadcast=False,depth=3)
         if self.Win is None and self.use_window and self.do_pseudo_cl: #pseudo_cl window
             if self.do_xi:
                 print('Warning: window for xi is different from cl.')
@@ -687,13 +704,17 @@ class window_utils():
         for both C_ell and covariance matrices.
         """
         t1=time.time()
-        self.cl_keys=[corr+indx for corr in corrs for indx in corr_indxs[corr]]
-        self.cl_bag=dask.bag.from_sequence(self.cl_keys,npartitions=npartitions)
+        client=client_get(scheduler_info=self.scheduler_info)
         if self.store_win:
-            client=client_get(scheduler_info=self.scheduler_info)
+            client_func=client.compute #used later
+            if use_bag:
+                client_func=client.persist
+
             if self.c_ell0 is not None:
                 self.c_ell0=client.compute(self.c_ell0).result()
                 self.c_ell_b=client.compute(self.c_ell_b).result()
+#                 replicate_dict(self.c_ell0, branching_factor=1,scheduler_info=self.scheduler_info)#doesn't work because we need to change the depth of Future
+#                 replicate_dict(self.c_ell_b, branching_factor=1,scheduler_info=self.scheduler_info)
                 self.c_ell0=scatter_dict(self.c_ell0,scheduler_info=self.scheduler_info,broadcast=True,depth=2)
                 self.c_ell_b=scatter_dict(self.c_ell_b,scheduler_info=self.scheduler_info,broadcast=True,depth=2)
 
@@ -702,7 +723,9 @@ class window_utils():
                 self.xi_b=client.compute(self.xi_b).result()
                 self.xi0=scatter_dict(self.xi0,scheduler_info=self.scheduler_info,broadcast=True,depth=2)
                 self.xi_b=scatter_dict(self.xi_b,scheduler_info=self.scheduler_info,broadcast=True,depth=2)
-
+        
+        print('set window_cl: cl0,cl_b done',time.time()-t1)
+        self.cl_keys=[corr+indx for corr in corrs for indx in corr_indxs[corr]]
         self.cov_keys=[]
         Win_cov=None
         if self.do_cov:
@@ -710,25 +733,39 @@ class window_utils():
                 self.cov_keys+=[corr+indx for indx in self.cov_indxs[corr]]
         WU=client.scatter(self,broadcast=True)
         if use_bag:
+            self.cl_bag=dask.bag.from_sequence(self.cl_keys,npartitions=npartitions)
             z_bin1=dask.bag.from_sequence( [z_bins[ck[0]][ck[2]] for ck in self.cl_keys ],npartitions=npartitions)
             z_bin2=dask.bag.from_sequence( [z_bins[ck[1]][ck[3]] for ck in self.cl_keys ],npartitions=npartitions)
             Win_cl=self.cl_bag.map(get_window_power_cl,WU,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,z_bin1=z_bin1,z_bin2=z_bin2,
                                         WT_kwargs=WT_kwargs['cl'],xi_bin_utils=xi_bin_utils) #FIXME: right ordering of args
 #this can be slow... https://stackoverflow.com/questions/64559993/what-happens-during-dask-client-map-call
         else:
-            Win_cl=[]
-            for ck in self.cl_keys:
-                corr=(ck[0],ck[1])
-                indx=(ck[2],ck[3])
-                c_ell0={corr:{indx:self.c_ell0[corr][indx]}} if self.c_ell0 is not None else None
-                c_ell_b={corr:{indx:self.c_ell_b[corr][indx]}}if self.c_ell_b is not None else None
-                Win_cl+=[delayed(get_window_power_cl)(ck,WU,c_ell0=c_ell0,c_ell_b=c_ell_b,
-                                                           z_bin1=z_bins[ck[0]][ck[2]],z_bin2=z_bins[ck[1]][ck[3]],
-                                                           WT_kwargs=WT_kwargs['cl'],
-                                                           xi_bin_utils=xi_bin_utils) ]
-        print('cl bags done',time.time()-t1,get_size_pickle(self),get_size_pickle(c_ell0),get_size_pickle(WT_kwargs))
-        dict_size_pickle(self.__dict__,print_prefact='window_cl self size: ',depth=2)
-        self.cov_keys=[]
+#             Win_cl=[None]*len(self.cl_keys)
+#             i=0
+#             for ck in self.cl_keys:
+            def Win_cli():
+                i=0
+                while i<len(self.cl_keys):
+                    ck=self.cl_keys[i]
+                    corr=(ck[0],ck[1])
+                    indx=(ck[2],ck[3])
+                    c_ell0={corr:{indx:self.c_ell0[corr][indx]}} if self.c_ell0 is not None else None
+                    c_ell_b={corr:{indx:self.c_ell_b[corr][indx]}}if self.c_ell_b is not None else None
+    #                 Win_cl[i]=
+                    yield delayed(get_window_power_cl)(ck,WU,c_ell0=c_ell0,c_ell_b=c_ell_b,
+                                                               z_bin1=z_bins[ck[0]][ck[2]],z_bin2=z_bins[ck[1]][ck[3]],
+                                                               WT_kwargs=WT_kwargs['cl'],
+                                                               xi_bin_utils=xi_bin_utils) 
+                    i+=1
+        print('set window_cl: cl done',time.time()-t1,get_size_pickle(self),get_size_pickle(WT_kwargs))
+#         dict_size_pickle(self.__dict__,print_prefact='window_cl self size: ',depth=2)
+        
+        if self.store_win:
+#             Win_cl=client_func(Win_cl)
+            Win_cl=client_func(list(Win_cli()))
+        else:
+            Win_cl=list(Win_cli())
+        
         Win_cov=None
         if self.do_cov:
             for corr in self.cov_indxs.keys():
@@ -744,50 +781,52 @@ class window_utils():
                                                   c_ell0=self.c_ell0,c_ell_b=self.c_ell_b,xi0=self.xi0,xi_b=self.xi_b,
                                                  z_bins=z_bin4,WT_kwargs=WT_kwargs['cov'],xi_bin_utils=xi_bin_utils)
                 else:
-                    Win_cov=[]
-                    for ck in self.cov_keys:
-                        bin_wt_cl=self.cov_binning_cl_wt(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)
-                        bin_wt_xi=self.cov_binning_xi_wt(ck,xi0=self.xi0,xi_b=self.xi_b)
-                        Win_cov+=[delayed(get_window_power_cov)(ck,WU,bin_wt_cl=bin_wt_cl,bin_wt_xi=bin_wt_xi,
-                                                                    z_bins={0:z_bins[ck[0]][ck[4]],
-                                                                            1:z_bins[ck[1]][ck[5]],
-                                                                            2:z_bins[ck[2]][ck[6]],
-                                                                            3:z_bins[ck[3]][ck[7]]},
-                                                                    WT_kwargs=WT_kwargs['cov'],xi_bin_utils=xi_bin_utils) ]
+#                     Win_cov=[None]*len(self.cov_keys)
+#                     i=0
+#                     for ck in self.cov_keys:
+                    ncov=len(self.cov_keys)
+                    def Win_covi(i,j):
+                        while i<min(j,ncov):
+                            ck=self.cov_keys[i]
+                            bin_wt_cl=self.cov_binning_cl_wt(ck,c_ell0=self.c_ell0,c_ell_b=self.c_ell_b)
+                            bin_wt_xi=self.cov_binning_xi_wt(ck,xi0=self.xi0,xi_b=self.xi_b)
+#                             Win_cov[i]=delayed(get_window_power_cov)(ck,WU,bin_wt_cl=bin_wt_cl,bin_wt_xi=bin_wt_xi,
+                            yield delayed(get_window_power_cov)(ck,WU,bin_wt_cl=bin_wt_cl,bin_wt_xi=bin_wt_xi,
+                                                                        z_bins={0:z_bins[ck[0]][ck[4]],
+                                                                                1:z_bins[ck[1]][ck[5]],
+                                                                                2:z_bins[ck[2]][ck[6]],
+                                                                                3:z_bins[ck[3]][ck[7]]},
+                                                                        WT_kwargs=WT_kwargs['cov'],xi_bin_utils=xi_bin_utils) 
+                                     #]
+                            i+=1
+                    if not self.store_win:
+                        Win_cov=list(Win_covi(0,ncov))
+#                     Win_cov=client_func(list(islice(Win_covi(),0,len(self.cov_keys),1)))
                         
                 # ^ is super slow for very large number of covariances. ^^ helps because dask effectively bunches up delayed.
                 # ^ is better for smaller computes. ^^ for very large ones.
                 # FIXME: We can probably implement custom partitions, bunching up covariances from same tracers to make things more efficient.
                 # Custom partitions will likely require serialization of functions, so unlikely to help with dask map issue.
         print('cl+cov bags done',len(self.cl_keys),len(self.cov_keys),time.time()-t1)
+            
         njobs=self.njobs_submit
         if self.store_win:
-            client=client_get(scheduler_info=self.scheduler_info)
-            client_func=client.compute
-            if use_bag:
-                client_func=client.persist
-            Win_cl=client_func(Win_cl)
             wait_futures(Win_cl)
             if not use_bag:
-                client.replicate(Win_cl)
-#                 print('set_window_cl',client.who_has(Win_cl[0]))
-#                 Win_cl=client.gather(Win_cl)
-#                 Win_cl=client.scatter(Win_cl,broadcast=True)
+                Win_cl=client.gather(Win_cl)
+                Win_cl=client.scatter(Win_cl,broadcast=True)
             i_job=0
             if self.do_cov and not use_bag:
                 win_cov_t=[]
                 while i_job<len(self.cov_keys): #large number of jobs can make dask cluster unstable.
-#                     with cProfile.Profile() as pr:
-                    win_cov_ti=client_func(Win_cov[i_job:i_job+njobs],optimize_graph=True,traverse=False) #optimize_graph=False,traverse=False doesnot help
+#                     win_cov_ti=client_func(Win_cov[i_job:i_job+njobs],allow_other_workers=True) #optimize_graph=False,traverse=False doesnot help
+                    win_cov_ti=client_func(list(Win_covi(i_job,i_job+njobs)),allow_other_workers=True)
                     wait_futures(win_cov_ti)
                     win_cov_t+=win_cov_ti
                     i_job+=njobs
-#                     stats = pstats.Stats(pr).sort_stats('cumtime')
-#                     print('set_window_cl profile ',stats.print_stats())
                 Win_cov=win_cov_t
-                client.replicate(Win_cov)
+                client.replicate(Win_cov, branching_factor=1) #less stable
 #                 Win_cov=client.gather(win_cov_t)
-#                 print('window power size',get_size_pickle(Win_cov))
 #                 Win_cov=client.scatter(Win_cov,broadcast=True)
             elif self.do_cov and use_bag:
                 Win_cov=client_func(Win_cov)
@@ -827,9 +866,7 @@ class window_utils():
         Win_cl=self.Win_cl
         Win_cov=self.Win_cov
         WU=client.scatter(self,broadcast=True)
-#         client.replicate(Win_cov)
-#         client.replicate(Win_cl)
-#         print(client.who_has(Win_cl[0]))
+
         if self.do_pseudo_cl: #this is probably redundant due to if statement in init.
             Win_cl_lm={}
             Win_cov_lm={}
@@ -838,6 +875,11 @@ class window_utils():
             nworkers=len(workers)
 #             njobs=nworkers*1 #self.njobs_submit
             njobs=self.njobs_submit
+    
+#             n=min(nworkers,len(self.lms))    
+#             client.replicate(Win_cl,n=n)
+#             if self.do_cov:
+#                 client.replicate(Win_cov,workers=client.who_has(Win_cl[0]))
             
             worker_i=0
             job_i=0
@@ -881,16 +923,17 @@ class window_utils():
                        job_i=0
                 print('done lm',lm,time.time()-t1)
                 
-            print('Done all lm')
+            print('Done all lm',time.time()-t1)
             
             self.Win=delayed(self.combine_coupling_cl_cov)(Win_cl_lm,Win_cov_lm)
-            print('done combine lm graph',time.time()-t1)
+#             print('done combine lm graph',time.time()-t1)
 
         if self.store_win:
             self.Win=client.compute(self.Win).result()
             
             if self.do_pseudo_cl:
                 self.cleanup()
+        print('done combine lm',time.time()-t1)
         return self.Win
     
     def reduce_win_cl(self,win,win2):

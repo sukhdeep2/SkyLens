@@ -82,7 +82,7 @@ WT=wigner_transform(**WT_kwargs)
 
 z0=1 #1087
 # zs_bin1=source_tomo_bins(zp=[z0],p_zp=np.array([1]),ns=30,use_window=use_window,nside=nside)
-zs_bin1=lsst_source_tomo_bins(nbins=2,use_window=use_window,nside=nside)
+zs_bin1=lsst_source_tomo_bins(nbins=2,use_window=use_window,nside=nside,n_zs=50)
 
 
 corr_ggl=('galaxy','shear')

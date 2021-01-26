@@ -1,8 +1,8 @@
 #!/bin/bash -l
 #SBATCH -q RM
 #SBATCH -J mc
-#SBATCH -e /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/run_mcmc_many%A_%a.err
-#SBATCH -o /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/run_mcmc_many%A_%a.out
+#SBATCH -e /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/mcmc_many%A_%a.err
+#SBATCH -o /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/mcmc_many%A_%a.out
 #SBATCH -t 20:00:00
 #SBATCH -N 1
 ##SBATCH -n 28
@@ -59,25 +59,23 @@ do
                     echo 'exiting' $njob $job_id $total_job #>> $log_file
                     exit
                 fi
-    #            ./dask-vera2.sh $njob &
-                   #CSCRATCH=$temp_home'/dask/scheduler_'${SLURM_ARRAY_JOB_ID}${SLURM_ARRAY_TASK_ID}'/'$njob'/'
-            CSCRATCH=$temp_home'/scheduler_'${SLURM_ARRAY_JOB_ID}'/'
-            mkdir $CSCRATCH
-            CSCRATCH=$CSCRATCH'/'$njob'/'
-               rm -rf $CSCRATCH
-                   mkdir $CSCRATCH
-    #                killall python3
-                   CSCRATCH=$CSCRATCH
-                   SCHEFILE=$CSCRATCH/Scheduler.dasksche.json
-                   worker_log=$CSCRATCH/dask-local/worker-*
-                   echo $worker_log
-    #               while ! [ -f $SCHEFILE ]; do #redundant
-    #                    sleep 3
-    #                   echo -n . #>>$log_file
-    #               done
+                CSCRATCH=$temp_home'/scheduler_'${SLURM_ARRAY_JOB_ID}'/'
+                mkdir $CSCRATCH
+                CSCRATCH=$CSCRATCH'/'$njob'/'
+                rm -rf $CSCRATCH
+                mkdir $CSCRATCH
+               ./dask-vera2.sh $CSCRATCH &
+
+               SCHEFILE=$CSCRATCH/Scheduler.dasksche.json
+               worker_log=$CSCRATCH/dask-local/worker-*
+               echo $worker_log
+                  while ! [ -f $SCHEFILE ]; do #redundant
+                       sleep 1
+                      echo . #>>$log_file
+                  done
 
                     echo 'ids' $njob $job_id #>> $log_file
-                    #conda_env py36
+
                     echo 'doing'  $lognormal $do_blending $do_SSV_sim $use_shot_noise 
                     echo '==============================================================' #>>$log_file
                     echo 'begining::' $(date) #>>$log_file 

@@ -61,17 +61,18 @@ do
                         
                         python3 run_sim.py  --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise |cat>>$log_file
                         
+                        echo 'Finished::' $(date)>>$log_file                                                                                                                 
                         #---------------------------------------------------
                         echo '=========================================================================================='|cat>>$log_file
-                        echo 'begining - jk ::' $(date)>>$log_file
+#                         echo 'begining - jk ::' $(date)>>$log_file
 
-                        python3 run_sim_jk.py --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise |cat>>$log_file
-                        #---------------------------------------------------
-                        echo 'done'  $lognormal $do_blending $do_SSV_sim $use_shot_noise
-                        echo 'logfile' $log_file 
+# #                         python3 run_sim_jk.py --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --ssv=$do_SSV_sim --noise=$use_shot_noise |cat>>$log_file
+#                         #---------------------------------------------------
+#                         echo 'done'  $lognormal $do_blending $do_SSV_sim $use_shot_noise
+#                         echo 'logfile' $log_file 
 
-                        echo 'Finished::' $(date)>>$log_file                                                                                                                                                                    
-                        echo '================================================' >>$log_file          
+#                         echo 'Finished::' $(date)>>$log_file                                                                                                                                                                    
+#                         echo '================================================' >>$log_file          
 
                     )
                     done
