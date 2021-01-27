@@ -18,7 +18,7 @@ import faulthandler; faulthandler.enable()
     # problem is likely to be in some package
 
 if __name__=='__main__':
-    test=True
+    test=False
 
     Desi=True
     Fmost=False

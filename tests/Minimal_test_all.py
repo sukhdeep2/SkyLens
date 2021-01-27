@@ -10,7 +10,7 @@ from dask.distributed import Client  # we already had this above
 #http://distributed.readthedocs.io/en/latest/_modules/distributed/worker.html
 
 from skylens import *
-from survey_utils import *
+from skylens.survey_utils import *
 
 #only for python3
 import importlib
