@@ -87,35 +87,72 @@ if __name__=='__main__':
         skylens_args['pk_params']['pk_func']='eh_pk'
     skylens_args['scheduler_info']=scheduler_info
     
-    kappa0=Skylens(**skylens_args)
-    print('kappa0 size',get_size_pickle(kappa0))#,kappa0.Win)
-    print('kappa0.Ang_PS size',get_size_pickle(kappa0.Ang_PS))
-    
+    zs_bin=skylens_args['shear_zbins']
+    file_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/imaster/'
     if do_xi:
-        print('MCMC getting xi0G')
-        xi0G=kappa0.xi_tomo()
-        print('MCMC getting xi0 stack')
-        xi_cov=client.compute(xi0G['stack']).result()
-        cov_inv=np.linalg.inv(xi_cov['cov'].todense())
-        data=xi_cov['xi']
-    else:
-        print('MCMC getting cl0G')
-        cl0G=kappa0.cl_tomo()
-        print('MCMC getting stack')
-        cl_cov=client.compute(cl0G['stack']).result()
-        cov_inv=np.linalg.inv(cl_cov['cov'].todense())
-        data=cl_cov['pcl_b']
-        
-    kappa0.gather_data()
+        fname_out='mcmc_dat_xi_{nz}_bl{bl}_bth{bth}_eh{eh_pk}.pkl'.format(nz=zs_bin['n_bins'],bl=np.int(use_binned_l),
+                                                                              bth=np.int(use_binned_theta),eh_pk=int(eh_pk))
+    if do_pseudo_cl:
+        fname_out='mcmc_dat_pcl_{nz}_bl{bl}_bth{bth}_eh{eh_pk}.pkl'.format(nz=zs_bin['n_bins'],bl=np.int(use_binned_l),
+                                                                               bth=np.int(use_binned_theta),eh_pk=int(eh_pk))
+
+    get_cov=False
+    try:
+        fname_cl=file_home+fname_out
+        with open(fname_cl,'rb') as of:
+            cl_all=pickle.load(of)
+        Win=cl_all['Win']
+        if do_pseudo_cl:
+            cl_cov=cl_all['cov']
+            cov_inv=np.linalg.inv(cl_cov.todense())
+            data=cl_all['pcl_b']
+        elif do_xi:
+            xi_cov=cl_all['cov']
+            cov_inv=np.linalg.inv(xi_cov.todense())
+            data=cl_all['xi']
+        zs_bin=cl_all['zs_bin']
+        skylens_args['shear_zbins']=zs_bin
+        print('read cl / cov from file: ',fname_cl)
+    except Exception as err:
+        get_cov=True
+        print('cl not found. Will compute',fname_cl,err)
+
+    
+    if get_cov:    
+        kappa0=Skylens(**skylens_args)
+        print('kappa0 size',get_size_pickle(kappa0))#,kappa0.Win)
+        print('kappa0.Ang_PS size',get_size_pickle(kappa0.Ang_PS))
+
+        if do_xi:
+            print('MCMC getting xi0G')
+            xi0G=kappa0.xi_tomo()
+            print('MCMC getting xi0 stack')
+            xi_cov=client.compute(xi0G['stack']).result()
+            cov_inv=np.linalg.inv(xi_cov['cov'].todense())
+            data=xi_cov['xi']
+        else:
+            print('MCMC getting cl0G')
+            cl0G=kappa0.cl_tomo()
+            print('MCMC getting stack')
+            cl_cov=client.compute(cl0G['stack']).result()
+            cov_inv=np.linalg.inv(cl_cov['cov'].todense())
+            data=cl_cov['pcl_b']
+
+        Win=kappa0.Win
+        outp['Win']=kappa0.Win
+        outp['zs_bin']=kappa0.tracer_utils.z_bins['shear']
+        with open(fname_cl,'wb') as of:
+            pickle.dump(outp,of)
+        del kappa0
+
     print('Got data and cov')
     if not np.all(np.isfinite(data)):
         x=np.isfinite(data)
         print('data problem',data[~x],np.where(x))
 
-    Win=None
-    del kappa0
-    
+    Win['cov']=None
     skylens_args['do_cov']=False
+    skylens_args['Win']=Win
 
     kappa0=Skylens(**skylens_args)
     # kappa0.Win={'cl':client.gather(kappa0.Win['cl'])}

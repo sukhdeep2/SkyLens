@@ -67,7 +67,7 @@ wigner_files[2]= wig_home+'dask_wig3j_l3500_w2100_2_reorder.zarr'
 
 """covariance"""
 do_cov=True
-SSV_cov=True
+SSV_cov=False
 tidal_SSV_cov=False
 Tri_cov=tidal_SSV_cov
 sparse_cov=True #store covariances as sparse matrices

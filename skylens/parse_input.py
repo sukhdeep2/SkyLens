@@ -26,7 +26,7 @@ skylens_args_names=['yaml_inp_file','l','Ang_PS',
                 'f_sky','wigner_step','cl_func_names',
                 'l_bins','bin_cl','use_binned_l','do_pseudo_cl',
                 'stack_data','bin_xi','do_xi','theta_bins',
-                'use_binned_theta', 'xi_win_approx','xi_SN_analytical',
+                'use_binned_theta','xi_SN_analytical', #xi_win_approx
                 'corrs','corr_indxs','stack_indxs',
                 'wigner_files','name','clean_tracer_window',
                 'scheduler_info']

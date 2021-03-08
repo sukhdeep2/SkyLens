@@ -35,7 +35,7 @@ class Skylens():
                 f_sky=None,wigner_step=None,cl_func_names={},zkernel_func_names={},
                 l_bins=None,bin_cl=False,use_binned_l=False,do_pseudo_cl=True,
                 stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
-                use_binned_theta=False, xi_win_approx=False,xi_SN_analytical=False,
+                use_binned_theta=False, xi_SN_analytical=False,
                 corrs=None,corr_indxs=None,stack_indxs=None,
                 wigner_files=None,name='',clean_tracer_window=True,
                 scheduler_info=None):
@@ -83,7 +83,7 @@ class Skylens():
                                             window_l=self.window_l,use_binned_theta=self.use_binned_theta,
                                             do_cov=self.do_cov,SSV_cov=self.SSV_cov,tidal_SSV_cov=self.tidal_SSV_cov,
                                             Tri_cov=self.Tri_cov,sparse_cov=self.sparse_cov,bin_cl=self.bin_cl,
-                                            xi_win_approx=self.xi_win_approx,do_pseudo_cl=self.do_pseudo_cl,
+                                            do_pseudo_cl=self.do_pseudo_cl,
                                            cl_bin_utils=self.cl_bin_utils,xi_bin_utils=self.xi_bin_utils,)
 
         if Ang_PS is None:
@@ -100,19 +100,19 @@ class Skylens():
         if self.do_xi and not self.xi_win_approx: #FIXME: Since the `aprrox' is actually the correct way, change the notation.
             self.do_pseudo_cl=True #we will use pseudo_cl transform to get correlation functions.
 
-        self.Win=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,s1_s2s=self.s1_s2s,
+        self.Win0=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,s1_s2s=self.s1_s2s,
                         cov_indxs=self.cov_indxs,scheduler_info=self.scheduler_info,
                         use_window=self.use_window,do_cov=self.do_cov,#cov_utils=self.cov_utils,f_sky=self.f_sky,
                         corr_indxs=self.stack_indxs,z_bins=self.tracer_utils.z_win,
                         window_lmax=self.window_lmax,Win=self.Win,WT=self.WT,do_xi=self.do_xi,
-                        xi_win_approx=self.xi_win_approx,do_pseudo_cl=self.do_pseudo_cl,
+                        do_pseudo_cl=self.do_pseudo_cl,wigner_step=self.wigner_step,
                         kappa_class0=self.kappa0,kappa_class_b=self.kappa_b,kappa_b_xi=self.kappa_b_xi,
-                        wigner_step=self.wigner_step,
                         xi_bin_utils=self.xi_bin_utils,store_win=self.store_win,wigner_files=self.wigner_files,
                         bin_window=self.use_binned_l,bin_theta_window=self.use_binned_theta)
-        self.bin_window=self.Win.bin_window
-        win=self.Win.Win
-        del self.Win.Win
+        self.Win0.get_Win()
+        self.bin_window=self.Win0.bin_window
+        win=self.Win0.Win
+#         del self.Win0
         self.Win=win
         self.set_WT_binned()
         self.set_binned_measure(None,clean_up=True)

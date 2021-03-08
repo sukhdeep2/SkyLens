@@ -67,7 +67,7 @@ wigner_files[2]= wig_home+'dask_wig3j_l3500_w2100_2_reorder.zarr'
 
 """covariance"""
 do_cov=True
-SSV_cov=True
+SSV_cov=False
 tidal_SSV_cov=False
 Tri_cov=tidal_SSV_cov
 sparse_cov=True #store covariances as sparse matrices
@@ -81,7 +81,7 @@ f_sky=0.35 #if there is no window. This can also be a dictionary for different c
 """generate simulated samples"""
 #for this example. You should define your own tracer_zbins
 nzbins=5
-shear_zbins=lsst_source_tomo_bins(nbins=nzbins,use_window=use_window,nside=nside)
+shear_zbins={'n_bins':nzbins} #lsst_source_tomo_bins(nbins=nzbins,use_window=use_window,nside=nside)
 galaxy_zbins=shear_zbins
 
 """cosmology and power spectra"""

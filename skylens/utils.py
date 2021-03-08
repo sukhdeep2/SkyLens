@@ -101,6 +101,7 @@ def scatter_dict(dic,scheduler_info=None,depth=2,broadcast=False,return_workers=
 #                     print('scatter-dict got masked array: ',k,type(dic[k]),' will be scattered with filled values ')
                     dic[k]=client.scatter(dic[k].filled(),broadcast=broadcast,workers=workers)
                 else:
+#                     print('scatter_dict:',k,dic[k],workers)
                     dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
                 workers=list(client.who_has(dic[k]).values())[0]
 #                 print('scatter-dict ',k,workers)
@@ -152,7 +153,11 @@ def gather_dict(dic,scheduler_info=None):
             if isinstance(dic[k],dict):
                 dic[k]=gather_dict(dic[k],scheduler_info=scheduler_info)
             elif isinstance(dic[k],Future):
-                dic[k]=client.gather(dic[k])
+                try:
+                    dic[k]=client.gather(dic[k])
+                except Exception as err:
+                    print('gather dict got error at key: ', k)
+                    raise(err)
                 dic[k]=gather_dict(dic[k],scheduler_info=scheduler_info)
     return dic
 

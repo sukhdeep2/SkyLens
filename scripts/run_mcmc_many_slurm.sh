@@ -4,12 +4,12 @@
 #SBATCH -e /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/mcmc_many%A_%a.err
 #SBATCH -o /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/mcmc_many%A_%a.out
 #SBATCH -t 20:00:00
-#SBATCH -N 1
+#SBATCH -N 3
 ##SBATCH -n 28
 #SBATCH --ntasks-per-node=27
 #SBATCH --mem=128G
 #SBATCH -A phy200040p
-#SBATCH --array=1-16
+#SBATCH --array=1-2
 
 ID=$SLURM_ARRAY_JOB_ID
 
@@ -26,9 +26,9 @@ mkdir $temp_home
 cd $home
 
 
-do_xis=( 0 1 )
-eh_pks=( 0 1 )
-bin_ls=( 0 1 )
+do_xis=( 0  )
+eh_pks=( 1 )
+bin_ls=( 1 )
 fix_cosmos=( 0 1 )
 
 tmp_file=$temp_home"/""$ID""$job_id"".tmp"
@@ -80,7 +80,9 @@ do
                     echo '==============================================================' #>>$log_file
                     echo 'begining::' $(date) #>>$log_file 
 
-                    python3 -Xfaulthandler MCMC_emcee.py  --do_xi=$do_xi --eh_pk=$eh_pk --bin_l=$bin_l --fix_cosmo=$fix_cosmo --dask_dir=$CSCRATCH #--scheduler=$SCHEFILE #|cat>>$log_file
+#                     python3 -Xfaulthandler MCMC_emcee.py  --do_xi=$do_xi --eh_pk=$eh_pk --bin_l=$bin_l --fix_cosmo=$fix_cosmo --dask_dir=$CSCRATCH --scheduler=$SCHEFILE #|cat>>$log_file
+                    
+                    python3 -Xfaulthandler MCMC_IS.py  --do_xi=$do_xi --eh_pk=$eh_pk --bin_l=$bin_l --fix_cosmo=$fix_cosmo --dask_dir=$CSCRATCH --scheduler=$SCHEFILE #|cat>>$log_file
 
                     echo 'Finished::' $(date) #>>$log_file                                                                                                                                                                    
                     echo '================================================' #>>$log_file          

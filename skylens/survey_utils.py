@@ -76,7 +76,8 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None):
     
     return zs,p_zs
 
-def set_window(shear_zbins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False,scheduler_info=None,mask=None):
+def set_window(shear_zbins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False,scheduler_info=None,mask=None,
+              delta_W=True):
     from skylens.skylens_main import Skylens
     w_lmax=3*nside-1
     l0=np.arange(3*nside-1,dtype='int')
@@ -134,8 +135,16 @@ def set_window(shear_zbins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fac
         # cl_map.mask=mask
         shear_zbins[i]['window_cl0']=cl_i
         shear_zbins[i]['window']=cl_map
-#         shear_zbins[i]['window_alm']=hp.map2alm(cl_map)
-#         shear_zbins[i]['window_alm_noise']=hp.map2alm(cl_map_noise)
+        if delta_W:
+            shear_zbins[i]['window_N']=np.sqrt(shear_zbins[i]['window'])
+            shear_zbins[i]['window_N'][~mask]=hp.UNSEEN
+        else:
+            print('not using delta_W window')
+            shear_zbins[i]['window_N']=np.sqrt(1./shear_zbins[i]['window'])
+            shear_zbins[i]['window_N'][~mask]=hp.UNSEEN
+            shear_zbins[i]['window'][:]=1
+            shear_zbins[i]['window'][~mask]=hp.UNSEEN
+            
     del cl0G,kappa0
     return shear_zbins
 
@@ -181,7 +190,7 @@ def zbin_pz_norm(shear_zbins={},bin_indx=None,zs=None,p_zs=None,ns=0,bg1=1,AI=0,
 def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,scheduler_info=None,
                     zp_sigma=None,zs=None,n_zs=100,z_bins=None,f_sky=0.3,nside=256,use_window=False,z_true_max=5,
                     mask_start_pix=0,window_cl_fact=None,bg1=1,AI=0,AI_z=0,shear_m_bias=1,l=None,mag_fact=0,
-                     sigma_gamma=0.26,k_max=0.3,unit_win=False,use_shot_noise=True,**kwargs):
+                     sigma_gamma=0.26,k_max=0.3,unit_win=False,use_shot_noise=True,delta_W=True,**kwargs):
     """
         Setting source redshift bins in the format used in code.
         Need
@@ -205,6 +214,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
         if zp_sigma is not None:
             sigma_max=max(np.atleast_1d(zp_sigma))*5
 #         zs=np.linspace( max(0.01,min(zp)-sigma_max), max(zp)+sigma_max,len(zp)+2)#n_zs)
+        print(zp,n_zs,z_true_max)
         zs=np.linspace(min(zp),z_true_max,n_zs)
         zs=zs[zs<=z_true_max]
     print('source_tomo_bins, zmax',zs.max(),max(zp),sigma_max)
@@ -294,7 +304,7 @@ def source_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bia
     shear_zbins['bias_func']='constant_bias'
     if use_window:
         shear_zbins=set_window(shear_zbins=shear_zbins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
-                           window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info)
+                           window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info,delta_W=delta_W)
     return shear_zbins
 
 def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bias=None,
@@ -353,7 +363,7 @@ def lens_wt_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=26,ztrue_func=None,zp_bi
 def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bias=None,
                      window_cl_fact=None,mag_fact=0,scheduler_info=None,
                     zp_sigma=None,zg=None,f_sky=0.3,nside=256,use_window=False,mask_start_pix=0,
-                    l=None,sigma_gamma=0,k_max=0.3,unit_win=True,use_shot_noise=True):
+                    l=None,sigma_gamma=0,k_max=0.3,unit_win=True,use_shot_noise=True,delta_W=True):
     """
         Setting source redshift bins in the format used in code.
         Need
@@ -413,7 +423,7 @@ def galaxy_tomo_bins(zp=None,p_zp=None,nz_bins=None,ns=10,ztrue_func=None,zp_bia
     galaxy_zbins['n_bins']=nz_bins #easy to remember the counts
     if use_window:
         galaxy_zbins=set_window(shear_zbins=galaxy_zbins,f_sky=f_sky,nside=nside,mask_start_pix=mask_start_pix,
-                           window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info
+                           window_cl_fact=window_cl_fact,unit_win=unit_win,scheduler_info=scheduler_info,delta_W=delta_W
                            )
     return galaxy_zbins
 
@@ -423,7 +433,7 @@ def lsst_source_tomo_bins(zmin=0.1,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
                           window_cl_fact=None,ztrue_func=ztrue_given_pz_Gaussian,z_true_max=5,z_sigma_power=1,
                           f_sky=0.3,nside=256,zp=None,pzp=None,use_window=False,mask_start_pix=0,
                           l=None,sigma_gamma=0.26,AI=0,AI_z=0,mag_fact=0,k_max=0.3,
-                          scheduler_info=None,n_zs=None,
+                          scheduler_info=None,n_zs=100,delta_W=True,
                           unit_win=False,use_shot_noise=True,**kwargs):
 
     z=zp
@@ -462,7 +472,7 @@ def lsst_source_tomo_bins(zmin=0.1,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
             do_nothing=1
 
     return source_tomo_bins(zp=z,p_zp=pzp,ns=ns0,nz_bins=nbins,mag_fact=mag_fact,
-                            n_zs=n_zs,
+                            n_zs=n_zs,delta_W=delta_W,
                          ztrue_func=ztrue_func,zp_bias=z_bias,window_cl_fact=window_cl_fact,
                         zp_sigma=z_sigma,z_bins=z_bins,f_sky=f_sky,nside=nside,z_true_max=z_true_max,
                            use_window=use_window,mask_start_pix=mask_start_pix,k_max=k_max,
@@ -472,7 +482,7 @@ def lsst_source_tomo_bins(zmin=0.1,zmax=3,ns0=27,nbins=3,z_sigma=0.03,z_bias=Non
 
 def DESI_lens_bins(dataset='lrg',nbins=1,window_cl_fact=None,z_bins=None,
                     f_sky=0.3,nside=256,use_window=False,mask_start_pix=0,bg1=1,
-                       l=None,sigma_gamma=0,mag_fact=0,scheduler_info=None,
+                       l=None,sigma_gamma=0,mag_fact=0,scheduler_info=None,delta_W=True,
                     **kwargs):
 
     home='../data/desi/data/desi/'
@@ -501,7 +511,7 @@ def DESI_lens_bins(dataset='lrg',nbins=1,window_cl_fact=None,z_bins=None,
     print(dataset,zmin,zmax,z_bins)
     return source_tomo_bins(zp=z,p_zp=pz,ns=ns,nz_bins=nbins,mag_fact=mag_fact,
                          ztrue_func=None,zp_bias=0,window_cl_fact=window_cl_fact,
-                        zp_sigma=0,z_bins=z_bins,f_sky=f_sky,nside=nside,
+                        zp_sigma=0,z_bins=z_bins,f_sky=f_sky,nside=nside,delta_W=delta_W,
                            use_window=use_window,mask_start_pix=mask_start_pix,bg1=bg1,
                             l=l,sigma_gamma=sigma_gamma,scheduler_info=scheduler_info,**kwargs)
 

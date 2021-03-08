@@ -58,7 +58,7 @@ if __name__=='__main__':
     nz_shear=26 #galaxy/arcmin^-2
     nz_galaxy=3
 
-    nz_shear_train=1
+    nz_train_spectra=np.int32(1e6)
 
     train_sample_missed=1
     nz_shear_missed=6
@@ -120,7 +120,10 @@ if __name__=='__main__':
     do_sample_variance=True
 
     area=15000
+    
     area_train=150
+    nz_shear_train=nz_train_spectra/area_train/3600 #arcmin^-2
+    
     f_sky=area*d2r**2/4/np.pi
     f_sky_train=area_train*d2r**2/4/np.pi
 
@@ -155,7 +158,7 @@ if __name__=='__main__':
     proc = psutil.Process()
     print(format_bytes(proc.memory_info().rss))
 
-    fname_out='{ns}_{nsm}_{nl}_{nlD}_nlb{nlb}_lmax{lmax}_z{zmin}-{zmax}_zlmax{zlmax}_bary{bary_nQ}_AT{at}.pkl'
+    fname_out='{ns}_{nsm}_{nl}_{nlD}_nlb{nlb}_lmax{lmax}_z{zmin}-{zmax}_zlmax{zlmax}_bary{bary_nQ}_AT{at}_NT{NT}.pkl'
     if bin_cl and use_binned_l:
         fname_out='binnedL_'+fname_out
     elif bin_cl and not use_binned_l:
@@ -167,7 +170,7 @@ if __name__=='__main__':
     if SSV_cov:
         fname_out='SSV_'+fname_out
 
-    ncpu=25 #multiprocessing.cpu_count()-1
+    ncpu=5 #multiprocessing.cpu_count()-1
     LC,scheduler_info=start_client(Scheduler_file=Scheduler_file,local_directory=dask_dir,ncpu=None,n_workers=ncpu,threads_per_worker=1,
                                       memory_limit='120gb',dashboard_address=8801,processes=True)
     client=client_get(scheduler_info=scheduler_info)
@@ -175,7 +178,7 @@ if __name__=='__main__':
 
     fname_out=fname_out.format(ns=shear_n_zbins,nsm=train_sample_missed,nl=galaxy_n_zbins,nlD=galaxyD_n_zbins_tot,
                                nlb=Nl_bins,lmax=lmax_cl,bary_nQ=bary_nQ,
-                               zmin=z_min,zmax=z_max,zlmax=z_max_galaxy,at=area_train)
+                               zmin=z_min,zmax=z_max,zlmax=z_max_galaxy,at=area_train,NT=nz_train_spectra)
     fname_win=file_home+'/win_'+fname_out
 
     Skylens_kwargs=parse_dict(locals())
@@ -313,8 +316,9 @@ if __name__=='__main__':
 
     for i in np.arange(10): #photo-z bias
         priors['pz_b_l_'+str(i)]=0.0001
-
-    pp_s=photoz_prior(kappa_class=kappa_class,Skylens_kwargs0=Skylens_kwargs,z_bins_kwargs=z_bins_kwargs,key_label='nz_s_')
+    
+    if nz_shear_train>0 and area_train>0:
+        priors['nz_ana']=photoz_prior(kappa_class=kappa_class,Skylens_kwargs0=Skylens_kwargs,z_bins_kwargs=z_bins_kwargs,key_label='nz_s_')
     pp_s={}
     for i in np.arange(z_bins_kwargs['shear_zbins']['n_bins']): #photo-z bias
         pp_s[i]=sigma_photoz(z_bins_kwargs['shear_zbins'][i])
