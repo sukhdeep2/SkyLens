@@ -24,7 +24,7 @@ class binning():
         bu['binning_mat']=binning_mat
 
         r2=np.sort(np.unique(np.append(r,r_bins))) #this takes care of problems around bin edges
-        dr=np.gradient(r2) #FIXME: Check accuracy
+        dr=np.gradient(r2) #FIXME: can lead to shape errors if r is in r_bins
         r2_idx=[i for i in np.arange(len(r2)) if r2[i] in r]
         dr=dr[r2_idx]
         bu['r_dr']=r**(r_dim-1)*dr
@@ -127,6 +127,37 @@ class binning():
             wig_mat_b=binning_mat_xi.T@wm
         return wig_mat_b
 
+    
+    def bin_2d_inv_WT(self,wig_mat=[],wig_norm=None,bin_utils_xi=None,bin_utils_cl=None,
+                wt_b=None,wt0=None,use_binned_l=False,win_xi=None):
+
+        wig_mat=wig_mat.T*wig_norm
+        if bin_utils_xi is not None:
+            binning_mat_xi=bin_utils_xi['binning_mat']
+            if wt_b is None:
+                wt_b=bin_utils_xi['wt_b']
+            if wt0 is None:
+                wt0=bin_utils_xi['wt0']
+            if len(wt0.shape)==1:
+                binning_mat_xi2=wt0[:,None]*binning_mat_xi*wt_b
+            else:
+                binning_mat_xi2=wt0@binning_mat_xi@wt_b #FIXME: Test this.
+
+            wm=wig_mat@binning_mat_xi2
+            
+        else:
+            wm=wig_mat
+        
+        wig_mat_b=wm
+        if bin_utils_cl is not None and use_binned_l:
+            bin_mat_cl=bin_utils_cl['binning_mat']
+            
+            rdr=bin_utils_cl['r_dr']
+            bin_mat_cl=bin_mat_cl*rdr[:,None]/bin_utils_cl['norm'][None,:]
+            
+            wig_mat_b=bin_mat_cl.T@wm
+        return wig_mat_b
+    
     def bin_mat(self,r=[],mat=[],r_bins=[],r_dim=2,bin_utils=None):#works for cov and skewness
         ndim=len(mat.shape)
         n_bins=bin_utils['n_bins']

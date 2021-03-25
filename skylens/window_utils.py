@@ -75,16 +75,24 @@ class window_utils():
                 print('Warning: window for xi is different from cl.')
             self.get_cl_win()        
         self.cleanup()
-        self.scatter_win()
-    
+ 
+    def scatter_win(self):
+        if self.Win is None or not self.store_win or not isinstance(self.Win, dict):
+            return 
+        self.Win=scatter_dict(self.Win,scheduler_info=self.scheduler_info,depth=1) #FIXME: Not sure why depth=1 is needed here but not on othe dicts.
+        return 
+
     def get_cl_win(self):
         use_bag=False
         self.set_wig3j()
-        self.set_window_cl()
+        if not self.do_xi: #FIXME: bad design
+            self.set_window_cl()
         if self.store_win:
-            self.set_store_window(corrs=self.corrs,corr_indxs=self.corr_indxs,client=None,cl_bin_utils=self.cl_bin_utils,use_bag=use_bag)
+            self.set_store_window(corrs=self.corrs,corr_indxs=self.corr_indxs,client=None,
+                                  cl_bin_utils=self.cl_bin_utils,use_bag=use_bag)
         else:
-            self.set_window_graph(corrs=self.corrs,corr_indxs=self.corr_indxs,client=None,cl_bin_utils=self.cl_bin_utils)
+            self.set_window_graph(corrs=self.corrs,corr_indxs=self.corr_indxs,
+                                  client=None,cl_bin_utils=self.cl_bin_utils)
             
     def get_xi_win(self):
         use_bag=False
@@ -94,14 +102,17 @@ class window_utils():
         s1_s2=(0,0)
         lcl=client.scatter(self.window_l,broadcast=True)
         
-        WT_kwargs={'cl':{'l_cl':lcl,'s1_s2':s1_s2,'wig_d':self.WT.wig_d[(0,0)],'wig_l':self.WT.l,'wig_norm':self.WT.wig_norm,'grad_l':self.WT.grad_l}}
-        WT_kwargs['cov']={'l_cl':lcl,'s1_s2':s1_s2,'wig_d1':self.WT.wig_d[(0,0)],'wig_d':self.WT.wig_d[(0,0)],
-                      'wig_d2':self.WT.wig_d[(0,0)],'wig_l':self.WT.l,'grad_l':self.WT.grad_l,'wig_norm':self.WT.wig_norm}
+        WT_kwargs={'cl':{'l_cl':lcl,'s1_s2':s1_s2,'wig_d':self.WT.wig_d[(0,0)],
+                         'wig_l':self.WT.l,'wig_norm':self.WT.wig_norm,'grad_l':self.WT.grad_l}}
+        WT_kwargs['cov']={'l_cl':lcl,'s1_s2':s1_s2,'wig_d1':self.WT.wig_d[(0,0)],
+                          'wig_d':self.WT.wig_d[(0,0)],
+                          'wig_d2':self.WT.wig_d[(0,0)],'wig_l':self.WT.l,
+                          'grad_l':self.WT.grad_l,'wig_norm':self.WT.wig_norm}
         WT_kwargs=scatter_dict(WT_kwargs,broadcast=True,scheduler_info=self.scheduler_info,depth=2)
         
         xibu=None
         if self.xi_bin_utils is not None:
-            xibu=xi_bin_utils[(0,0)]
+            xibu=self.xi_bin_utils[(0,0)]
         
         self.set_window_cl(WT_kwargs=WT_kwargs,xi_bin_utils=xibu,use_bag=use_bag)
         
@@ -142,12 +153,6 @@ class window_utils():
 #         for k in keys:
 #             if hasattr(self,k):
 #                 del self.__dict__[k]
-
-    def scatter_win(self):
-        if self.Win is None or not self.store_win or not isinstance(self.Win, dict):
-            return 
-        self.Win=scatter_dict(self.Win,scheduler_info=self.scheduler_info,depth=1) #FIXME: Not sure why depth=1 is needed here but not on othe dicts.
-        return 
     
     def wig3j_step_read(self,m=0,lm=None,sem_lock=None):
         """
@@ -265,7 +270,8 @@ class window_utils():
                 M[k]*=self.MF[lm:lm+self.step,:] #FIXME: not used in covariance?
             if self.bin_window:# and bin_wt is not None:
                 M[k]=self.binnings.bin_2d_coupling(M=M[k],bin_utils=cl_bin_utils,
-                    partial_bin_side=2,lm=lm,lm_step=self.step,wt0=bin_wt['wt0'],wt_b=bin_wt['wt_b'],cov=cov)
+                    partial_bin_side=2,lm=lm,lm_step=self.step,wt0=bin_wt[k]['wt0'],wt_b=bin_wt[k]['wt_b'],cov=cov)
+                        #FIXME: Wrong binning for noise.
                 
         if W_pm!=0:
             del wig
@@ -309,7 +315,7 @@ class window_utils():
         win=win0#[i]#[k]
 #             assert win['corr']==corr
         win2={'M':{},'M_noise':None,'M_B':None,'M_B_noise':None,'binning_util':win['binning_util']}
-        for kt in ['corr','indxs']:
+        for kt in ['corr','indxs','s1s2']:
             win2[kt]=win0[kt]
         if lm==0:
             win2=copy.deepcopy(win)
@@ -319,24 +325,23 @@ class window_utils():
         win2['M'][lm]=win_M['cl']
         if 'N' in win_M.keys():
             win2['M_noise']={lm:win_M['N']}
-        if win['corr']==('shear','shear') and win['indxs'][0]==win['indxs'][1]:# and not self.do_xi: #B-mode for cl
-        #FIXME for xi, window is same in xi+/-. pseudo-C_ell and xi together are not supported right now.
-            win_M=self.coupling_matrix_large(win[12],wig_3j_2=wig_3j_2,mf_pm=mf_pm,W_pm=-2,bin_wt=win['bin_wt'],
+        if win['corr']==('shear','shear') and win['indxs'][0]==win['indxs'][1]: #B mode.
+            win_M_B=self.coupling_matrix_large(win[12],wig_3j_2=wig_3j_2,mf_pm=mf_pm,W_pm=-2,bin_wt=win['bin_wt'],
                                             lm=lm,cov=False,cl_bin_utils=cl_bin_utils)
-            win2['M_B_noise']={lm: win_M['N']}
-            win2['M_B']={lm: win_M['cl']}
+            win2['M_B_noise']={lm: win_M_B['N']}
+            win2['M_B']={lm: win_M_B['cl']}
         i+=1
         return win2
         
-    def get_cl_coupling_all_lm(self,corr_indxs,win0,wig_3j_2,mf_pm):
-        win_lm={}
-        client=get_client(address=self.scheduler_info['address'])
-        wig_3j_2=client.compute(wig_3j_2).result()
-        mf_pm=client.compute(mf_pm).result()
-        for lm in self.lms:
-            win_lm[lm]=self.get_cl_coupling_lm(corr_indxs,win0,lm,wig_3j_2[lm],mf_pm[lm])
-#             win_lm[lm]=delayed(self.get_cl_coupling_lm)(win0,wig_3j_2[lm],mf_pm[lm])
-        return win_lm
+#     def get_cl_coupling_all_lm(self,corr_indxs,win0,wig_3j_2,mf_pm):
+#         win_lm={}
+#         client=get_client(address=self.scheduler_info['address'])
+#         wig_3j_2=client.compute(wig_3j_2).result()
+#         mf_pm=client.compute(mf_pm).result()
+#         for lm in self.lms:
+#             win_lm[lm]=self.get_cl_coupling_lm(corr_indxs,win0,lm,wig_3j_2[lm],mf_pm[lm])
+# #             win_lm[lm]=delayed(self.get_cl_coupling_lm)(win0,wig_3j_2[lm],mf_pm[lm])
+#         return win_lm
     
     def combine_coupling_cl(self,result):
         """
@@ -351,6 +356,7 @@ class window_utils():
 
         for ii_t in np.arange(len(self.cl_keys)): #list(result[0].keys()):
             ii=0#because we are deleting below
+            ckt=self.cl_keys[ii_t]
             
             result_ii=result[0][ii]
             corr=result_ii['corr']
@@ -374,7 +380,7 @@ class window_utils():
                 if self.bin_window:
                     start_i=0
                     end_i=nl
-              
+
                 result0['M'][start_i:end_i,:]+=result[lm][ii]['M'][lm]
                 if  result_ii['M_noise'] is not None:
                     result0['M_noise'][start_i:end_i,:]+=result[lm][ii]['M_noise'][lm]
@@ -498,6 +504,7 @@ class window_utils():
         corr=[cov_keys[i] for i in np.arange(4)]
         indxs=[cov_keys[i+4] for i in np.arange(4)]
         bin_wt_xi={}
+
         bin_wt_xi['xi12']={s:xi0[(corr[0],corr[1])][s][(indxs[0],indxs[1])]for s in xi0[(corr[0],corr[1])].keys()}
         bin_wt_xi['xi34']={s:xi0[(corr[2],corr[3])][s][(indxs[2],indxs[3])]for s in xi0[(corr[2],corr[3])].keys()}
         bin_wt_xi['xi13']={s:xi0[(corr[0],corr[2])][s][(indxs[0],indxs[2])] for s in xi0[(corr[0],corr[2])].keys()}
@@ -548,20 +555,42 @@ class window_utils():
         wig_3j_2_1324=wig_3j_2[s1s2s[1324]]
         wig_3j_2_1423=wig_3j_2[s1s2s[1423]]
         for corr_i in [1324,1423]:
+            bin_wt={}
             if corr_i==1423:
                 wig_i=wig_3j_2_1423
-                if self.bin_window:
-                    bin_wt={'wt0':np.sqrt(win['bin_wt']['cl14']*win['bin_wt']['cl23'])} #FIXME: this is an approximation because we donot save unbinned covariance
-                    bin_wt['wt_b']=np.sqrt(win['bin_wt']['cl_b14']*win['bin_wt']['cl_b23'])
-                    if not np.all(bin_wt['wt_b']==0): #avoid NAN
-                        bin_wt['wt_b']=1./bin_wt['wt_b']
+                if self.bin_window: #FIXME: wrong weights for noise
+                    #this is an approximation because we donot save unbinned covariance
+                    bin_wt['clcl']={'wt0':np.sqrt(win['bin_wt']['cl14']*win['bin_wt']['cl23'])} 
+                    bin_wt['clcl']['wt_b']=np.sqrt(win['bin_wt']['cl_b14']*win['bin_wt']['cl_b23'])
+                    
+                    bin_wt['Ncl']={'wt0':np.sqrt(win['bin_wt']['cl23'])} 
+                    bin_wt['Ncl']['wt_b']=np.sqrt(win['bin_wt']['cl_b23'])
+                    
+                    bin_wt['clN']={'wt0':np.sqrt(win['bin_wt']['cl14'])} 
+                    bin_wt['clN']['wt_b']=np.sqrt(win['bin_wt']['cl_b14'])
+                    
+                    bin_wt['NN']={'wt0':np.ones_like(win['bin_wt']['cl14'])} 
+                    bin_wt['NN']['wt_b']=np.ones_like(win['bin_wt']['cl_b14'])
+                    
             else:
                 wig_i=wig_3j_2_1324
                 if self.bin_window:
-                    bin_wt={'wt0':np.sqrt(win['bin_wt']['cl13']*win['bin_wt']['cl24'])} #FIXME: this is an approximation because we donot save unbinned covariance
-                    bin_wt['wt_b']=np.sqrt(win['bin_wt']['cl_b13']*win['bin_wt']['cl_b24'])
-                    if not np.all(bin_wt['wt_b']==0):#avoid NAN
-                        bin_wt['wt_b']=1./bin_wt['wt_b']
+                     #FIXME: this is an approximation because we donot save unbinned covariance
+                    bin_wt['clcl']={'wt0':np.sqrt(win['bin_wt']['cl13']*win['bin_wt']['cl24'])}
+                    bin_wt['clcl']['wt_b']=np.sqrt(win['bin_wt']['cl_b13']*win['bin_wt']['cl_b24'])
+                    
+                    bin_wt['Ncl']={'wt0':np.sqrt(win['bin_wt']['cl24'])}
+                    bin_wt['Ncl']['wt_b']=np.sqrt(win['bin_wt']['cl_b24'])
+
+                    bin_wt['clN']={'wt0':np.sqrt(win['bin_wt']['cl13'])}
+                    bin_wt['clN']['wt_b']=np.sqrt(win['bin_wt']['cl_b13'])
+
+                    bin_wt['NN']={'wt0':np.ones_like(win['bin_wt']['cl13'])}
+                    bin_wt['NN']['wt_b']=np.ones_like(win['bin_wt']['cl_b13'])
+
+            for k in bin_wt.keys():
+                if not np.all(bin_wt[k]['wt_b']==0): #avoid NAN
+                    bin_wt[k]['wt_b']=1./bin_wt[k]['wt_b']
             for wp in win['W_pm'][corr_i]:
                 win_t=self.coupling_matrix_large(win[corr_i], wig_3j_2=wig_i,mf_pm=mf_pm,W_pm=wp,
                                             bin_wt=bin_wt,lm=lm,cov=True,cl_bin_utils=cl_bin_utils)
@@ -777,7 +806,7 @@ class window_utils():
                     indx=(ck[2],ck[3])
                     c_ell0={corr:{indx:self.c_ell0[corr][indx]}} if self.c_ell0 is not None else None
                     c_ell_b={corr:{indx:self.c_ell_b[corr][indx]}}if self.c_ell_b is not None else None
-
+                    print('Win_cli',ck,corr,indx)
                     yield delayed(get_window_power_cl)(ck,WU,c_ell0=c_ell0,c_ell_b=c_ell_b,
                                                                z_bin1=z_bins[ck[0]][ck[2]],z_bin2=z_bins[ck[1]][ck[3]],
                                                                WT_kwargs=WT_kwargs['cl'],
@@ -791,6 +820,10 @@ class window_utils():
             Win_cl=client_func(list(Win_cli()))
         else:
             Win_cl=list(Win_cli())
+        print('set window_cl: cl done',time.time()-t1,get_size_pickle(self),get_size_pickle(WT_kwargs))
+#         Win_cl=client.gather(Win_cl)
+#         print('set window_cl: cl done',time.time()-t1,get_size_pickle(self),get_size_pickle(WT_kwargs),[wc['corr'] for wc in Win_cl],
+#              [wc['s1s2'] for wc in Win_cl])
         
         Win_cov=None
         if self.do_cov:
@@ -1095,8 +1128,9 @@ def get_window_power_cl(corr_indxs,WU,c_ell0=None,c_ell_b=None,z_bin1=None,z_bin
     win={}
     win['corr']=corr
     win['indxs']=indxs
-
+    
     s1s2=np.absolute(self.s1_s2s[corr]).flatten()
+        
     W_pm=0
     if np.sum(s1s2)!=0:
         W_pm=2 #we only deal with E mode\
@@ -1123,10 +1157,12 @@ def get_window_power_cl(corr_indxs,WU,c_ell0=None,c_ell_b=None,z_bin1=None,z_bin
 
     win['binning_util']=None
     win['bin_wt']=None
-    if self.bin_window:
+    if self.bin_window and self.do_pseudo_cl:
         cl0=c_ell0[corr][indxs]
         cl_b=c_ell_b[corr][indxs]
-        win['bin_wt']={'wt_b':1./cl_b,'wt0':cl0}
+        win['bin_wt']={}
+        win['bin_wt']['cl']={'wt_b':1./cl_b,'wt0':cl0}
+        win['bin_wt']['N']={'wt_b':np.ones_like(cl_b),'wt0':np.ones_like(cl0)}
         if np.all(cl_b==0):#avoid nan
             win['bin_wt']={'wt_b':cl_b,'wt0':cl0}
 

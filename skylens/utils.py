@@ -87,11 +87,15 @@ def scatter_dict(dic,scheduler_info=None,depth=2,broadcast=False,return_workers=
         print('scatter_dict got empty dictionary')
     else:
         client=client_get(scheduler_info=scheduler_info)
+#         dic['scatter_depth']=depth
         for k in dic.keys():
+            if k=='scatter_depth':
+                continue
             if isinstance(dic[k],dict) and depth>0:
-                dic[k],workers=scatter_dict(dic[k],scheduler_info=scheduler_info,depth=depth-1,broadcast=broadcast,return_workers=True,workers=workers)
+                dic[k],workers=scatter_dict(dic[k],scheduler_info=scheduler_info,depth=depth-1,
+                                            broadcast=broadcast,return_workers=True,workers=workers)
             elif isinstance(dic[k],Future): #don't want future of future.
-#                 print('scatter dict was passed a future, gathering and re-scattering', k)
+                print('scatter dict was passed a future, gathering and re-scattering', k)
                 dic[k]=client.gather(dic[k])
                 dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
                 workers=list(client.who_has(dic[k]).values())[0]
@@ -145,10 +149,15 @@ def gather_dict(dic,scheduler_info=None):
         print('gather_dict got empty dictionary')
         return dic
     client=client_get(scheduler_info=scheduler_info)
-    if isinstance(dic,Future):
+#     depth=1
+#     if isinstance(dic,dict):
+#         depth=dic.get('scatter_depth')
+#         if depth is None:
+#             depth=1
+    if isinstance(dic,Future):# or depth <=0:
         dic=client.gather(dic) #this may not always be clean for nested dicts
 #     else:
-    if isinstance(dic,dict):
+    if isinstance(dic,dict):# and depth >0:
         for k in dic.keys():
             if isinstance(dic[k],dict):
                 dic[k]=gather_dict(dic[k],scheduler_info=scheduler_info)
@@ -216,3 +225,50 @@ def start_client(Scheduler_file=None,local_directory=None,ncpu=None,n_workers=1,
     scheduler_info['file']=Scheduler_file
     return LC,scheduler_info #client can be obtained from client_get
 
+def l_max_modes(l):
+    return l**2+l
+
+def get_l_bins(l_min=2,l_max=1000,N_bins=20,binning_scheme='linear',max_modes=None,min_modes=None):
+    
+    n_modes_min=l_max_modes(l_min)
+    n_modes_max=l_max_modes(l_max)
+    n_modes=n_modes_max-n_modes_min
+    
+    if binning_scheme=='log':
+        n_modes_bin=np.logspace(np.log10(n_modes_min),np.log10(n_modes_max),N_bins+1)
+    if binning_scheme=='linear':
+        n_modes_bin=np.linspace(n_modes_min,n_modes_max,N_bins+1)
+    if binning_scheme=='constant':
+        n_modes_bin=np.ones(N_bins+1)*np.int(n_modes/N_bins)
+    
+    def bin_norm(n_modes_bin,n_modes):
+        n_modes_bin=n_modes_bin/n_modes_bin.sum()
+        n_modes_bin*=n_modes
+        n_modes_bin=np.int32(n_modes_bin)
+        n_modes_bin[n_modes_bin==0]+=1
+        return n_modes_bin
+    
+    n_modes_bin=bin_norm(n_modes_bin,n_modes)
+    
+    if max_modes is not None:
+        n_modes_bin[n_modes_bin>max_modes]=max_modes
+    if min_modes is not None:
+        n_modes_bin[n_modes_bin<min_modes]=min_modes
+        
+    n_modes_bin=bin_norm(n_modes_bin,n_modes)
+    
+    l_bins=np.zeros(N_bins+1)
+    l_bins[0]=l_min
+    l_bins[-1]=l_max
+    for i in np.arange(N_bins):
+        n_mode_i=0
+        l_i=l_bins[i]+1
+        while n_mode_i<n_modes_bin[i]:
+            n_mode_i+=l_i*2+1
+            l_i+=1
+            if l_i>=l_max:
+                break
+        l_bins[i+1]=l_i
+    if l_bins[-1]<l_max:
+        l_bins[-1]=l_max
+    return np.int32(l_bins)

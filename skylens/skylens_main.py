@@ -33,8 +33,8 @@ class Skylens():
                 Tri_cov=False,sparse_cov=False,
                 use_window=True,window_lmax=None,window_l=None,store_win=False,Win=None,
                 f_sky=None,wigner_step=None,cl_func_names={},zkernel_func_names={},
-                l_bins=None,bin_cl=False,use_binned_l=False,do_pseudo_cl=True,
-                stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,
+                l_bins=None,l_bins_center=None,bin_cl=False,use_binned_l=False,do_pseudo_cl=True,
+                stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,theta_bins_center=None,
                 use_binned_theta=False, xi_SN_analytical=False,
                 corrs=None,corr_indxs=None,stack_indxs=None,
                 wigner_files=None,name='',clean_tracer_window=True,
@@ -97,8 +97,8 @@ class Skylens():
                         #FIXME: Need a dict for these args
         self.set_cl_funcs()
         
-        if self.do_xi and not self.xi_win_approx: #FIXME: Since the `aprrox' is actually the correct way, change the notation.
-            self.do_pseudo_cl=True #we will use pseudo_cl transform to get correlation functions.
+#         if self.do_xi and not self.xi_win_approx: #FIXME: Since the `aprrox' is actually the correct way, change the notation.
+#             self.do_pseudo_cl=True #we will use pseudo_cl transform to get correlation functions.
 
         self.Win0=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,s1_s2s=self.s1_s2s,
                         cov_indxs=self.cov_indxs,scheduler_info=self.scheduler_info,
@@ -187,7 +187,8 @@ class Skylens():
                     continue
                 inp_args[k]=copy.deepcopy(self.__dict__[k])#when passing yaml, most of input_args are updated. use updated ones
             #print('binned_meansure',inp_args.keys())
-            self.lb=np.int32((self.l_bins[1:]+self.l_bins[:-1])*.5)
+            if self.l_bins_center is None:
+                self.l_bins_center=np.int32((self.l_bins[1:]+self.l_bins[:-1])*.5)
             inp_args['use_binned_l']=False
             inp_args['use_binned_theta']=False
             inp_args['use_window']=False
@@ -203,7 +204,7 @@ class Skylens():
             self.kappa0=Skylens(**inp_args)  #to get unbinned c_ell and xi
 #             self.kappa0.bin_xi=False #we want to get xi_bin_utils
 
-            inp_args2['l']=self.lb
+            inp_args2['l']=self.l_bins_center
             inp_args2['name']='S_b'
             inp_args2['l_bins']=None
             inp_args2['bin_cl']=False
@@ -212,15 +213,18 @@ class Skylens():
             self.kappa_b_xi=None
             if self.do_xi and self.use_binned_theta:
                 theta_bins=inp_args['theta_bins']
-                self.thb=(theta_bins[1:]+theta_bins[:-1])*.5 #FIXME:this may not be effective theta of meaurements
+                if self.theta_bins_center is None:
+                    self.theta_bins_center=(theta_bins[1:]+theta_bins[:-1])*.5 #FIXME:this may not be effective theta of meaurements
                 inp_args_xi=copy.deepcopy(inp_args)
                 inp_args_xi['name']='S_b_xi'
-                inp_args_xi['WT'].reset_theta_l(theta=self.thb)
+                inp_args_xi['bin_xi']=True
+                inp_args_xi['use_window']=self.use_window
+#                 inp_args_xi['WT'].reset_theta_l(theta=self.theta_bins_center)#FIXME
                 self.kappa_b_xi=Skylens(**inp_args_xi) #to get binned xi. 
                 
                 self.xi0=self.kappa0.xi_tomo()['xi']
                 self.xi_b=self.kappa_b_xi.xi_tomo()['xi']
-            self.l=self.lb*1.
+            self.l=self.l_bins_center*1.
             self.c_ell0=self.kappa0.cl_tomo()['cl']
             self.c_ell_b=self.kappa_b.cl_tomo()['cl']
             print('set binned measure done')
@@ -331,6 +335,7 @@ class Skylens():
 #         self.WT.scatter_data(scheduler_info=self.scheduler_info)
         WT=self.WT
         self.WT_binned={corr:{} for corr in self.corrs} #intialized later.
+        self.inv_WT_binned={corr:{} for corr in self.corrs} #intialized later.
         self.WT_binned_cov={corr:{} for corr in self.corrs}
         client=client_get(self.scheduler_info)
         if self.use_binned_theta or self.use_binned_l:
@@ -340,6 +345,7 @@ class Skylens():
             for corr in self.corrs:
                 s1_s2s=self.s1_s2s[corr]
                 self.WT_binned[corr]={s1_s2s[im]:{} for im in np.arange(len(s1_s2s))}
+                self.inv_WT_binned[corr]={s1_s2s[im]:{} for im in np.arange(len(s1_s2s))}
                 self.WT_binned_cov[corr]={s1_s2s[im]:{} for im in np.arange(len(s1_s2s))}
                 for indxs in self.corr_indxs[corr]:    
                     cl0=self.c_ell0[corr][indxs].compute()
@@ -351,7 +357,7 @@ class Skylens():
                     for im in np.arange(len(s1_s2s)):
                         s1_s2=s1_s2s[im]
                         win_xi=None
-                        if self.use_window and self.xi_win_approx:
+                        if self.use_window:# and self.xi_win_approx:
                             win_xi=client.gather(self.Win['cl'][corr][indxs])#['xi']#this will not work for covariance
                             win_xi=win_xi['xi']
                         self.WT_binned[corr][s1_s2][indxs]=delayed(self.binning.bin_2d_WT)(
@@ -359,10 +365,26 @@ class Skylens():
                                                             wig_norm=self.WT.wig_norm,
                                                             wt0=wt0,wt_b=wt_b,bin_utils_cl=self.cl_bin_utils,
                                                             bin_utils_xi=self.xi_bin_utils[s1_s2],
-                                                            win_xi=win_xi,
-                                                            use_binned_theta=self.use_binned_theta)
+                                                            win_xi=win_xi,use_binned_theta=self.use_binned_theta)
                         self.WT_binned[corr][s1_s2][indxs]=client.compute(self.WT_binned[corr][s1_s2][indxs]).result()
                         self.WT_binned[corr][s1_s2][indxs]=client.scatter(self.WT_binned[corr][s1_s2][indxs])
+                        
+                        if self.do_xi and self.use_binned_theta:
+                            xi0=self.xi0[corr][s1_s2][indxs].compute()
+                            xi_b=self.xi_b[corr][s1_s2][indxs].compute()
+                            wt0_inv=xi0
+                            wt_b_inv=1./xi_b
+                            if np.all(xi_b==0):
+                                wt_b_inv[:]=0
+                            self.inv_WT_binned[corr][s1_s2][indxs]=delayed(self.binning.bin_2d_inv_WT)(
+                                                            wig_mat=self.WT.wig_d[s1_s2],
+                                                            wig_norm=self.WT.inv_wig_norm,
+                                                            wt0=wt0_inv,wt_b=wt_b_inv,bin_utils_cl=self.cl_bin_utils,
+                                                            bin_utils_xi=self.xi_bin_utils[s1_s2],
+                                                            win_xi=None,use_binned_l=self.use_binned_l)
+                            self.inv_WT_binned[corr][s1_s2][indxs]=client.compute(self.inv_WT_binned[corr][s1_s2][indxs]).result()
+                            self.inv_WT_binned[corr][s1_s2][indxs]=client.scatter(self.inv_WT_binned[corr][s1_s2][indxs])
+                        
                         if self.do_cov:
                             if win_xi is None:
                                 self.WT_binned_cov[corr][s1_s2][indxs]=self.WT_binned[corr][s1_s2][indxs]
@@ -687,12 +709,11 @@ class Skylens():
         xi_b=xi
         
         if self.bin_xi and not self.use_binned_theta: #wig_d is binned when use_binned_l
-                                                                                #FIXME: Need window correction when use_binned_l
-            if self.use_window and self.xi_win_approx: 
+            if self.use_window:
                 xi=xi*Win['xi']
             xi_b=self.binning.bin_1d(xi=xi,bin_utils=self.xi_bin_utils[s1_s2])
         
-        if self.use_window and self.xi_win_approx:
+        if self.use_window:# and self.xi_win_approx:
             xi_b/=(Win['xi_b'])
         return xi_b
     
@@ -921,10 +942,14 @@ class Skylens():
 
         est=dat['est']
         if est=='xi':
-            len_bins=len(self.theta_bins)-1
+            if self.bin_xi:
+                len_bins=len(self.theta_bins)-1
+            else:
+                k=list(self.WT.theta.keys())[0]
+                len_bins=len(self.WT.theta[k])
         else:
             #est='cl_b'
-            if self.l_bins is not None:
+            if self.bin_cl:
                 len_bins=len(self.l_bins)-1
             else:
                 len_bins=len(self.l)

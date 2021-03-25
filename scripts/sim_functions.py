@@ -22,8 +22,8 @@ Master_algs=['iMaster','Master','nMaster'] #['unbinned','Master','nMaster','iMas
 class Sim_jk():
     def __init__(self,nsim=150,njk=0,do_norm=False,cl0=None,kappa_class=None,kappa0=None,use_shot_noise=True,
                  nside=None,lognormal=False,lognormal_scale=1,add_SSV=True,add_tidal_SSV=True,
-                 use_cosmo_power=True,Master_algs=Master_algs,seed=12334,#fsky=0,
-                 add_blending=False,blending_coeff=-2,fiber_coll_coeff=-1,jkmap=None,
+                 use_cosmo_power=True,Master_algs=Master_algs,seed=12334,do_xi=False,#fsky=0,
+                 add_blending=False,blending_coeff=-2,fiber_coll_coeff=-1,jkmap=None,kappa_class_xib=None,
                  subsample=False,skylens_kwargs=None,njobs_submit_per_worker=5
                 ):
         
@@ -46,21 +46,23 @@ class Sim_jk():
             self.get_coupling_matrices_jk(kappa_class=kappa_class)
             self.sim_clb_shape=(self.nsim,self.Nl_bins*(self.ndim+1)) #shear-shear gives 2 corrs, EE and BB.. 
         
-        self.xi_window_norm={}
-
-        if self.kappa_class.do_xi:
+        if self.do_xi:
+            self.xi_window_norm={}
             self.n_th_bins=len(self.kappa_class.theta_bins)-1
             self.xi_window_norm=get_xi_window_norm_jk(Sim_jk=self)
             self.sim_xib_shape=(self.nsim,self.n_th_bins*(self.ndim+1)) #shear-shear gives 2 corrs, xi+ and xi-
+            self.get_xi_coupling_matrices()
 
         self.mask={}
         self.window={}
         self.window_N={}
+        self.window_N_norm={}
         if self.kappa_class.use_window:
             for tracer in self.kappa_class.z_bins.keys():
                 self.window[tracer]=kappa_class.tracer_utils.z_win[tracer][0]['window']
                 self.window_N[tracer]=kappa_class.tracer_utils.z_win[tracer][0]['window_N']
                 self.mask[tracer]=self.window[tracer]==hp.UNSEEN
+                self.window_N_norm[tracer]=(self.window_N[tracer][self.mask[tracer]]**2).mean()
                 
         if self.cl0 is None:
             self.cl0={}
@@ -68,27 +70,39 @@ class Sim_jk():
             clG0=self.kappa_class.cl_tomo() 
             for corr in kappa_class.corrs:
                 self.cl0[corr]=clG0['cl'][corr][(0,0)].compute()
-                self.pcl0[corr]=clG0['pseudo_cl_b'][corr][(0,0)].compute()
-        if kappa0.do_xi:
+#                 self.cl0_b[corr]=clG0['cl_b'][corr][(0,0)].compute()
+                if self.kappa_class.do_pseudo_cl:
+                    self.pcl0[corr]=clG0['pseudo_cl_b'][corr][(0,0)].compute()
+                    if corr==corr_ll:
+                        self.pcl0['shear_B']=clG0['cl_b'][corr][(0,0)].compute()@self.coupling_M['full']['coupling_M_binned']['iMaster']['shear_B']
+        if self.do_xi:
             xiG_L0=kappa0.xi_tomo()
             self.xi_L0=client.compute(xiG_L0['stack']).result() #.compute()
             xiWG_L=kappa_class.xi_tomo()
             self.xiW_L=client.compute(xiWG_L['stack']).result() #.compute()  #####mem crash
 
-
         self.clN0={}
+        self.pclN0={}
+        self.shot_noise={}
         kappa_class.gather_data()
         for corr in self.kappa_class.corrs: #ordering: TT, EE, BB, TE if 4 cl as input.. use newbool=True
 
             shot_noise=kappa_class.SN[corr_gg][:,0,0]*0
             if corr[0]==corr[1]:
                 shot_noise=kappa_class.SN[corr][:,0,0]
-            self.shot_noise=shot_noise*use_shot_noise
-            self.clN0[corr]=shot_noise
+                self.window_N_norm[corr[0]]*=shot_noise
+            self.shot_noise[corr]=shot_noise*use_shot_noise
+            self.clN0[corr]=self.shot_noise[corr]#@self.coupling_M['coupling_M_N'][corr]
             self.cl0[corr]=self.cl0[corr]*use_cosmo_power#+shot_noise
+            
+            if self.kappa_class.do_pseudo_cl and corr[0]==corr[1]:
+                self.pclN0[corr]=self.shot_noise[corr]@self.coupling_M['full']['coupling_M_N'][corr]
+                if corr==corr_ll:
+                    self.pclN0['shear_B']=self.shot_noise[corr]@self.coupling_M['full']['coupling_M_N']['shear_B']
+            
             if corr==corr_ll:
                 self.cl0['shear_B']=self.cl0[corr]*0
-                self.clN0['shear_B']=self.shot_noise
+                self.clN0['shear_B']=self.shot_noise[corr]
 
         print('ndim:',self.ndim)
         self.outp={}
@@ -117,7 +131,9 @@ class Sim_jk():
 
         if self.ndim>1:
             self.cl0=(self.cl0[corr_gg],self.cl0[corr_ll],self.cl0['shear_B'],self.cl0[corr_ggl])#ordering: TT, EE, BB, TE if 4 cl as input.. use newbool=True
+
             self.clN0=(self.clN0[corr_gg],self.clN0[corr_ll],self.clN0['shear_B'],self.clN0[corr_ggl])#ordering: TT, EE, BB, TE if 4 cl as input.. use newbool=True
+
         else:
             self.cl0=cl0[corr_gg]
             self.clN0=clN0[corr_gg]
@@ -135,17 +151,25 @@ class Sim_jk():
         self.outp['cl0']=self.cl0
         self.outp['cl0_b']=self.cl0_b
         self.outp['clN0']=self.clN0
+        self.outp['pclN0']=self.pclN0
         self.outp['pcl0']=self.pcl0
         self.outp['corr_order']=self.corr_order
-
+        self.outp['window_N_norm']=self.window_N_norm
+        
+        self.outp['nsim']=nsim
+        self.outp['nside']=nside
         self.outp['size']=self.nsim
 #         self.outp['fsky']=self.fsky
         self.outp['l']=self.kappa_class.l
+        self.outp['window_l']=self.kappa_class.window_l
+        self.outp['Win']=self.kappa_class.Win
         self.outp['l_bins']=self.kappa_class.l_bins
         self.outp['use_shot_noise']=self.use_shot_noise
 
         if self.kappa_class.do_pseudo_cl:
             self.outp['coupling_M']=self.coupling_M
+        if self.kappa_class.do_xi:
+            self.outp['wig_d_binned']=self.wig_d_binned
     
     def get_stats(self,):        
         client=client_get(scheduler_info=self.scheduler_info)
@@ -159,8 +183,8 @@ class Sim_jk():
                 self.outp['cl_b_stats'][im]=client.compute(delayed(calc_sim_stats)(sim=cl_b[im]['full'],sim_truth=cl0_b))
                 
             pcl_b=self.get_full_samp(self.pcl_b)
-            self.cl0_b['shear_B']=self.cl0_b[corr_ll]*0
-            self.cl0_b=np.array([self.cl0_b[corr] for corr in self.corr_order]).flatten()
+#             self.cl0_b['shear_B']=self.cl0_b[corr_ll]*0
+#             self.cl0_b=np.array([self.cl0_b[corr] for corr in self.corr_order]).flatten()
             self.outp['pcl_b_stats']=client.compute(delayed(calc_sim_stats)(sim=pcl_b['full'],sim_truth=pcl_b['full'].mean(axis=0)))
 
             for im in self.Master_algs:
@@ -169,13 +193,30 @@ class Sim_jk():
 
             self.outp['cl_b']=self.cl_b
             self.outp['pcl_b']=self.pcl_b
-        if self.kappa_class.do_xi:
+        if self.do_xi:
             xi_b=self.get_full_samp(self.xi_b)
+            
+            im='xi_imaster'
+            cl_b[im]=self.get_full_samp(self.cl_b[im])
+            self.cl0_b['shear_m']=self.cl0_b[corr_ll]
+            cl0_b=[]
+            for corr in self.kappa_class.corrs:
+                cl0_b+=[self.cl0_b[corr]]
+                if corr==corr_ll:
+                    cl0_b+=[self.cl0_b[corr]]
+            
+            cl0_b=np.hstack(cl0_b)
+            self.outp['cl_b_stats'][im]=client.compute(delayed(calc_sim_stats)(sim=cl_b[im]['full'],sim_truth=cl0_b))
+
             self.outp['xi_b_stats']=client.compute(delayed(calc_sim_stats)(sim=xi_b['full'],sim_truth=xi_b['full'].mean(axis=0)))
             self.outp['xi_b_stats']=self.outp['xi_b_stats'].result()
+            self.outp['cl_b_stats'][im]=self.outp['cl_b_stats'][im].result()
             self.outp['xi0']=self.xi_L0
             self.outp['xiW0']=self.xiW_L
             self.outp['xi_b']=self.xi_b
+            self.outp['theta_bins']=self.kappa_class.theta_bins
+            th_bins=self.outp['theta_bins']
+            self.outp['thb']=0.5*(th_bins[1:]+th_bins[:-1])
             self.outp['xi_window_norm']=self.xi_window_norm
         return
     
@@ -194,6 +235,7 @@ class Sim_jk():
             futures_done+=futures_j
             j+=step
         del futures
+        
         if self.kappa_class.do_pseudo_cl:    
             self.cl_b={im: {'full':np.zeros(self.sim_clb_shape,dtype='float32')} for im in self.Master_algs}
             for im in self.Master_algs:
@@ -201,9 +243,12 @@ class Sim_jk():
 
             self.pcl_b={'full':np.zeros(self.sim_clb_shape,dtype='float32')}
             self.pcl_b.update({jks:{} for jks in self.jk_stat_keys})
-        if self.kappa_class.do_xi:    
+        if self.do_xi:    
             self.xi_b={'full':np.zeros(self.sim_xib_shape,dtype='float32')}   #  {im:np.zeros(sim_clb_shape,dtype='float32') for im in Master_algs}}
             self.xi_b.update({jks:{} for jks in self.jk_stat_keys})  #{im:{} for im in Master_algs} for jks in jk_stat_keys})
+            im='xi_imaster'
+            self.cl_b[im]= {'full':np.zeros(self.sim_clb_shape,dtype='float32')}
+            self.cl_b[im].update({jks:{} for jks in self.jk_stat_keys}) 
 
         for i in np.arange(self.nsim):
             tt=futures_done[i].result()
@@ -211,8 +256,10 @@ class Sim_jk():
                 self.pcl_b[i]=tt[0]
                 for k in self.Master_algs:
                     self.cl_b[k][i]=tt[1][k]
-            if self.kappa_class.do_xi:
+            if self.do_xi:
                 self.xi_b[i]=tt[2]
+                k='xi_imaster'
+                self.cl_b[k][i]=tt[1][k]
 
             client.cancel(futures_done[i])
         proc = psutil.Process()
@@ -259,7 +306,23 @@ class Sim_jk():
             pcl[i,:,:]+=x[0]
             cl[i,:,:]+=x[1]
         return pcl,cl 
-        
+    
+    def invert_xi(self,xi):
+        sim_clb_shape=(self.Nl_bins*(self.ndim+1))
+        cl_b=np.zeros(sim_clb_shape,dtype='float32')      
+        corrs=self.kappa_class.corrs
+        li=0
+        lth=0
+        for corr in corrs:
+            cl_b[li:li+self.Nl_bins]=self.wig_d_binned['wig_d_binned_inv'][corr]@xi[lth:lth+self.n_th_bins]
+            li+=self.Nl_bins
+            lth+=self.n_th_bins
+            if corr==corr_ll:
+                cl_b[li:li+self.Nl_bins]=self.wig_d_binned['wig_d_binned_inv']['shear_m']@xi[lth:lth+self.n_th_bins]
+                li+=self.Nl_bins
+                lth+=self.n_th_bins
+        return cl_b
+                
     def process_pcli(self,pcli,coupling_M=None):
         if coupling_M is None:
             coupling_M=self.coupling_M
@@ -359,7 +422,30 @@ class Sim_jk():
             wt0=client.compute(clG['pseudo_cl'][corr][bi]).result()
             self.Mp_binning_utils[corr]=self.M_binnings.bin_utils(r=self.kappa0.l,r_bins=self.kappa0.l_bins,
                                                         r_dim=2,mat_dims=[1,2],wt_b=wt_b,wt0=wt0)
+    
+    def get_xi_coupling_matrices(self,kappa_class=None): 
+        if kappa_class is None:
+            kappa_class=self.kappa_class_xib
+        corr=kappa_class.corrs
+        bi=(0,0)
+        s={corr_ll:(2,2),corr_gg:(0,0),corr_ggl:(0,2)}
+        wig_d_binned={}
+        wig_d_binned_inv={}
+        for corr in corrs:
+            wig_d_binned[corr]=kappa_class.WT_binned[corr][s[corr]][bi].result()
+            wig_d_binned_inv[corr]=kappa_class.inv_WT_binned[corr][s[corr]][bi].result()
+#             wig_d_binned_inv[corr]=np.linalg.pinv(wig_d_binned[corr])
+            if corr==corr_ll:
+                wig_d_binned['shear_m']=kappa_class.WT_binned[corr][(2,-2)][bi].result()
+                wig_d_binned_inv['shear_m']=kappa_class.inv_WT_binned[corr][(2,-2)][bi].result()
+#                 wig_d_binned_inv['shear_m']=np.linalg.pinv(wig_d_binned['shear_m'])
+        outp={}
+        outp['wig_d_binned']=wig_d_binned
+        outp['wig_d_binned_inv']=wig_d_binned_inv
+        self.wig_d_binned=outp
+        return outp
 
+        
     def get_coupling_matrices(self,kappa_class=None): 
         if not hasattr(self,'M_binning_utils'):
             self.get_M_binning_utils()
@@ -367,6 +453,7 @@ class Sim_jk():
             kappa_class=self.kappa_class
         coupling_M={}
         coupling_M_N={}
+        coupling_M_N_binned={}
         coupling_M_binned={k:{} for k in self.Master_algs} #{'Master':{},'nMaster':{},'iMaster':{}}    
         coupling_M_inv={}
         coupling_M_binned_inv={k:{}for k in self.Master_algs} #,'nMaster':{},'Master':{}}
@@ -381,9 +468,19 @@ class Sim_jk():
         for corr in corrs:
             coupling_M[corr]=kappa_class.Win['cl'][corr][(0,0)]['M']
             coupling_M_N[corr]=kappa_class.Win['cl'][corr][(0,0)]['M_noise']
+            try:
+                coupling_M_N_binned[corr]=kappa_class.binning.bin_2d(cov=coupling_M_N[corr],bin_utils=kappa_class.cl_bin_utils) 
+                coupling_M_N_binned[corr]*=dl
+            except Exception as err:
+                coupling_M_N_binned[corr]=None
+
             if corr==corr_ll:
                 coupling_M['shear_B']=kappa_class.Win['cl'][corr][(0,0)]['M_B']
                 coupling_M_N['shear_B']=kappa_class.Win['cl'][corr][(0,0)]['M_B_noise']
+                coupling_M_N_binned['shear_B']=kappa_class.binning.bin_2d(cov=coupling_M_N['shear_B'],
+                                                                          bin_utils=kappa_class.cl_bin_utils) 
+                coupling_M_N_binned['shear_B']*=dl
+#                 self.pclN0['shear_B']=self.shot_noise[corr]@coupling_M_N['shear_B']
             if 'Master' in self.Master_algs:
                 coupling_M_binned['Master'][corr]=bin_coupling_M(kappa_class,coupling_M[corr])
                 if corr==corr_ll:
@@ -421,8 +518,10 @@ class Sim_jk():
                     coupling_M_binned_inv[k]['shear_B']=np.linalg.inv(coupling_M_binned[k]['shear_B'])
 
         outp={}
+        outp['coupling_M']=coupling_M
         outp['coupling_M_N']=coupling_M_N
         outp['coupling_M_binned']=coupling_M_binned
+        outp['coupling_M_N_binned']=coupling_M_N_binned
         outp['coupling_M_inv']=coupling_M_inv
         outp['coupling_M_binned_inv']=coupling_M_binned_inv
         return outp
@@ -491,11 +590,11 @@ def get_clsim(Sim_JK,i):
         cl_map[1,:],cl_map[2,:]=self.kappa_to_shear_map(kappa_map=cl_map[1])#,nside=nside)
     else:
         cl_map=hp.synfast(cl0i,nside=self.nside,new=True,pol=True,verbose=False) #rng=local_state
-
+    
     N_map=0
     if self.use_shot_noise:
         N_map=hp.synfast(self.clN0,nside=self.nside,new=True,pol=True,verbose=False) #rng=local_state
-
+    
     tracers=['galaxy','shear','shear']
     if self.ndim>1:
         for i in np.arange(self.ndim):
@@ -525,6 +624,7 @@ def get_clsim(Sim_JK,i):
                 N_map[i][self.mask[tracer]]=hp.UNSEEN
             cl_map[i][self.mask[tracer]]=hp.UNSEEN
         del N_map    
+
         pcli_jk,xi_jk=get_xi_cljk(cl_map,Sim_jk=self)         
         del cl_map
     else:
@@ -543,6 +643,9 @@ def get_clsim(Sim_JK,i):
         for im in self.Master_algs:
             cl_b_jk[im]=jk_mean(cl_b_jk[im],njk=self.njk,subsample=self.subsample)
     if self.kappa_class.do_xi:
+        cl_b_jk['xi_imaster']={}
+        for ijk in pcli_jk.keys():
+            cl_b_jk['xi_imaster'][ijk]=self.invert_xi(xi_jk[ijk])
         xi_jk=jk_mean(xi_jk,njk=self.njk,subsample=self.subsample)
     return pcl_b_jk,cl_b_jk,xi_jk
 
@@ -641,14 +744,14 @@ def get_xi(map,window_norm,mask=None,Sim_jk=None):
         if corr==corr_ll:
             tree_corrs[corr]=treecorr.GGCorrelation(**corr_config)
             tree_corrs[corr].process(tree_cat['shear'])
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xip*tree_corrs[corr].npairs/window_norm[corr]['weight']
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xip#*tree_corrs[corr].npairs/window_norm[corr]['weight']
             th_i+=n_th_bins
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xim*tree_corrs[corr].npairs/window_norm[corr]['weight']
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].xim#*tree_corrs[corr].npairs/window_norm[corr]['weight']
             th_i+=n_th_bins
         if corr==corr_gg:
             tree_corrs[corr]=treecorr.NNCorrelation(**corr_config)
             tree_corrs[corr].process(tree_cat['galaxy'])
-            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/tree_corrs[corr].npairs/window_norm[corr]['weight']  #
+            xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/tree_corrs[corr].npairs #window_norm[corr]['weight']  #
 #             xi[th_i:th_i+n_th_bins]=tree_corrs[corr].weight/window_norm[corr]
             th_i+=n_th_bins
 #     del tree_cat,tree_corrs

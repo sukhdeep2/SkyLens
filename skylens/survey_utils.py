@@ -98,9 +98,6 @@ def set_window(shear_zbins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fac
     cl_map0=hp.ma(np.ones(npix0))
     cl_map0[~mask]=hp.UNSEEN
 
-#     shear_zbins['mask']=cl_map0
-#     shear_zbins['window0_alm']=hp.map2alm(cl_map0)
-
     if scheduler_info is None:
         client=get_client()
     else:
@@ -110,25 +107,21 @@ def set_window(shear_zbins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fac
         cl_i=client.compute(cl0G['cl'][corr][(i,i)]).result()
         if np.any(np.isnan(cl_i)):
             print('survey utils, set_window:',cl_i)
-#             print(shear_zbins[i])
-#             print(client.compute(cl0G['zkernel']['galaxy'][i]).result())
             crash
         if unit_win:
             cl_map=hp.ma(np.ones(12*nside*nside))
 #             cl_i=1
         else:            
             cl_i+=shear_zbins['SN']['galaxy'][:,i,i]
-#             alms_i=hp.sphtfunc.synalm(cl_i,lmax=w_lmax,)
             if window_cl_fact is not None:
-#                 alms_i=hp.sphtfunc.almxfl(alms_i,window_cl_fact)
                 cl_i*=window_cl_fact
             cl_map=hp.ma(1+hp.synfast(cl_i,nside=nside))
-#             cl_map=hp.alm2map(alms_i,nside=nside)
-        cl_map[cl_map<0]=0
+        cl_map[cl_map<=0]=1.e-4
         cl_map[~mask]=hp.UNSEEN
         cl_t=hp.anafast(cl_map)
 #         cl_map/=cl_map[mask].mean()
-        cl_map/=np.sqrt(cl_t[0]) #this is important for shear map normalization in correlation functions.
+#         if not unit_win:
+#             cl_map/=np.sqrt(cl_t[0]) #this is important for shear map normalization in correlation functions.
         cl_map[~mask]=hp.UNSEEN
         cl_map_noise=np.sqrt(cl_map)
         cl_map_noise[~mask]=hp.UNSEEN

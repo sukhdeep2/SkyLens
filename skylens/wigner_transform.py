@@ -11,18 +11,24 @@ d2r=np.pi/180.
 
 class wigner_transform():
     def __init__(self,theta=[],l=[],s1_s2=[(0,0)],logger=None,ncpu=None,wig_d_taper_order_low=16,
-                 wig_d_taper_order_high=20,scheduler_info=None,**kwargs):
+                 wig_d_taper_order_high=20,scheduler_info=None,l_cut_weights=None,**kwargs):
         self.__dict__.update(locals())
         self.name='Wigner'
         self.logger=logger
         self.grad_l=np.gradient(l)
         self.norm=(2*l+1.)/(4.*np.pi) 
         self.wig_norm=self.norm*self.grad_l
+        
+        self.grad_theta=np.gradient(theta)
+        self.inv_norm=self.theta*2*np.pi
+        self.inv_wig_norm=self.inv_norm*self.grad_theta
+
         self.wig_d={}
         self.theta={}
         self.theta_deg={}
         self.s1_s2s=s1_s2
         self.nscatter=0
+        self.taper_f=None
 #         self.theta=theta
         for (m1,m2) in s1_s2:
             if self.wig_d.get((m1,m2)) is not None:
@@ -35,20 +41,23 @@ class wigner_transform():
             self.wig_d[(m2,m1)]=self.wig_d[(m1,m2)]
             self.theta[(m2,m1)]=self.theta[(m1,m2)]
             self.theta_deg[(m2,m1)]=self.theta_deg[(m1,m2)]
-
+        if l_cut_weights is not None:
+            self.theta_coupling,self.theta_coupling_mat=self.l_cut_coupling()
         self.scatter_data()
     
     def scatter_data(self):
         self.nscatter+=1
         print('Scattering WT data',self.nscatter)  
-#         if self.nscatter>1:
-#             crash
         broadcast=True
         client=client_get(scheduler_info=self.scheduler_info)
-        self.l=client.scatter(self.l,broadcast=broadcast) #FIXME: creates problem with intepolation function
-        self.grad_l=client.scatter(self.grad_l,broadcast=broadcast)
-        self.norm=client.scatter(self.norm,broadcast=broadcast)
-        self.wig_norm=client.scatter(self.wig_norm)
+        keys=['l','grad_l','norm','wig_norm','grad_theta','inv_norm','inv_wig_norm']
+        for k in keys:
+            if hasattr(self,k):
+                self.__dict__[k]=client.scatter(self.__dict__[k],broadcast=broadcast)
+#         self.l=client.scatter(self.l,broadcast=broadcast) #FIXME: creates problem with intepolation function
+#         self.grad_l=client.scatter(self.grad_l,broadcast=broadcast)
+#         self.norm=client.scatter(self.norm,broadcast=broadcast)
+#         self.wig_norm=client.scatter(self.wig_norm)
         self.grad_theta_bins=1
         for k in self.wig_d.keys():
             self.wig_d[k]=client.scatter(self.wig_d[k],broadcast=broadcast)
@@ -58,15 +67,15 @@ class wigner_transform():
     def gather_data(self):
         self.nscatter-=1
         client=client_get(scheduler_info=self.scheduler_info)
-        self.l=client.gather(self.l)
-        self.grad_l=client.gather(self.grad_l)
-        self.norm=client.gather(self.norm)
+#         self.l=client.gather(self.l)
+#         self.grad_l=client.gather(self.grad_l)
+#         self.norm=client.gather(self.norm)
         for k in self.wig_d.keys():
             self.wig_d[k]=client.gather(self.wig_d[k])
             self.theta[k]=client.gather(self.theta[k])
             self.theta_deg[k]=client.gather(self.theta_deg[k])
-        for k in ['theta_bins','theta_bins_center','grad_theta_bins',
-                 'l_bins','l_bins_center','grad_l_bins','wig_norm']:
+        keys=['l','grad_l','norm','wig_norm','grad_theta','inv_norm','inv_wig_norm']
+        for k in keys:
             if hasattr(self,k):
                 self.__dict__[k]=client.gather(self.__dict__[k])
 
@@ -122,8 +131,10 @@ class wigner_transform():
         Also apply tapering if needed.
         """
         if taper:
-            sself.taper_f=self.taper(l=l,**kwargs)
+            self.taper_f=self.taper(l=l_cl,**kwargs)
+            taper_f=self.taper_f['taper_f']
             cl=cl*taper_f
+            print('taper:',taper_f)
         if np.all(wig_l==l_cl):
             return cl
         cl_int=interp1d(l_cl,cl,bounds_error=False,fill_value=0,
@@ -165,6 +176,21 @@ class wigner_transform():
         cl2=self.cl_grid(l_cl=l_cl,cl=cl,taper=taper,wig_l=wig_l,**kwargs)
         w=np.dot(wig_d*wig_norm,cl2)
         return self.theta[s1_s2],w
+    
+    def inv_projected_correlation(self,theta_xi=[],xi=[],s1_s2=[],wig_theta=None,taper=False,wig_d=None,wig_norm=None,**kwargs):
+        """
+        Get the projected power spectra (c_ell) from given xi.
+        """
+        if wig_d is None: #when using default wigner matrices, interpolate to ensure grids match.
+            wig_d=self.wig_d[s1_s2].T
+            wig_theta=self.theta[s1_s2]
+            wig_norm=self.inv_wig_norm
+        if wig_theta is None:
+            wig_theta=self.theta[s1_s2]
+        xi2=self.cl_grid(l_cl=theta_xi,cl=xi,taper=taper,wig_l=wig_theta,**kwargs)
+        cl=np.dot(wig_d*wig_norm,xi2)
+        return self.l,cl
+
 
     def projected_covariance(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
                              wig_d1=None,wig_d2=None,wig_norm=None,wig_l=None,
@@ -207,17 +233,20 @@ class wigner_transform():
         #FIXME: Check normalization
         return self.theta[s1_s2],cov
 
-    def taper(self,l=[],large_k_lower=10,large_k_upper=100,low_k_lower=0,low_k_upper=1.e-5):
+    def taper(self,l=[],large_l_lower=1000,large_l_upper=1500,low_l_lower=10,low_l_upper=50):
         #FIXME there is no check on change in taper_kwargs
-        if self.taper_f is None or not np.all(np.isclose(self.taper_f['k'],k)):
-            taper_f=np.zeros_like(k)
-            x=k>large_k_lower
-            taper_f[x]=np.cos((k[x]-large_k_lower)/(large_k_upper-large_k_lower)*np.pi/2.)
-            x=k<large_k_lower and k>low_k_upper
+        if self.taper_f is None or not np.all(np.isclose(self.taper_f['l'],l)):
+            taper_f=np.zeros_like(l,dtype='float64')
+            x=l>large_l_lower
+            taper_f[x]=np.cos((l[x]-large_l_lower)/(large_l_upper-large_l_lower)*np.pi/2.)
+            x=np.logical_and(l<=large_l_lower , l>=low_l_upper)
             taper_f[x]=1
-            x=k<low_k_upper
-            taper_f[x]=np.cos((k[x]-low_k_upper)/(low_k_upper-low_k_lower)*np.pi/2.)
-            self.taper_f={'taper_f':taper_f,'k':k}
+            x=l<low_l_upper
+            taper_f[x]=np.cos((l[x]-low_l_upper)/(low_l_upper-low_l_lower)*np.pi/2.)
+            
+            x=np.logical_or(l<=low_l_lower , l>=large_l_upper)
+            taper_f[x]=0
+            self.taper_f={'taper_f':taper_f,'l':l}
         return self.taper_f
 
     def diagonal_err(self,cov=[]):
@@ -235,6 +264,25 @@ class wigner_transform():
         skew*=self.norm
         #FIXME: Check normalization
         return self.theta[s1_s2],skew
+    
+    def l_cut_coupling(self,l_cl=None,l_cut_weights=None,s1_s2=None,taper=False,**kwargs):
+        if l_cut_weights is None:
+            l_cl=self.l
+            l_cut_weights=self.l_cut_weights
+        if s1_s2 is None:
+            s1_s2=self.s1_s2s
+        theta_coupling={}
+        theta_coupling_mat={}
+        for (m1,m2) in s1_s2:
+            th,theta_coupling[(m1,m2)]=self.projected_correlation(l_cl=l_cl,cl=l_cut_weights,taper=taper,s1_s2=(m1,m2),**kwargs)
+            theta=self.theta[(m1,m2)]
+            theta_diff=np.abs(theta[:,None]-theta)
+            wth_intp=interp1d(theta,theta_coupling[(m1,m2)],bounds_error=False,kind='nearest')
+            theta_coupling_mat[(m1,m2)]=wth_intp(theta_diff)
+            print('l_cut_coupling:',theta_diff.shape,theta.shape,theta_coupling_mat[(m1,m2)].shape)
+        return theta_coupling,theta_coupling_mat
+            
+            
 
 def projected_correlation(norm=1,cl=[],wig_d=None):
     """

@@ -3,7 +3,7 @@
 #SBATCH -J sims
 #SBATCH -e /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/run_sim_many%A_%a.err
 #SBATCH -o /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/run_sim_many%A_%a.out
-#SBATCH -t 60:00:00
+#SBATCH -t 30:00:00
 #SBATCH -N 4
 ## SBATCH -n 100
 #SBATCH --ntasks-per-node=28
@@ -23,12 +23,12 @@ temp_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/temp/'
 cd $home
 
 use_complicated_windows=( 0 1 )
-unit_windows=( 0 ) #( 0 1 )
+unit_windows=( 0 1 ) #( 0 1 )
 
 lognormals=( 0 )  #( 0 1 )
 do_blendings=( 0 ) #( 0 1 ) 
 # do_SSV_sims=( 0 )
-delta_Ws=( 0 1 )
+delta_Ws=( 1 )
 use_shot_noises=( 0 1 )
 
 tmp_file="/verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/""$ID""$job_id"".tmp"
@@ -91,17 +91,17 @@ do
 #                             exit
                         fi
 
-                        CSCRATCH=$temp_home'/scheduler_'${SLURM_ARRAY_JOB_ID}'/'
-                        CSCRATCH=$CSCRATCH'/'$njob'/'
-                        mkdir $CSCRATCH
-                       ./dask-vera2.sh $CSCRATCH &
-                       SCHEFILE=$CSCRATCH/Scheduler.dasksche.json
-                       worker_log=$CSCRATCH/dask-local/worker-*
-                       echo $worker_log
-                       while ! [ -f $SCHEFILE ]; do 
-                           sleep 1
-                           echo . #>>$log_file
-                       done
+#                         CSCRATCH=$temp_home'/scheduler_'${SLURM_ARRAY_JOB_ID}'/'
+#                         CSCRATCH=$CSCRATCH'/'$njob'/'
+#                         mkdir $CSCRATCH
+#                        ./dask-vera2.sh $CSCRATCH &
+#                        SCHEFILE=$CSCRATCH/Scheduler.dasksche.json
+#                        worker_log=$CSCRATCH/dask-local/worker-*
+#                        echo $worker_log
+#                        while ! [ -f $SCHEFILE ]; do 
+#                            sleep 1
+#                            echo . #>>$log_file
+#                        done
       
                         echo 'ids' $njob $job_id #>> $log_file
                         #conda_env py36
@@ -109,7 +109,7 @@ do
                         echo '==============================================================' #>>$log_file
                         echo 'begining::' $(date) #>>$log_file 
                         
-                       python3 run_sim.py  --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --noise=$use_shot_noise  --dW=$delta_W --dask_dir=$CSCRATCH --scheduler=$SCHEFILE  #|cat>>$log_file  #--ssv=$do_SSV_sim 
+                       python3 run_sim.py  --cw=$use_complicated_window --uw=$unit_window --lognormal=$lognormal --blending=$do_blending --noise=$use_shot_noise  --dW=$delta_W #--dask_dir=$CSCRATCH --scheduler=$SCHEFILE  #|cat>>$log_file  #--ssv=$do_SSV_sim 
                         
                         echo 'Finished::' $(date) #>>$log_file                                                                                                                 
                         #---------------------------------------------------

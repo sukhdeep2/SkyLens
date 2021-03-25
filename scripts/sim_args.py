@@ -18,21 +18,21 @@ lognormal_scale=2
 
 nside=1024
 do_pseudo_cl=True
-do_xi= not do_pseudo_cl
+do_xi= True #not do_pseudo_cl
 
 if do_xi:
     nside=512
 
-
 #cl args
-lmax_cl=1000#
+lmax_cl=nside#
 Nl_bins=37 #40
 lmin_cl=0
 l0=np.arange(lmin_cl,lmax_cl)
 
 lmin_cl_Bins=lmin_cl+10
-lmax_cl_Bins=lmax_cl-10
-l_bins=np.int64(np.logspace(np.log10(lmin_cl_Bins),np.log10(lmax_cl_Bins),Nl_bins))
+lmax_cl_Bins=lmax_cl-10 #this reduces the bias from ell cutoff in p-cl
+# l_bins=np.int64(np.logspace(np.log10(lmin_cl_Bins),np.log10(lmax_cl_Bins),Nl_bins))
+l_bins=get_l_bins(l_min=lmin_cl_Bins,l_max=lmax_cl_Bins,N_bins=Nl_bins,binning_scheme='log',min_modes=500)
 lb=(l_bins[1:]+l_bins[:-1])*.5
 
 l=l0 #np.unique(np.int64(np.logspace(np.log10(lmin_cl),np.log10(lmax_cl),Nl_bins*20))) #if we want to use fewer ell
@@ -49,7 +49,7 @@ wigner_files={}
 #wig_home='/Users/Deep/dask_temp/'
 home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/'
 wig_home=home+'temp/'
-wigner_files[0]= wig_home+'/dask_wig3j_l3500_w2100_0_reorder.zarr'
+wigner_files[0]= wig_home+'/dask_wig3j_l1100_w2200_0_reorder.zarr'
 wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
 l0w=np.arange(3*nside-1)
 
@@ -73,16 +73,18 @@ tidal_SSV_cov=False
 xi_win_approx=True
 #xi args
 
-th_min=1./60
+th_min=hp.nside2resol(nside, arcmin = True)*2/60 #100/nside #1./60
 th_max=600./60
-n_th_bins=20
+n_th_bins=40
 theta_bins=np.logspace(np.log10(th_min),np.log10(th_max),n_th_bins+1)
-th=np.logspace(np.log10(th_min*0.98),np.log10(1),n_th_bins*30)
-th2=np.linspace(1,th_max*1.02,n_th_bins*30)
-theta=np.unique(np.sort(np.append(th,th2)))
+th=np.logspace(np.log10(th_min*0.98),np.log10(th_max*1.02),n_th_bins*40)
+# th2=np.linspace(1,th_max*1.02,n_th_bins*30)
+# theta=np.unique(np.sort(np.append(th,th2)))
+theta=th
 thb=0.5*(theta_bins[1:]+theta_bins[:-1])
 
 bin_xi=True
+use_binned_theta=False
 
 corr_ggl=('galaxy','shear')
 corr_gg=('galaxy','galaxy')
@@ -90,7 +92,7 @@ corr_ll=('shear','shear')
 corrs=[corr_ll,corr_ggl,corr_gg]
 
 l0_wT=np.arange(lmax_cl)
-WT_kwargs={'l': l0,'theta': th*d2r,'s1_s2':[(2,2),(2,-2),(0,2),(2,0),(0,0)]}
+WT_kwargs={'l': l0,'theta': theta*d2r,'s1_s2':[(2,2),(2,-2),(0,2),(2,0),(0,0)]}
 
 corr_config = {'min_sep':th_min*60, 'max_sep':th_max*60, 'nbins':n_th_bins, 'sep_units':'arcmin','metric':'Arc','bin_slop':False}#0.01}
 # WT_L=None

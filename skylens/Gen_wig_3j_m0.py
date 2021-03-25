@@ -1,8 +1,8 @@
 from wigner_functions import *
 import zarr
 import time
-lmax=1100 #~nside*3.. or the lmax to be used in the analysis.
-wlmax=2200 #This needs to be 2Xlmax in general, unless you are certain window is narrow in ell space.
+lmax=2200 #~nside*3.. or the lmax to be used in the analysis.
+wlmax=4400 #This needs to be 2Xlmax in general, unless you are certain window is narrow in ell space.
 m1=0
 m2=0
 m3=0
@@ -17,7 +17,7 @@ print('will save to ',fname)
 
 lmax+=1
 wlmax+=1
-ncpu=12
+ncpu=30
 l_step=100 #not used with dask
 w_l=np.arange(wlmax)
 l=np.arange(lmax)
