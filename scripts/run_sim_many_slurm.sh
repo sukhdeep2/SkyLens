@@ -22,8 +22,8 @@ temp_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/temp/'
 
 cd $home
 
-use_complicated_windows=( 0 1 )
-unit_windows=( 0 1 ) #( 0 1 )
+use_complicated_windows=( 1 )
+unit_windows=( 0 ) #( 0 1 )
 
 lognormals=( 0 )  #( 0 1 )
 do_blendings=( 0 ) #( 0 1 ) 

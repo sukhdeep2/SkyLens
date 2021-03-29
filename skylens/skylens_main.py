@@ -218,6 +218,7 @@ class Skylens():
                 inp_args_xi=copy.deepcopy(inp_args)
                 inp_args_xi['name']='S_b_xi'
                 inp_args_xi['bin_xi']=True
+                inp_args_xi['do_pseudo_cl']=False
                 inp_args_xi['use_window']=self.use_window
 #                 inp_args_xi['WT'].reset_theta_l(theta=self.theta_bins_center)#FIXME
                 self.kappa_b_xi=Skylens(**inp_args_xi) #to get binned xi. 
@@ -247,7 +248,7 @@ class Skylens():
         self.corr_indxs=corr_indxs
         self.cov_indxs=None
         if self.corrs is None:
-            if bool(self.stack_indxs):
+            if self.stack_indxs is not None:
                 self.corrs=list(corr_indxs.keys())
             else:
                 nt=len(self.tracer_utils.tracers)

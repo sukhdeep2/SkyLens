@@ -1175,9 +1175,7 @@ def get_window_power_cl(corr_indxs,WU,c_ell0=None,c_ell_b=None,z_bin1=None,z_bin
     win['M']={} #self.coupling_matrix_large(win['cl'], s1s2,wig_3j_2=wig_3j_2,W_pm=W_pm)*(2*self.l[:,None]+1) #FIXME: check ordering
     win['M_noise']=None
     return win
-
-
-
+    
 def get_window_power_cov(corr_indxs,WU,bin_wt_cl=None,bin_wt_xi=None,z_bins={},
                         WT_kwargs=None,xi_bin_utils=None):#corr1=None,corr2=None,indxs1=None,indxs2=None):
     """
@@ -1311,11 +1309,16 @@ def get_window_power_cov(corr_indxs,WU,bin_wt_cl=None,bin_wt_xi=None,z_bins={},
     win['f_sky12'],mask12=self.mask_comb(z_bin1['window'],z_bin2['window'],
                                  )#For SSC
     win['f_sky34'],mask34=self.mask_comb(z_bin3['window'],z_bin4['window']
-                                 )
+                                     )
+    win['f_sky1234'],mask1234=self.mask_comb(mask12,mask34)
+    
     win['mask_comb_cl']=hp.anafast(map1=mask12,
                              map2=mask34,
                              lmax=self.window_lmax
                         ) #based on 4.34 of https://arxiv.org/pdf/1711.07467.pdf
+    win['mask_comb_cl1234']=hp.anafast(map1=mask1234,
+                             lmax=self.window_lmax
+                        )
     win['Om_w12']=win['f_sky12']*4*np.pi
     win['Om_w34']=win['f_sky34']*4*np.pi
     del mask12,mask34
@@ -1325,90 +1328,118 @@ def get_window_power_cov(corr_indxs,WU,bin_wt_cl=None,bin_wt_xi=None,z_bins={},
         win['M'][1324][k]={wp:{} for wp in W_pm[1324]}
     for k in win[1423].keys():
         win['M'][1423][k]={wp:{} for wp in W_pm[1423]}
-
+        
     win['xi']={12:{},34:{}}
+    win['xi_cov']={1324:{},1423:{}}
     win['xi_b']={12:{},34:{}}
     win['xi_b_th']={12:{},34:{}}
     cl12={}
     cl34={}
+
     if self.do_xi:
+        for k in cl12.keys():
+            th,win['xi'][12][k]=self.WT.projected_correlation(cl=cl12[k],**WT_kwargs)
+            th,win['xi'][34][k]=self.WT.projected_correlation(cl=cl34[k],**WT_kwargs)
+            if self.bin_theta_window:
+                win['xi'][12][k]=self.binning.bin_1d(xi=win['xi'][12][k],bin_utils=xi_bin_utils)
+                win['xi'][34][k]=self.binning.bin_1d(xi=win['xi'][34][k],bin_utils=xi_bin_utils)
+        th,win['xi_cov']['mask1234']=self.WT.projected_covariance(cl_cov=win['mask_comb_cl1234'],**WT_kwargs)
+        for cov_indx in win['xi_cov'].keys():
+            if cov_indx==1324:
+                i1=(0,2)
+                i2=(1,3)
+            else:
+                i1=(0,3)
+                i2=(1,2)
+            window_xis={}
+            
+            z_wins={}
             k='clcl'
-            cl12[k]=hp.anafast(map1=z_bin1['window'],map2=z_bin2['window'],lmax=self.window_lmax
-                    )[self.window_l]
-            cl34[k]=hp.anafast(map1=z_bin3['window'],map2=z_bin4['window'],lmax=self.window_lmax
-                    )[self.window_l]
-            if corr[0]==corr[2] and indxs[0]==indxs[2]: #noise X cl
+            z_wins[1]=z_bin1['window']*1
+            z_wins[2]=z_bin2['window']*1
+            z_wins[3]=z_bin3['window']*1
+            z_wins[4]=z_bin4['window']*1
+            window_xis[k]=xi_cov_window(WU=self,WT_kwargs=WT_kwargs,mask_xi=win['xi_cov']['mask1234'],z_windows=z_wins)
+
+            if corr[i1[0]]==corr[i1[1]] and indxs[i1[0]]==indxs[i1[1]]: #noise X cl
                 k='Ncl'
-                m1=z_bin1['window_N']
-                m3=z_bin3['window_N']
-#                 m1=np.sqrt(z_bin1['window'])
-#                 m3=np.sqrt(z_bin3['window'])
-#                 m1[z_bin1['window']==hp.UNSEEN]=hp.UNSEEN
-#                 m3[z_bin3['window']==hp.UNSEEN]=hp.UNSEEN
-                cl12[k]=hp.anafast(map1=m1,map2=z_bin2['window'],lmax=self.window_lmax
-                        )[self.window_l]
-                cl34[k]=hp.anafast(map1=m3,map2=z_bin4['window'],lmax=self.window_lmax
-                        )[self.window_l]
-            if corr[1]==corr[3] and indxs[1]==indxs[3]:#noise X cl
+                z_wins[1]=z_bin1['window_N']*1
+                z_wins[2]=z_bin2['window']*1
+                z_wins[3]=z_bin3['window_N']*1
+                z_wins[4]=z_bin4['window']*1
+                window_xis[k]=xi_cov_window(WU=self,WT_kwargs=WT_kwargs,mask_xi=win['xi_cov']['mask1234'],z_windows=z_wins)
+            if corr[i2[0]]==corr[i2[1]] and indxs[i2[0]]==indxs[i2[1]]:#noise X cl
                 k='clN'
-                m2=z_bin2['window_N']
-                m4=z_bin4['window_N']
-#                 m2=np.sqrt(z_bin2['window'])
-#                 m4=np.sqrt(z_bin4['window'])
-#                 m2[z_bin2['window']==hp.UNSEEN]=hp.UNSEEN
-#                 m4[z_bin4['window']==hp.UNSEEN]=hp.UNSEEN
-                cl12[k]=hp.anafast(map1=m2,map2=z_bin1['window'],lmax=self.window_lmax
-                        )[self.window_l]
-                cl34[k]=hp.anafast(map1=m4,map2=z_bin3['window'],lmax=self.window_lmax
-                        )[self.window_l]
-            if corr[0]==corr[2] and indxs[0]==indxs[2] and corr[1]==corr[3] and indxs[1]==indxs[3]: #noise X noise
+                z_wins[1]=z_bin1['window']*1
+                z_wins[2]=z_bin2['window_N']*1
+                z_wins[3]=z_bin3['window']*1
+                z_wins[4]=z_bin4['window_N']*1
+                window_xis[k]=xi_cov_window(WU=self,WT_kwargs=WT_kwargs,mask_xi=win['xi_cov']['mask1234'],z_windows=z_wins)
+
+            if corr[i1[0]]==corr[i1[1]] and indxs[i1[0]]==indxs[i1[1]] and corr[i2[0]]==corr[i2[1]] and indxs[i2[0]]==indxs[i2[1]]: #noise X noise
                 k='NN'
-                m2=z_bin2['window_N']
-                m4=z_bin4['window_N']
-                m1=z_bin1['window_N']
-                m3=z_bin3['window_N']
-
-#                 m2=np.sqrt(z_bin2['window'])
-#                 m4=np.sqrt(z_bin4['window'])
-#                 m1=np.sqrt(z_bin1['window'])
-#                 m3=np.sqrt(z_bin3['window'])
-#                 m1[z_bin1['window']==hp.UNSEEN]=hp.UNSEEN
-#                 m3[z_bin3['window']==hp.UNSEEN]=hp.UNSEEN
-#                 m2[z_bin2['window']==hp.UNSEEN]=hp.UNSEEN
-#                 m4[z_bin4['window']==hp.UNSEEN]=hp.UNSEEN
-                cl12[k]=hp.anafast(map1=m2,map2=m1,lmax=self.window_lmax
-                        )[self.window_l]
-                cl34[k]=hp.anafast(map1=m4,map2=m3,lmax=self.window_lmax
-                        )[self.window_l]
-            for k in cl12.keys():
-                th,win['xi'][12][k]=self.WT.projected_correlation(cl=cl12[k],**WT_kwargs)
-                th,win['xi'][34][k]=self.WT.projected_correlation(cl=cl34[k],**WT_kwargs)
-                if self.bin_theta_window:
-                    win['xi'][12][k]=self.binning.bin_1d(xi=win['xi'][12][k],bin_utils=xi_bin_utils)
-                    win['xi'][34][k]=self.binning.bin_1d(xi=win['xi'][34][k],bin_utils=xi_bin_utils)
-#             if self.bin_theta_window: #FIXME: Following NEEDS fixing
-#                 for s1 in self.s1_s2s[corr1]:
-#                     for s2 in self.s1_s2s[corr2]:
-#                         bin_wt_xi={}
-#                         bin_wt_xi['xi12']=xi0[corr1][s1][indxs1]
-#                         bin_wt_xi['xi34']=xi0[corr2][s2][indxs2]
-#                         bin_wt_xi['xi_b12']=xi_b[corr1][s1][indxs1]
-#                         bin_wt_xi['xi_b34']=xi_b[corr2][s2][indxs2]
-
-
-#                         bin_wt_xi1324={'wt0':np.sqrt(bin_wt_xi['xi12']*bin_wt_xi['xi34'])} 
-#                         bin_wt_xi1324['wt_b']=1./np.sqrt(bin_wt_xi['xi_b12']*bin_wt_xi['xi_b34'])
-#                         bin_wt_xi1423=bin_wt_xi1324 #{'wt0':np.sqrt(win['bin_wt']['cl14']*win['bin_wt']['cl23'])} 
-# #                         bin_wt_xi1423['wt_b']=1./np.sqrt(win['bin_wt']['cl_b14']*win['bin_wt']['cl_b23'])
-#                         win['xi_b_th'][1324]['bin_wt_xi1324']=bin_wt_xi1324
-#                         win['xi_b_th'][1423]['bin_wt_xi1423']=bin_wt_xi1423
-#                         for k in win[1324].keys():
-#                             win['xi_b_th'][1324][k][s1+s2]=self.binnings.bin_2d_coupling(M=win['xi'][1324][k],bin_utils=self.xi_bin_utils[s1],
-#                             partial_bin_side=None,lm=None,lm_step=None,wt0=bin_wt_xi1324['wt0'],wt_b=bin_wt_xi1324['wt_b'],cov=False)
-#                         for k in win[1423].keys():
-#                             win['xi_b_th'][1423][k][s1+s2]=self.binnings.bin_2d_coupling(M=win['xi'][1423][k],bin_utils=self.xi_bin_utils[s1],
-#                             partial_bin_side=None,lm=None,lm_step=None,wt0=bin_wt_xi1423['wt0'],wt_b=bin_wt_xi1423['wt_b'],cov=False)
+                z_wins[1]=z_bin1['window_N']*1
+                z_wins[2]=z_bin2['window_N']*1
+                z_wins[3]=z_bin3['window_N']*1
+                z_wins[4]=z_bin4['window_N']*1
+                window_xis[k]=xi_cov_window(WU=self,WT_kwargs=WT_kwargs,mask_xi=win['xi_cov']['mask1234'],z_windows=z_wins)
+                
+            if self.bin_theta_window: #FIXME: wrong binning order
+                for k in window_xis.keys():
+                    window_xis[k]=self.binning.bin_2d(cov=window_xis[k],bin_utils=xi_bin_utils)
+            win['xi_cov'][cov_indx]=window_xis
 
     win['W_pm']=W_pm
     win['s1s2']=s1s2s
     return win
+
+def xi_cov_window(WU,WT_kwargs={},mask_xi=[],z_windows={}):
+    xis=mask_xi*1.
+#     return xis #FIXME: following takes too long and doesn't make much of a difference. Still needs to be stress tested.
+    self=WU
+    masks={}
+    for i in z_windows.keys():
+        mask=z_windows[i]==hp.UNSEEN
+        z_windows[i]-=z_windows[i][~mask].mean()
+        z_windows[i][mask]=hp.UNSEEN
+        masks[i]=mask
+    mls={}
+    cls={}
+#     for i in z_windows.keys():
+#         for j in z_windows.keys():
+#             if i<=j:
+#                 continue
+#             cls[(i,j)]=hp.anafast(map1=z_windows[i],map2=z_windows[j],lmax=self.window_lmax
+#                     )[self.window_l]
+#             cls[(j,i)]=cls[(i,j)]
+#             mls[(i,j)]=hp.anafast(map1=masks[i],map2=masks[j],lmax=self.window_lmax
+#                     )[self.window_l]
+#             mls[(j,i)]=mls[(i,j)]
+
+    bin_indxs=[(1,2,3,4),(1,3,2,4),(1,4,2,3)]
+    for (i,j,k,l) in bin_indxs:
+        cli=window_4_cl(z_windows[i],z_windows[j],masks[k],masks[l])[self.window_l]
+        thi,xit=self.WT.projected_covariance(cl_cov=cli,**WT_kwargs)
+        xis+=xit
+        
+        clj=window_4_cl(z_windows[k],z_windows[l],masks[i],masks[j])[self.window_l]
+        thi,xit=self.WT.projected_covariance(cl_cov=clj,**WT_kwargs)
+        xis+=xit
+        
+#         cli=cls[(i,j)]*cls[(k,l)]
+        cli=cli*clj
+        thi,xit=self.WT.projected_covariance(cl_cov=cli,**WT_kwargs)
+        xis+=xit
+    return xis
+
+def window_4_cl(window1,window2,mask3,mask4):
+    z_windows_i=window1*1
+    z_windows_i[mask3]=hp.UNSEEN
+    z_windows_i[mask4]=hp.UNSEEN
+
+    z_windows_j=window2*1
+    z_windows_j[mask3]=hp.UNSEEN
+    z_windows_j[mask4]=hp.UNSEEN
+
+    cli=hp.anafast(map1=z_windows_i,map2=z_windows_j)
+    return cli

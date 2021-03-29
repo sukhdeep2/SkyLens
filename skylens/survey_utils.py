@@ -79,8 +79,8 @@ def ztrue_given_pz_Gaussian(zp=[],p_zp=[],bias=[],sigma=[],zs=None):
 def set_window(shear_zbins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fact=None,unit_win=False,scheduler_info=None,mask=None,
               delta_W=True):
     from skylens.skylens_main import Skylens
-    w_lmax=3*nside-1
-    l0=np.arange(3*nside-1,dtype='int')
+    w_lmax=3*nside
+    l0=np.arange(w_lmax,dtype='int')
     corr=('galaxy','galaxy')
     
     kappa0=Skylens(galaxy_zbins=shear_zbins,do_cov=False,bin_cl=False,l_bins=None,l=l0,use_window=False,

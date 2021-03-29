@@ -36,6 +36,7 @@ class Tracer_utils():
         self.set_zbins(z_bins=kappa_zbins,tracer='kappa')
         self.tracers=list(self.z_bins.keys())
         if not self.tracers==[]:
+            print('Tracer utils has tracers: ',self.tracers)
             self.set_z_PS_max()
         else:
             print('Tracer utils has no tracers')

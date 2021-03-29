@@ -18,21 +18,21 @@ lognormal_scale=2
 
 nside=1024
 do_pseudo_cl=True
-do_xi= True #not do_pseudo_cl
+do_xi= False #not do_pseudo_cl
 
 if do_xi:
     nside=512
 
 #cl args
 lmax_cl=nside#
-Nl_bins=37 #40
+Nl_bins=25 #40
 lmin_cl=0
 l0=np.arange(lmin_cl,lmax_cl)
 
 lmin_cl_Bins=lmin_cl+10
 lmax_cl_Bins=lmax_cl-10 #this reduces the bias from ell cutoff in p-cl
 # l_bins=np.int64(np.logspace(np.log10(lmin_cl_Bins),np.log10(lmax_cl_Bins),Nl_bins))
-l_bins=get_l_bins(l_min=lmin_cl_Bins,l_max=lmax_cl_Bins,N_bins=Nl_bins,binning_scheme='log',min_modes=500)
+l_bins=get_l_bins(l_min=lmin_cl_Bins,l_max=lmax_cl_Bins,N_bins=Nl_bins,binning_scheme='log',min_modes=50)
 lb=(l_bins[1:]+l_bins[:-1])*.5
 
 l=l0 #np.unique(np.int64(np.logspace(np.log10(lmin_cl),np.log10(lmax_cl),Nl_bins*20))) #if we want to use fewer ell

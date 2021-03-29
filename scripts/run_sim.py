@@ -38,7 +38,7 @@ if __name__=='__main__':
 
     print(use_complicated_window,unit_window,args.uw,use_shot_noise,delta_W,Scheduler_file) #lognormal,do_blending,do_SSV_sim,
 
-    nsim=100
+    nsim=1000
     if test_run:
         nside=128
         lmax_cl=int(nside)

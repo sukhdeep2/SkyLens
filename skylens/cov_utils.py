@@ -23,13 +23,14 @@ class Covariance_utils():
                  use_binned_l=False,xi_SN_analytical=False,SN={},use_binned_theta=False,
                  do_cov=False,SSV_cov=False,tidal_SSV_cov=False,WT=None, #WT_binned_cov={},
                  Tri_cov=False,sparse_cov=False,cl_bin_utils=None,xi_bin_utils=None,
-                 xi_win_approx=True,do_pseudo_cl=True,bin_cl=True
+                 do_pseudo_cl=True,bin_cl=True
                 ):
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.binning=binning()
         self.sample_variance_f=1
-        if not do_sample_variance:
-            self.sample_variance_f=0 #remove sample_variance from gaussian part
+        if do_sample_variance is not None:
+            if not do_sample_variance:
+                self.sample_variance_f=0 #remove sample_variance from gaussian part
 
         self.set_window_params()
 
@@ -324,7 +325,7 @@ class Covariance_utils():
                 fs1324=f_sky[tracers][z_indx]
                 fs0=f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
                 fs1423=f_sky[tracers][z_indx]
-            Norm=Norm*fs0/fs1324
+            Norm=Norm*fs0/fs1324 #FIXME: This is an approximation. Need better expression for correlation functions
 
         
         for corr_i in [1324,1423]:
@@ -332,7 +333,7 @@ class Covariance_utils():
             c1=cv_indxs[corr_i][0]
             c2=cv_indxs[corr_i][1]
 
-            for k in Win['xi'][12].keys():
+            for k in Win['xi_cov'][corr_i].keys():
                 for wp in W_pm:
                     CV2=CV
                     for a_EB in np.arange(add_EB):
@@ -359,7 +360,9 @@ class Covariance_utils():
 #                             th,G_t=WT.projected_covariance2(cl_cov=G_t,**WT_kwargs)
                             th,G_t=self.WT.projected_covariance(cl_cov=G_t,**WT_kwargs)
                         if Win is not None:
-                            G_t*=np.outer(Win['xi'][12][k],Win['xi'][34][k])
+#                             G_t*=np.outer(Win['xi'][12][k],Win['xi'][34][k])
+                            G_t*=Win['xi_cov'][corr_i][k]
+                            
                         G_t/=Norm
 
                         if a_EB>0:
@@ -536,7 +539,7 @@ def cl_cov(zs_indx,CU,z_bins=None,sig_cL=None,cls=None, tracers=[],Win_cov=None,
                                         tracers,zs_indx,Win,)
     else:
         fs=self.f_sky
-        if self.do_xi and self.xi_win_approx and self.use_window : #in this case we need to use a separate function directly from xi_cov
+        if self.do_xi and self.use_window : #in this case we need to use a separate function directly from xi_cov
             cov['G1324']=0
             cov['G1423']=0
         else:
@@ -605,16 +608,11 @@ def xi_cov(cov_indx,CU,cov_cl=None,cls={},s1_s2=None,s1_s2_cross=None,
     if self.use_binned_l:
         wig_d1=WT_kwargs['wig_d1']
         wig_d2=WT_kwargs['wig_d2']
-#             wig_d1=WT_binned_cov[corr1][s1_s2][indxs_1]
-#             wig_d2=self.WT_binned_cov[corr2][s1_s2_cross][indxs_2]
 
     Win=None
-#         if self.use_window and self.store_win:
-#             Win_cov=self.Win.Win['cov'][tracers]
     if Win_cov is not None:
         Win=Win_cov#[z_indx]
 
-#         WT_kwargs={'l_cl':self.l,'s1_s2':s1_s2,'s1_s2_cross':s1_s2_cross,'wig_d1':wig_d1,'wig_d2':wig_d2}
     bf=1
     if np.all(np.array(tracers)=='shear') and not s1_s2==s1_s2_cross: #cross between xi+ and xi-
         bf=-1
@@ -649,9 +647,10 @@ def xi_cov(cov_indx,CU,cov_cl=None,cls={},s1_s2=None,s1_s2_cross=None,
             cov_xi['Tri']=self.binning.bin_2d(cov=cov_xi['Tri'],bin_utils=xi_bin_utils)
 
     cov_xi['final']=cov_xi['G']+cov_xi['SSC']+cov_xi['Tri']
-    if self.use_window and self.xi_win_approx:
+    if self.use_window:
         cov_xi['G']/=(Win_cl1['xi_b']*Win_cl2['xi_b'])
-        cov_xi['final']/=(Win_cl1['xi_b']*Win_cl2['xi_b'])
+        cov_xi['final']=cov_xi['G']+cov_xi['SSC']+cov_xi['Tri']
+#         cov_xi['final']/=(Win_cl1['xi_b']*Win_cl2['xi_b'])#FIXME: SSC is not multiplied with window.
 
     if self.sparse_cov:
         for k in ['G','SSC','Tri','final']:
