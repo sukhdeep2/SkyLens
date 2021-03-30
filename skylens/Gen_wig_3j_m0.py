@@ -1,8 +1,8 @@
 from wigner_functions import *
 import zarr
 import time
-lmax=2200 #~nside*3.. or the lmax to be used in the analysis.
-wlmax=4400 #This needs to be 2Xlmax in general, unless you are certain window is narrow in ell space.
+lmax=2048 #~nside*3.. or the lmax to be used in the analysis.
+wlmax=4096 #This needs to be 2Xlmax in general, unless you are certain window is narrow in ell space.
 m1=0
 m2=0
 m3=0
@@ -10,14 +10,14 @@ m3=0
 lmax=np.int(lmax)
 wlmax=np.int(wlmax)
 
-home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
+home='/home/tkarim/Skylens/temp/'
 fname=home+'/dask_wig3j_l{lmax}_w{wlmax}_{i}_reorder.zarr'  #path to save the files
 fname=fname.format(i=m2,lmax=lmax,wlmax=wlmax)
 print('will save to ',fname)
 
 lmax+=1
 wlmax+=1
-ncpu=30
+ncpu=10
 l_step=100 #not used with dask
 w_l=np.arange(wlmax)
 l=np.arange(lmax)
