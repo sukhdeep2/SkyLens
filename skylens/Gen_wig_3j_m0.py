@@ -17,7 +17,7 @@ print('will save to ',fname)
 
 lmax+=1
 wlmax+=1
-ncpu=10
+ncpu=4
 l_step=100 #not used with dask
 w_l=np.arange(wlmax)
 l=np.arange(lmax)
@@ -32,7 +32,10 @@ calc_factlist(j_max)
 
 j3=np.arange(wlmax)
     
-from multiprocessing import Pool
+#from https://stackoverflow.com/questions/62904123/how-to-properly-paralleize-a-blackbox-likelihood-in-emcee/66763153#66763153
+#to make Pool work
+#import multiprocessing as mp
+#Pool = mp.get_context('fork').Pool
 
 def wig3j_recur_2d(j1b,m1,m2,m3,j3_outmax,step,j2b):
     if j2b<j1b: #we exploit j1-j2 symmetry and hence only compute for j2>=j1
