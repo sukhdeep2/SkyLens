@@ -3,6 +3,7 @@ import zarr
 import time
 lmax=5000 #~nside*3.. or the lmax to be used in the analysis.
 wlmax=5000 #This needs to be 2Xlmax in general, unless you are certain window is narrow in ell space.
+
 m1=0
 m2=0
 m3=0
@@ -10,14 +11,14 @@ m3=0
 lmax=np.int(lmax)
 wlmax=np.int(wlmax)
 
-home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
+home='/home/tkarim/Skylens/temp/'
 fname=home+'/dask_wig3j_l{lmax}_w{wlmax}_{i}_reorder.zarr'  #path to save the files
 fname=fname.format(i=m2,lmax=lmax,wlmax=wlmax)
 print('will save to ',fname)
 
 lmax+=1
 wlmax+=1
-ncpu=30
+ncpu=4
 l_step=100 #not used with dask
 w_l=np.arange(wlmax)
 l=np.arange(lmax)
@@ -32,7 +33,10 @@ calc_factlist(j_max)
 
 j3=np.arange(wlmax)
     
-from multiprocessing import Pool
+#from https://stackoverflow.com/questions/62904123/how-to-properly-paralleize-a-blackbox-likelihood-in-emcee/66763153#66763153
+#to make Pool work
+#import multiprocessing as mp
+#Pool = mp.get_context('fork').Pool
 
 def wig3j_recur_2d(j1b,m1,m2,m3,j3_outmax,step,j2b):
     if j2b<j1b: #we exploit j1-j2 symmetry and hence only compute for j2>=j1
