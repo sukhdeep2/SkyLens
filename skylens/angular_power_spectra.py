@@ -30,7 +30,7 @@ class Angular_power_spectra():
         self.cov_utils=cov_utils
         self.set_z_PS(z=z_PS,nz=nz_PS,log_z=log_z_PS,z_max=z_PS_max)
         self.dz=np.gradient(self.z)
-        self.PS=Power_Spectra(SSV_cov=SSV_cov,z_max=self.z.max(),**power_spectra_kwargs)
+        self.PS=Power_Spectra(SSV_cov=SSV_cov,**power_spectra_kwargs)
 
     def set_z_PS(self,z=None,nz=10,log_z=2,z_max=None):
         """

@@ -10,6 +10,7 @@ from scipy.integrate import quad as scipy_int1d
 import warnings
 from astropy.cosmology import Planck15 as cosmo
 cosmo_h=cosmo.clone(H0=100)
+cosmo_planck15=cosmo
 
 from astropy.constants import c,G
 from astropy import units as u
@@ -33,24 +34,14 @@ cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817
                 'Tcmb':cosmo.Tcmb0,'w':-1,'wa':0})
 
 class cosmology():
-    def __init__(self,cosmo_params=cosmo_fid,dz=0.005,z=None,z_max=4,do_calcs=1,rtol=1.e-4,h_inv=True,use_astropy=False,
+    def __init__(self,cosmo_params=cosmo_fid,dz=0.005,do_calcs=1,rtol=1.e-4,h_inv=True,use_astropy=True,
                  astropy_cosmo=None,**kwargs):
         self.__dict__.update(locals()) #assign all input args to the class as properties
+        self.__dict__.update(cosmo_params)
         self.c=3*10**5
-        self.set_z(z_max=z_max)
+        self.set_z(z_max=cosmo_params['z_max'])
         self.comoving_distance=self.comoving_distance_trapz
         self.efunc=self.E_z
-        if self.use_astropy:
-            if self.astropy_cosmo is None:
-                self.astropy_cosmo=cosmo_planck15
-            self.set_astropy(cosmo_params=cosmo_params)
-            self.efunc=self.astropy_cosmo.efunc
-            if h_inv:
-                self.comoving_distance=self.astropy_cosmo_h.comoving_distance
-                self.comoving_transverse_distance=self.astropy_cosmo_h.comoving_transverse_distance
-            else:
-                self.comoving_distance=self.astropy_cosmo.comoving_distance
-                self.comoving_transverse_distance=self.astropy_cosmo.comoving_transverse_distance
         self.set_cosmology(cosmo_params=cosmo_params)
 
     def set_z(self,z_max=None):
@@ -74,13 +65,10 @@ class cosmology():
         if self.h_inv:
             self.Dh=self.c/100.
 #         self.rho=self.Rho_crit()*self.Om
-        if not self.use_astropy:
-            self.comoving_distance(self._z)
-        else:
+        if self.use_astropy:
             self.set_astropy(cosmo_params=cosmo_params)
-#         if not np.isclose(self.Om,+self.OmL+self.OmR+self.Omk,1.0): #FIXME
-#             raise Exception('Sum Omega='+str(self.Omega_m+self.Omega_L+self.Omega_R+self.Omega_k)+'!=1')
-
+        else:
+            self.comoving_distance(self._z)
     
     def astropy_cosmo_w0_wa(self,cosmo=None,w0=-1,wa=0):
         attrs=['H0','Om0', 'Ode0','Tcmb0', 'Neff', 'm_nu', 'Ob0']
@@ -95,8 +83,11 @@ class cosmology():
     
     def set_astropy(self,cosmo_params=None,cosmo_h=None):
         if cosmo_params is None or cosmo_params==self.cosmo_params:
-            return
-        
+            if not self.astropy_cosmo is None:
+                return
+        if self.astropy_cosmo is None:
+            self.astropy_cosmo=cosmo_planck15
+
         m_nu=self.astropy_cosmo.m_nu.value
         m_nu[-1]=cosmo_params['mnu']
         m_nu*=self.astropy_cosmo.m_nu.unit
@@ -107,10 +98,11 @@ class cosmology():
                 cosmo_params['wa']=0
             if cosmo_params['w0']!=-1 or cosmo_params['wa']!=0:
                 self.astropy_cosmo=self.astropy_cosmo_w0_wa(cosmo=self.astropy_cosmo,w0=cosmo_param['w0'],wa=cosmo_param['wa'])
-        if h_inv:
+        if self.h_inv:
                 self.astropy_cosmo=self.astropy_cosmo.clone(H0=100)
-        self.comoving_distance=self.astropy_cosmo.comoving_distance
-        self.comoving_transverse_distance=self.astropy_cosmo.comoving_transverse_distance
+        self.efunc=self.astropy_cosmo.efunc
+        self.comoving_distance=self.astropy_comoving_distance
+        self.comoving_transverse_distance=self.astropy_comoving_transverse_distance
 
 
     def E_z(self,z):
@@ -189,6 +181,10 @@ class cosmology():
         dc=np.interp(z,xp=self._z,fp=self._dc,left=0,right=np.nan)
         return dc
 
+    def astropy_comoving_distance(self,z=[0]):
+        return self.astropy_cosmo.comoving_distance(z).value
+    def astropy_comoving_transverse_distance(self,z=[0]):
+        return self.astropy_cosmo.comoving_transverse_distance(z).value
     
     def comoving_transverse_distance(self,z=[0]): #transverse comoving distance
         Dc=self.comoving_distance(z)

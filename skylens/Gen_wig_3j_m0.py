@@ -1,8 +1,8 @@
 from wigner_functions import *
 import zarr
 import time
-lmax=2200 #~nside*3.. or the lmax to be used in the analysis.
-wlmax=4400 #This needs to be 2Xlmax in general, unless you are certain window is narrow in ell space.
+lmax=5000 #~nside*3.. or the lmax to be used in the analysis.
+wlmax=5000 #This needs to be 2Xlmax in general, unless you are certain window is narrow in ell space.
 m1=0
 m2=0
 m3=0

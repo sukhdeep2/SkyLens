@@ -40,7 +40,7 @@ cosmo_h=cosmo.clone(H0=100)
 
 cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817,'Om':cosmo.Om0,
                 'Ase9':2.2,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
-                'OmR':cosmo.Ogamma0+cosmo.Onu0,'w':-1,'wa':0,'Tcmb':cosmo.Tcmb0})
+                'OmR':cosmo.Ogamma0+cosmo.Onu0,'w':-1,'wa':0,'Tcmb':cosmo.Tcmb0,'z_max':4,'use_astropy':True})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
 pk_params_default={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'camb_pk_too_many_z','halofit_version':'takahashi'}
 
@@ -94,7 +94,7 @@ class_accuracy_settings={ #from Vanessa. To avoid class errors due to compiler i
 class Power_Spectra(cosmology):
     def __init__(self,cosmo_params=None,pk_params=None,#cosmo=cosmo,
                  silence_camb=True,SSV_cov=False,scenario=None,
-                 logger=None,z_max=4):
+                 logger=None):
         self.__dict__.update(locals()) #assign all input args to the class as properties
         if self.pk_params is None:
             self.pk_params=pk_params_default
@@ -104,7 +104,7 @@ class Power_Spectra(cosmology):
             self.cosmo_params=cosmo_fid
             cosmo_params=cosmo_fid
             print('cosmo_params dict was none, intialized with default')
-        super().__init__(cosmo_params=cosmo_params,z_max=z_max)
+        super().__init__(cosmo_params=cosmo_params)
         self.name='PS'
         pk_func=pk_params.get('pk_func')
         pk_func_default=self.camb_pk_too_many_z
