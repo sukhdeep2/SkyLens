@@ -296,11 +296,17 @@ class Power_Spectra(cosmology):
                         'output': 'mPk','z_max_pk':100, #max(z)*2, #to avoid class error.
                                                       #Allegedly a compiler error, whatever that means
                         'P_k_max_1/Mpc':pk_params['kmax']*h*1.1,
-                    }
+                    'alpha_s':cosmo_params['alpha_s'],
+                     'N_ur':cosmo_params['N_ur'],
+                     'N_ncdm':cosmo_params['N_ncdm'],
+                     'omega_ncdm':cosmo_params['omega_ncdm'],
+                     'w0_fld':cosmo_params['w'],
+                     'wa_fld':cosmo_params['wa']}
+        
         if pk_params['non_linear']==1:
             class_params['non linear']='halofit'
 
-        class_params['N_ur']=3.04 #ultra relativistic species... neutrinos
+        """class_params['N_ur']=3.04 #ultra relativistic species... neutrinos
         if cosmo_params['mnu']!=0:
             class_params['N_ur']-=1 #one massive neutrino
             class_params['m_ncdm']=cosmo_params['mnu']
@@ -309,7 +315,7 @@ class Power_Spectra(cosmology):
         if cosmo_params['w']!=-1 or cosmo_params['wa']!=0:
             class_params['Omega_fld']=cosmo_params['Oml']
             class_params['w0_fld']=cosmo_params['w']
-            class_params['wa_fld']=cosmo_params['wa']
+            class_params['wa_fld']=cosmo_params['wa']"""
 
 
         for ke in class_accuracy_settings.keys():
