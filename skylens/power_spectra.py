@@ -301,6 +301,7 @@ class Power_Spectra(cosmology):
                      'N_ur':cosmo_params['N_ur'],
                      'N_ncdm':cosmo_params['N_ncdm'],
                      'omega_ncdm':cosmo_params['omega_ncdm'],
+                      'Omega_fld':cosmo_params['Oml'],
                      'w0_fld':cosmo_params['w'],
                      'wa_fld':cosmo_params['wa']}
         
