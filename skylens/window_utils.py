@@ -883,10 +883,12 @@ class window_utils():
                     wait_futures(win_cov_ti)
                     win_cov_t+=win_cov_ti
                     i_job+=njobs
-                Win_cov=win_cov_t
-                client.replicate(Win_cov, branching_factor=1) #less stable
-#                 Win_cov=client.gather(win_cov_t)
-#                 Win_cov=client.scatter(Win_cov,broadcast=True)
+#                 Win_cov=win_cov_t
+#                 client.replicate(Win_cov, branching_factor=1) #less stable
+                Win_cov=client.gather(win_cov_t)
+                print('set_window_cl: Win_cov size: ',get_size_pickle(Win_cov))
+#                 Win_cov=scatter_dict(Win_cov,scheduler_info=self.scheduler_info,broadcast=True,depth=1)
+                Win_cov=client.scatter(Win_cov,broadcast=True)
             elif self.do_cov and use_bag:
                 Win_cov=client_func(Win_cov)
         self.Win_cov=Win_cov
@@ -1398,24 +1400,16 @@ def xi_cov_window(WU,WT_kwargs={},mask_xi=[],z_windows={}):
 #     return xis #FIXME: following takes too long and doesn't make much of a difference. Still needs to be stress tested.
     self=WU
     masks={}
+#     mask0=np.ones_like(z_windows[i],dtype='bool')
     for i in z_windows.keys():
         mask=z_windows[i]==hp.UNSEEN
+#         mask0*=mask
         z_windows[i]-=z_windows[i][~mask].mean()
         z_windows[i][mask]=hp.UNSEEN
         masks[i]=mask
     mls={}
     cls={}
-#     for i in z_windows.keys():
-#         for j in z_windows.keys():
-#             if i<=j:
-#                 continue
-#             cls[(i,j)]=hp.anafast(map1=z_windows[i],map2=z_windows[j],lmax=self.window_lmax
-#                     )[self.window_l]
-#             cls[(j,i)]=cls[(i,j)]
-#             mls[(i,j)]=hp.anafast(map1=masks[i],map2=masks[j],lmax=self.window_lmax
-#                     )[self.window_l]
-#             mls[(j,i)]=mls[(i,j)]
-
+    
     bin_indxs=[(1,2,3,4),(1,3,2,4),(1,4,2,3)]
     for (i,j,k,l) in bin_indxs:
         cli=window_4_cl(z_windows[i],z_windows[j],masks[k],masks[l])[self.window_l]
@@ -1430,7 +1424,22 @@ def xi_cov_window(WU,WT_kwargs={},mask_xi=[],z_windows={}):
         cli=cli*clj
         thi,xit=self.WT.projected_covariance(cl_cov=cli,**WT_kwargs)
         xis+=xit
+#     cli=window_4_cl(z_windows)
+#     thi,xis=self.WT.projected_covariance(cl_cov=cli,**WT_kwargs)
     return xis
+
+
+# def window_4_cl(window1,window2,window3,window4,mask):
+#     z_windows0=z_windows[0]*1.
+#     mask0=np.ones_like(z_windows[i],dtype='bool')
+#     for i in z_windows.keys():
+#         mask=z_windows[i]!=hp.UNSEEN
+#         mask0*=mask
+#         if i>0:
+#             z_windows0*=z_windows[i]
+#     z_windows0[~mask0]=hp.UNSEEN
+#     cli=hp.anafast(map1=z_windows0)
+#     return cli
 
 def window_4_cl(window1,window2,mask3,mask4):
     z_windows_i=window1*1

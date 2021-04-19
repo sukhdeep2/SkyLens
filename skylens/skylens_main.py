@@ -64,7 +64,7 @@ class Skylens():
         if tracer_utils is None:
             self.tracer_utils=Tracer_utils(shear_zbins=self.shear_zbins,galaxy_zbins=self.galaxy_zbins,kappa_zbins=self.kappa_zbins,
                                             logger=self.logger,l=self.l,scheduler_info=self.scheduler_info,
-                                            zkernel_func_names=self.zkernel_func_names)
+                                            zkernel_func_names=self.zkernel_func_names,do_cov=self.do_cov)
 
         self.set_corr_indxs(corr_indxs=self.corr_indxs,stack_indxs=self.stack_indxs)
 
