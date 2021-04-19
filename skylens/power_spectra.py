@@ -42,7 +42,7 @@ cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817
                 'Ase9':2.2,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
                 'OmR':cosmo.Ogamma0+cosmo.Onu0,'w':-1,'wa':0,'Tcmb':cosmo.Tcmb0,'z_max':4,'use_astropy':True})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
-pk_params_default={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'camb_pk_too_many_z','halofit_version':'takahashi'}
+pk_params_default={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'class_pk','halofit_version':'takahashi'}
 
 # baryonic scenario option:
 # "owls_AGN","owls_DBLIMFV1618","owls_NOSN","owls_NOSN_NOZCOOL","owls_NOZCOOL","owls_REF","owls_WDENS"
@@ -296,11 +296,18 @@ class Power_Spectra(cosmology):
                         'output': 'mPk','z_max_pk':100, #max(z)*2, #to avoid class error.
                                                       #Allegedly a compiler error, whatever that means
                         'P_k_max_1/Mpc':pk_params['kmax']*h*1.1,
-                    }
+                    'alpha_s':cosmo_params['alpha_s'],
+                     'N_ur':cosmo_params['N_ur'],
+                     'N_ncdm':cosmo_params['N_ncdm'],
+                     'omega_ncdm':cosmo_params['omega_ncdm'],
+                      'Omega_fld':cosmo_params['Oml'],
+                     'w0_fld':cosmo_params['w'],
+                     'wa_fld':cosmo_params['wa']}
+        
         if pk_params['non_linear']==1:
             class_params['non linear']='halofit'
 
-        class_params['N_ur']=3.04 #ultra relativistic species... neutrinos
+        """class_params['N_ur']=3.04 #ultra relativistic species... neutrinos
         if cosmo_params['mnu']!=0:
             class_params['N_ur']-=1 #one massive neutrino
             class_params['m_ncdm']=cosmo_params['mnu']
@@ -309,7 +316,7 @@ class Power_Spectra(cosmology):
         if cosmo_params['w']!=-1 or cosmo_params['wa']!=0:
             class_params['Omega_fld']=cosmo_params['Oml']
             class_params['w0_fld']=cosmo_params['w']
-            class_params['wa_fld']=cosmo_params['wa']
+            class_params['wa_fld']=cosmo_params['wa']"""
 
 
         for ke in class_accuracy_settings.keys():
