@@ -1,3 +1,16 @@
+"""
+This file contains scripts to compute the wigner_3j matrix in parallel, with m1=2, m2=-2, m3=0. The main 
+funtion used to compute the matrix is defined in wigner_functions.py.
+
+The matrix returned is of the form:   l_1  l_2  wl
+                                        2  -2   0 
+l_1 and l_2 are both assumed to have the same range: [0,lmax]. This can easily changed in the code
+if desired (lmax is user defined), including allowing different range for l_1 and l_2.
+wl has the range [0,wlmax], wlmax is used defined. wlmax is recommended to be 2*lmax
+
+The wigner files are stored as compressed arrays using the zarr package.
+"""
+
 from wigner_functions import *
 import zarr
 import time
@@ -10,9 +23,9 @@ m3=0
 lmax=np.int(lmax)
 wlmax=np.int(wlmax)
 
+#path to save the file
 home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
-fname=home+'/dask_wig3j_l{lmax}_w{wlmax}_{i}_reorder.zarr'
-
+fname=home+'/wig3j_l{lmax}_w{wlmax}_{i}_reorder.zarr'
 fname=fname.format(i=abs(m2),lmax=lmax,wlmax=wlmax)
 print('will save to ',fname)
 
@@ -40,6 +53,10 @@ def wig3j_recur_1d(j2s,m1,m2,m3,j3_outmax,j1):
     return out_ij
 
 def wig3j_recur_2d(j1b,j2b,m1,m2,m3,j3_outmax,step,z1_out):
+    """
+    Computes a smaller part of the wigner_3j matrix.
+    Called multiple times in parallel.
+    """
     out= np.zeros((j3_outmax,min(step,lmax-j1b),min(step,lmax-j2b)))
 
     j1s=np.arange(j1b,min(lmax,j1b+step))

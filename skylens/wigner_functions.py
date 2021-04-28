@@ -21,7 +21,7 @@ from sympy.physics.wigner import wigner_3j
 
 def wigner_d(m1,m2,theta,l,l_use_bessel=1.e4):
     """
-    Function to compute wigner matrices used in wigner transforms.
+    Function to compute wigner small-d matrices used in wigner transforms.
     """
     l0=np.copy(l)
     if l_use_bessel is not None:
@@ -65,7 +65,7 @@ def wigner_d(m1,m2,theta,l,l_use_bessel=1.e4):
 
 def wigner_d_parallel(m1,m2,theta,l,ncpu=None,l_use_bessel=1.e4):
     """
-    Compute wigner matrix in parallel.
+    Compute wigner small-d matrix in parallel.
     """
     if ncpu is None:
         ncpu=cpu_count()
@@ -75,155 +75,133 @@ def wigner_d_parallel(m1,m2,theta,l,ncpu=None,l_use_bessel=1.e4):
     p.join()
     return d_mat[:,:,0].T
 
-# def wigner_d_recur(m1,m2,theta,l,l_use_bessel=1.e4):     #FIX: Can use recursion reltion from Kilbinger+ 2017
-#     dmat=np.zeros((len(theta),len(l)))
-#     theta=theta.reshape(len(theta),1)
-#     l=l.reshape(1,len(l))
-#     d100=np.cos(theta)
-    
-#     A0=l*(2.*l-1.)
-
-#     A0/=np.sqrt((l**2-m1**2)*(l**2-m2**2))
-#     A1=d100-m1*m2*1.0/l/(l-1.)
-#     A2=np.sqrt(((l-1)**2-m1**2)*((l-1)**2-m2**2))
-#     A2/=(l-1)*(2*l-1)
-#     il=0
-#     for i in np.arange(len(l[0,:])):
-#         if l[0,i]<np.absolute(m1) or l[0,i]<np.absolute(m2):
-#             continue
-#         if il<=2:
-#             dmat[:,i]=wigner_d(m1,m2,theta,np.atleast_1d(l[0,i]),l_use_bessel=l_use_bessel)[:,0]
-#             il+=1
-#         else:
-#             dmat[:,i]=A1[:,i]*dmat[:,i-1]-A2[0,i]*dmat[:,i-2]
-#             dmat[:,i]*=A0[0,i]
-#     return dmat
-
-
-def log_factorial(n):
-    return loggamma(n+1)
-
-def Wigner3j(m_1, m_2, m_3,j_1, j_2, j_3): #Failed attempt to convert sympy function into numpy. Doesnot work at large ell because of numerical errors
-    """Calculate the Wigner 3j symbol `Wigner3j(j_1,j_2,j_3,m_1,m_2,m_3)`
-    *Has problems due to rounding errors when numbers get large.*
-    This function is inspired from implementation in
-    sympy.physics.Wigner, as written by Jens Rasch.
-    https://docs.sympy.org/latest/modules/physics/wigner.html
-
-    We have modified the implementation to use log_factorial so as to
-    avoid dealing with large numbers. This function also accepts
-    j_1,j_2,j_3 as 1d arrays (can be of different size) and returns
-    a sparse matrix of size n_1 X n_2 X n_3, where n_i is the length of j_i.
-    m_i should be integer scalars.
-    For sparse package, see https://pypi.org/project/sparse/
-
-    Following from sympy implementation:
-    The inputs must be integers.  (Half integer arguments are
-    sacrificed so that we can use numba.)  Nonzero return quantities
-    only occur when the `j`s obey the triangle inequality (any two
-    must add up to be as big as or bigger than the third).
-
-    Examples
-    ========
-
-    >>> from spherical_functions import Wigner3j
-    >>> Wigner3j_log(2, 6, 4, 0, 0, 0)
-    0.186989398002
-    >>> Wigner3j_log(2, 6, 4, 0, 0, 1)
-    0
+def wigner_3j_000(j_1,j_2,j_3,m_1,m_2,m_3): 
     """
-    j_1=j_1.reshape(len(np.atleast_1d(j_1)),1,1)
-    j_2=j_2.reshape(1,len(np.atleast_1d(j_2)),1)
-    j_3=j_3.reshape(1,1,len(np.atleast_1d(j_3)))
+    This is the function we use to compute wigner_3j matrices for the case of 
+    m1=m2=m3=0. Algorithm from Hivon+ 2002
+    """
+    J=j_1+j_2+j_3
+    a1 = j_1 + j_2 - j_3
+    a2 = j_1 - j_2 + j_3
+    a3 = -j_1 + j_2 + j_3
+    x=a1<0
+    x=np.logical_or(x,a2<0)
+    x=np.logical_or(x,a3<0)
+    x=np.logical_or(x,J%2==1)
+#     print(x)
+    
+    logwj=log_factorial(J/2)
+    logwj-=log_factorial(J/2-j_1)
+    logwj-=log_factorial(J/2-j_2)
+    logwj-=log_factorial(J/2-j_3)
+    logwj-=0.5*log_factorial(J+1)
+    logwj+=0.5*log_factorial(J-2*j_1)
+    logwj+=0.5*log_factorial(J-2*j_2)
+    logwj+=0.5*log_factorial(J-2*j_3)
+    logwj[x]=-308
+    wj=(-1)**(np.int32(J/2))*np.exp(logwj)  #0, when J/2 is not int
+    wj[x]=0
+#     x=J%2==1 #already applied in calling functions
+#     wj[x]*=0
+    return np.real(wj)
 
-    x0=np.logical_not(np.any([  j_1 + j_2 - j_3<0, #triangle inequalities
-                                j_1 - j_2 + j_3<0,
-                                -j_1 + j_2 + j_3<0,
-                                abs(m_1) > j_1+j_2*0+j_3*0, #|m_i|<j_i
-                                abs(m_2) > j_2+j_1*0+j_3*0,
-                                abs(m_3) > j_3+j_2*0+j_1*0
-                             ],axis=0))
+"""
+Following are helper functions for a recursive algorithm implemented below in wig3j_recur.
+"""
+def A_J(j,j2,j3,m2,m3):
+    out=np.float64(j**2-(j2-j3)**2)
+    x=j**2<(j2-j3)**2
+    out[x]=0
+    out=out**.5
+    out*=((j2+j3+1)**2-j**2)**.5
+    out*=(j**2-(m2+m3)**2)**.5
+    return out
 
-    if (m_1 + m_2 + m_3 != 0 or x0.sum()==0):
-        return np.zeros_like(j_1+j_2+j_3,dtype='float64')
+def B_J(j,j2,j3,m2,m3):
+    out=np.float64((m2+m3)*(j2*(j2+1)-j3*(j3+1)))
+    out-=(m2-m3)*j*(j+1)
+    out*=2*j+1
+    return out
 
+def X_Np1(j,j2,j3,m2,m3): #X_n+1
+    return j*A_J(j+1,j2,j3,m2,m3)
 
-    a={1:(j_1 + j_2 - j_3)[x0]}
+def X_N(j,j2,j3,m2,m3): #X_n+1
+    return B_J(j,j2,j3,m2,m3)
 
-    m_3 = -m_3
-
-    log_argsqrt =(  log_factorial(j_1 - m_1) +
-                    log_factorial(j_1 + m_1) +
-                    log_factorial(j_2 - m_2) +
-                    log_factorial(j_2 + m_2) +
-                    log_factorial(j_3 - m_3) +
-                    log_factorial(j_3 + m_3)
-                 )[x0]
-
-    log_argsqrt+=(log_factorial(a[1]) +
-                log_factorial(( j_1 - j_2 + j_3)[x0]) +
-                log_factorial((-j_1 + j_2 + j_3)[x0]) - log_factorial((j_1+j_2+j_3)[x0]+ 1))
-
-    log_ressqrt=0.5*log_argsqrt
-    log_argsqrt=None
-
-#     imin = max(-j_3 + j_1 + m_2, max(-j_3 + j_2 - m_1, 0))
-    imin_t=(-j_3 + j_2 - m_1 +j_1*0 ).clip(min=0)[x0]
-    imin = (-j_3 + j_1 + m_2 +j_2*0)[x0]
-    imin[imin<imin_t]=imin_t[imin<imin_t]
-    imin_t=None
-
-#     imax = min(j_2 + m_2, min(j_1 - m_1, j_1 + j_2 - j_3))
-    imax_t=(j_1 - m_1 + j_2*0+j_3*0)[x0]
-    imax =(j_1 + j_2 - j_3)[x0]
-    imax[imax>imax_t]=imax_t[imax>imax_t]
-    imax_t=(j_2 + m_2 + j_1*0+j_3*0)[x0]
-    imax[imax>imax_t]=imax_t[imax>imax_t]
-    imax_t=None
+def X_Nm1(j,j2,j3,m2,m3): #X_n+1
+    return (j+1)*A_J(j,j2,j3,m2,m3)
 
 
-    iis=np.arange(np.amin(imin), np.amax(imax) + 1) #no need to use x0 here. Can also lead to somewhat wrong answers
-    sgns=np.ones_like(iis,dtype='int')*-1
-    sgns[iis%2==0]=1
+def wig3j_recur(j1,j2,m1,m2,m3,j3_outmax=None):
+    """
+    Using recursion relation to compute wigner matrices. Works well. Validated with the sympy function.
+    Reference is Luscombe, James H. 1998, Physical Review E.
+    """
+#     assert m3==-m1-m2
+    
+    if (abs(m1) > j1) or (abs(m2) > j2) or m1+m2+m3!=0:
+        return 0
 
-    b1=(j_3 - j_1 - m_2 +j_2*0)[x0]
-    b2=(j_2 + m_2 +j_1*0+j_3*0)[x0]
-    b3=(j_1-m_1 +j_2*0+j_3*0)[x0]
-    b4=(j_3 - j_2 + m_1 +j_1*0)[x0]
-    sumres_t=np.zeros_like(b1,dtype='float')
+    j3_min=np.absolute(j1-j2)
+    j3_max=j1+j2+1 #j3_max is j1+j2, +1 for 0 indexing
+    
+    j3=np.arange(j3_max)
+    
+    if j3_outmax is None:
+        j3_outmax=j3_max
+    
+    wig_out=np.zeros(max(j3_max,j3_outmax))
+    
+    if j3_min>j3_outmax:
+        return wig_out[:j3_outmax]#.reshape(1,1,j3_outmax)
 
-    for i in np.arange(len(iis)):
-        ii=iis[i]
-        x=np.logical_not(np.logical_or(ii<imin,ii>imax))
-        log_den =( log_factorial(ii) +
-                    log_factorial( b1[x] + ii ) +
-                    log_factorial( b2[x] - ii) +
-                    log_factorial( b3[x] - ii) +
-                    log_factorial( b4[x] + ii ) +
-                    log_factorial(a[1][x] - ii) )
-        sumres_ii=np.exp(sumres_t-log_den)*sgns[i] #FIXME: This has numerical issues.
-        sumres_t[x]+=sumres_ii
+    wig_out[j3_min]=1#wigner_3j(j1,j2,j3_min,m1,m2,m3)
+    if j3_min==0: #in this case the recursion as implemented doesnot work (all zeros). use sympy function.
+        wig_out[j3_min]=wigner_3j(j1,j2,j3_min,m1,m2,m3)
+        wig_out[j3_min+1]=wigner_3j(j1,j2,j3_min+1,m1,m2,m3) #not strictly needed when j3_min>0
+                
+    x_Np1=X_Np1(j3,j2,j1,m1,m2)*-1 #j==j3
+    x_N=X_N(j3,j2,j1,m1,m2) #j==j3
+    x_Nm1=X_Nm1(j3,j2,j1,m1,m2) #j==j3
+    
+    for i in np.arange(j3_min,j3_max):
+        if x_Np1[i]==0:
+            continue
+        wig_out[j3[i+1]]=x_Nm1[i]*wig_out[j3[i-1]]+x_N[i]*wig_out[j3[i]]
+        wig_out[j3[i+1]]/=x_Np1[i]    
+        
+    Norm=np.sum((2*j3+1)*(wig_out[:j3_max]**2))
+    wig_out/=Norm**.5
+    
+    if np.sign(wig_out[j1+j2])!=np.sign((-1)**(j3_min)):
+        wig_out*=-1
+    
+    #FIXME: this commented out part is for validation against sympy. Should implement it properly as test.
+#     if j3_min==0 and not np.isclose(Norm,1): #in this case we started recursion with exact values at j3_min and hence norm should be 1.
+#         print("Norm problem: ",j1,j2,j3_min,Norm,wig_out[:j3_max],)
+#     else:
+#         tt=wigner_3j(j1,j2,j3_min+1,m1,m2,m3) # This is only for testing
+#         tt=np.float(tt)
+#         if not np.isclose(wig_out[j3_min+1],tt):
+#             print('j3min+1 comparison problem: ',j1,j2,j3_min+1,tt,wig_out[j3_min+1])
+        
+        
+#     xxi=np.random.randint(j3_min+1,j3_max-1) #randomly compare a value with sympy calculation
+#     wig_out2=wigner_3j(j1,j2,j3[xxi],m1,m2,m3)
+#     try:
+#         wig_out2=wig_out2.evalf()
+#         print('random test ',xxi,wig_out[xxi],wig_out2)
+#     except Exception as err:
+#         print('warning, random test failed', err)
+#         pass
 
-#     sumres_t=np.exp(log_ressqrt+np.log(np.absolute(sumres_t)))*np.sign(sumres_t)
 
-    prefid = np.ones_like(x0,dtype='int8') # (1 if (j_1 - j_2 - m_3) % 2 == 0 else -1)
-    prefid[(j_1 - j_2 - m_3+j_3*0) % 2 == 1]=-1
-    return sparse.COO(np.where(x0),data=sumres_t*prefid[x0])    #ressqrt taken inside sumres calc
-
-# def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None):
-#     if ncpu is None:
-#         ncpu=cpu_count()-2
-#     p=Pool(ncpu)
-#     d_mat=sparse.stack(p.map( partial(Wigner3j, m_1, m_2, m_3,j_1, j_2), j_3,
-#                                  chunksize=max(1,np.int(len(j_3)/ncpu/10))
-#                         )  )
-#     p.close()
-#     return d_mat[:,:,:,0].transpose((1,2,0))
-
+    return wig_out[:j3_outmax]#.reshape(j3_outmax,1,1)
 
 
 def wigner_3j_2(j_1, j_2, j_3, m_1, m_2, m_3): 
-    #this and some helper functions below is a copy-paste of sympy function. We use it for testing.
+    #this and some helper functions below are a copy-paste of sympy function. We use it for testing.
     r"""
     Calculate the Wigner 3j symbol `\operatorname{Wigner3j}(j_1,j_2,j_3,m_1,m_2,m_3)`.
 
@@ -402,50 +380,134 @@ _calc_factlist(1000)
 def calc_factlist(nn):
     return _calc_factlist(nn)
 
-def wigner_3j_asym(j_1,j_2,j_3,m_1,m_2,m_3): #assume j1,j2>>j3... not very accurate.. only seems to work when j1==j2
-    sj=(j_1+j_2+1)
-    th=np.arccos((m_1-m_2)/sj)
-    wd=wigner_d(m_3,j_2-j_1,np.atleast_1d(th),j_3)[0,0]
-    return ((-1)**(j_2+m_2))*wd/np.sqrt(sj)
 
-def wigner_3j_000(j_1,j_2,j_3,m_1,m_2,m_3): 
-    """
-    This is the function we use to compute wigner_3j matrices for the case of 
-    m1=m2=m3=0. Algorithm from Hivon+ 2002
-    """
-    J=j_1+j_2+j_3
-    a1 = j_1 + j_2 - j_3
-    a2 = j_1 - j_2 + j_3
-    a3 = -j_1 + j_2 + j_3
-    x=a1<0
-    x=np.logical_or(x,a2<0)
-    x=np.logical_or(x,a3<0)
-    x=np.logical_or(x,J%2==1)
-#     print(x)
-    
-    logwj=log_factorial(J/2)
-    logwj-=log_factorial(J/2-j_1)
-    logwj-=log_factorial(J/2-j_2)
-    logwj-=log_factorial(J/2-j_3)
-    logwj-=0.5*log_factorial(J+1)
-    logwj+=0.5*log_factorial(J-2*j_1)
-    logwj+=0.5*log_factorial(J-2*j_2)
-    logwj+=0.5*log_factorial(J-2*j_3)
-    logwj[x]=-308
-    wj=(-1)**(np.int32(J/2))*np.exp(logwj)  #0, when J/2 is not int
-    wj[x]=0
-#     x=J%2==1 #already applied in calling functions
-#     wj[x]*=0
-    return np.real(wj)
+##############################################################################################
+"""
+Following functions are deprecated.
+"""
 
-def wigner_3j_3(asym_fact,m1,m2,m3,js):
+
+def log_factorial(n):
+    return loggamma(n+1)
+
+def Wigner3j(m_1, m_2, m_3,j_1, j_2, j_3): #Failed attempt to convert sympy function into numpy. Doesnot work at large ell because of numerical errors
+    """Calculate the Wigner 3j symbol `Wigner3j(j_1,j_2,j_3,m_1,m_2,m_3)`
+    *Has problems due to rounding errors when numbers get large.*
+    This function is inspired from implementation in
+    sympy.physics.Wigner, as written by Jens Rasch.
+    https://docs.sympy.org/latest/modules/physics/wigner.html
+
+    We have modified the implementation to use log_factorial so as to
+    avoid dealing with large numbers. This function also accepts
+    j_1,j_2,j_3 as 1d arrays (can be of different size) and returns
+    a sparse matrix of size n_1 X n_2 X n_3, where n_i is the length of j_i.
+    m_i should be integer scalars.
+    For sparse package, see https://pypi.org/project/sparse/
+
+    Following from sympy implementation:
+    The inputs must be integers.  (Half integer arguments are
+    sacrificed so that we can use numba.)  Nonzero return quantities
+    only occur when the `j`s obey the triangle inequality (any two
+    must add up to be as big as or bigger than the third).
+
+    Examples
+    ========
+
+    >>> from spherical_functions import Wigner3j
+    >>> Wigner3j_log(2, 6, 4, 0, 0, 0)
+    0.186989398002
+    >>> Wigner3j_log(2, 6, 4, 0, 0, 1)
+    0
     """
-    Attempt to speed up calculations by approximating general wigner matrices with the case of m1=m2=m3=0.
-    Does not work very well. 
-    """
-    if np.all(np.array(js)>np.absolute([m1,m2,m3])*asym_fact) and np.sum(js)%2==0:
-        return np.float32(wigner_3j_000(js[0],js[1],js[2],m1,m2,m3))
-    return np.float32(wigner_3j(js[0],js[1],js[2],m1,m2,m3)) #.evalf() #this is calling sympy function not Wigner3j
+    j_1=j_1.reshape(len(np.atleast_1d(j_1)),1,1)
+    j_2=j_2.reshape(1,len(np.atleast_1d(j_2)),1)
+    j_3=j_3.reshape(1,1,len(np.atleast_1d(j_3)))
+
+    x0=np.logical_not(np.any([  j_1 + j_2 - j_3<0, #triangle inequalities
+                                j_1 - j_2 + j_3<0,
+                                -j_1 + j_2 + j_3<0,
+                                abs(m_1) > j_1+j_2*0+j_3*0, #|m_i|<j_i
+                                abs(m_2) > j_2+j_1*0+j_3*0,
+                                abs(m_3) > j_3+j_2*0+j_1*0
+                             ],axis=0))
+
+    if (m_1 + m_2 + m_3 != 0 or x0.sum()==0):
+        return np.zeros_like(j_1+j_2+j_3,dtype='float64')
+
+
+    a={1:(j_1 + j_2 - j_3)[x0]}
+
+    m_3 = -m_3
+
+    log_argsqrt =(  log_factorial(j_1 - m_1) +
+                    log_factorial(j_1 + m_1) +
+                    log_factorial(j_2 - m_2) +
+                    log_factorial(j_2 + m_2) +
+                    log_factorial(j_3 - m_3) +
+                    log_factorial(j_3 + m_3)
+                 )[x0]
+
+    log_argsqrt+=(log_factorial(a[1]) +
+                log_factorial(( j_1 - j_2 + j_3)[x0]) +
+                log_factorial((-j_1 + j_2 + j_3)[x0]) - log_factorial((j_1+j_2+j_3)[x0]+ 1))
+
+    log_ressqrt=0.5*log_argsqrt
+    log_argsqrt=None
+
+#     imin = max(-j_3 + j_1 + m_2, max(-j_3 + j_2 - m_1, 0))
+    imin_t=(-j_3 + j_2 - m_1 +j_1*0 ).clip(min=0)[x0]
+    imin = (-j_3 + j_1 + m_2 +j_2*0)[x0]
+    imin[imin<imin_t]=imin_t[imin<imin_t]
+    imin_t=None
+
+#     imax = min(j_2 + m_2, min(j_1 - m_1, j_1 + j_2 - j_3))
+    imax_t=(j_1 - m_1 + j_2*0+j_3*0)[x0]
+    imax =(j_1 + j_2 - j_3)[x0]
+    imax[imax>imax_t]=imax_t[imax>imax_t]
+    imax_t=(j_2 + m_2 + j_1*0+j_3*0)[x0]
+    imax[imax>imax_t]=imax_t[imax>imax_t]
+    imax_t=None
+
+
+    iis=np.arange(np.amin(imin), np.amax(imax) + 1) #no need to use x0 here. Can also lead to somewhat wrong answers
+    sgns=np.ones_like(iis,dtype='int')*-1
+    sgns[iis%2==0]=1
+
+    b1=(j_3 - j_1 - m_2 +j_2*0)[x0]
+    b2=(j_2 + m_2 +j_1*0+j_3*0)[x0]
+    b3=(j_1-m_1 +j_2*0+j_3*0)[x0]
+    b4=(j_3 - j_2 + m_1 +j_1*0)[x0]
+    sumres_t=np.zeros_like(b1,dtype='float')
+
+    for i in np.arange(len(iis)):
+        ii=iis[i]
+        x=np.logical_not(np.logical_or(ii<imin,ii>imax))
+        log_den =( log_factorial(ii) +
+                    log_factorial( b1[x] + ii ) +
+                    log_factorial( b2[x] - ii) +
+                    log_factorial( b3[x] - ii) +
+                    log_factorial( b4[x] + ii ) +
+                    log_factorial(a[1][x] - ii) )
+        sumres_ii=np.exp(sumres_t-log_den)*sgns[i] #FIXME: This has numerical issues.
+        sumres_t[x]+=sumres_ii
+
+#     sumres_t=np.exp(log_ressqrt+np.log(np.absolute(sumres_t)))*np.sign(sumres_t)
+
+    prefid = np.ones_like(x0,dtype='int8') # (1 if (j_1 - j_2 - m_3) % 2 == 0 else -1)
+    prefid[(j_1 - j_2 - m_3+j_3*0) % 2 == 1]=-1
+    return sparse.COO(np.where(x0),data=sumres_t*prefid[x0])    #ressqrt taken inside sumres calc
+
+# def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None):
+#     if ncpu is None:
+#         ncpu=cpu_count()-2
+#     p=Pool(ncpu)
+#     d_mat=sparse.stack(p.map( partial(Wigner3j, m_1, m_2, m_3,j_1, j_2), j_3,
+#                                  chunksize=max(1,np.int(len(j_3)/ncpu/10))
+#                         )  )
+#     p.close()
+#     return d_mat[:,:,:,0].transpose((1,2,0))
+
+
 
 from itertools import product as Comb
 import time
@@ -530,96 +592,42 @@ def Wigner3j_parallel( m_1, m_2, m_3,j_1, j_2, j_3,ncpu=None,asym_fact=np.inf):
 #     return d_mat
 
 
-"""
-Following are helper functions for a recursive algorithm implemented below in wig3j_recur.
-"""
-def A_J(j,j2,j3,m2,m3):
-    out=np.float64(j**2-(j2-j3)**2)
-    x=j**2<(j2-j3)**2
-    out[x]=0
-    out=out**.5
-    out*=((j2+j3+1)**2-j**2)**.5
-    out*=(j**2-(m2+m3)**2)**.5
-    return out
-
-def B_J(j,j2,j3,m2,m3):
-    out=np.float64((m2+m3)*(j2*(j2+1)-j3*(j3+1)))
-    out-=(m2-m3)*j*(j+1)
-    out*=2*j+1
-    return out
-
-def X_Np1(j,j2,j3,m2,m3): #X_n+1
-    return j*A_J(j+1,j2,j3,m2,m3)
-
-def X_N(j,j2,j3,m2,m3): #X_n+1
-    return B_J(j,j2,j3,m2,m3)
-
-def X_Nm1(j,j2,j3,m2,m3): #X_n+1
-    return (j+1)*A_J(j,j2,j3,m2,m3)
-
-
-def wig3j_recur(j1,j2,m1,m2,m3,j3_outmax=None):
+def wigner_3j_3(asym_fact,m1,m2,m3,js):
     """
-    Using recursion relation to compute wigner matrices. Works well. Validated with the sympy function.
-    Reference is Luscombe, James H. 1998, Physical Review E.
+    Attempt to speed up calculations by approximating general wigner matrices with the case of m1=m2=m3=0.
+    Does not work very well. 
     """
-#     assert m3==-m1-m2
-    
-    if (abs(m1) > j1) or (abs(m2) > j2) or m1+m2+m3!=0:
-        return 0
-
-    j3_min=np.absolute(j1-j2)
-    j3_max=j1+j2+1 #j3_max is j1+j2, +1 for 0 indexing
-    
-    j3=np.arange(j3_max)
-    
-    if j3_outmax is None:
-        j3_outmax=j3_max
-    
-    wig_out=np.zeros(max(j3_max,j3_outmax))
-    
-    if j3_min>j3_outmax:
-        return wig_out[:j3_outmax]#.reshape(1,1,j3_outmax)
-
-    wig_out[j3_min]=1#wigner_3j(j1,j2,j3_min,m1,m2,m3)
-    if j3_min==0: #in this case the recursion as implemented doesnot work (all zeros). use sympy function.
-        wig_out[j3_min]=wigner_3j(j1,j2,j3_min,m1,m2,m3)
-        wig_out[j3_min+1]=wigner_3j(j1,j2,j3_min+1,m1,m2,m3) #not strictly needed when j3_min>0
-                
-    x_Np1=X_Np1(j3,j2,j1,m1,m2)*-1 #j==j3
-    x_N=X_N(j3,j2,j1,m1,m2) #j==j3
-    x_Nm1=X_Nm1(j3,j2,j1,m1,m2) #j==j3
-    
-    for i in np.arange(j3_min,j3_max):
-        if x_Np1[i]==0:
-            continue
-        wig_out[j3[i+1]]=x_Nm1[i]*wig_out[j3[i-1]]+x_N[i]*wig_out[j3[i]]
-        wig_out[j3[i+1]]/=x_Np1[i]    
-        
-    Norm=np.sum((2*j3+1)*(wig_out[:j3_max]**2))
-    wig_out/=Norm**.5
-    
-    if np.sign(wig_out[j1+j2])!=np.sign((-1)**(j3_min)):
-        wig_out*=-1
-    
-    #FIXME: this commented out part is for validation against sympy. Should implement it properly as test.
-#     if j3_min==0 and not np.isclose(Norm,1): #in this case we started recursion with exact values at j3_min and hence norm should be 1.
-#         print("Norm problem: ",j1,j2,j3_min,Norm,wig_out[:j3_max],)
-#     else:
-#         tt=wigner_3j(j1,j2,j3_min+1,m1,m2,m3) # This is only for testing
-#         tt=np.float(tt)
-#         if not np.isclose(wig_out[j3_min+1],tt):
-#             print('j3min+1 comparison problem: ',j1,j2,j3_min+1,tt,wig_out[j3_min+1])
-        
-        
-#     xxi=np.random.randint(j3_min+1,j3_max-1) #randomly compare a value with sympy calculation
-#     wig_out2=wigner_3j(j1,j2,j3[xxi],m1,m2,m3)
-#     try:
-#         wig_out2=wig_out2.evalf()
-#         print('random test ',xxi,wig_out[xxi],wig_out2)
-#     except Exception as err:
-#         print('warning, random test failed', err)
-#         pass
+    if np.all(np.array(js)>np.absolute([m1,m2,m3])*asym_fact) and np.sum(js)%2==0:
+        return np.float32(wigner_3j_000(js[0],js[1],js[2],m1,m2,m3))
+    return np.float32(wigner_3j(js[0],js[1],js[2],m1,m2,m3)) #.evalf() #this is calling sympy function not Wigner3j
 
 
-    return wig_out[:j3_outmax]#.reshape(j3_outmax,1,1)
+# def wigner_d_recur(m1,m2,theta,l,l_use_bessel=1.e4):     #FIX: Can use recursion reltion from Kilbinger+ 2017
+#     dmat=np.zeros((len(theta),len(l)))
+#     theta=theta.reshape(len(theta),1)
+#     l=l.reshape(1,len(l))
+#     d100=np.cos(theta)
+    
+#     A0=l*(2.*l-1.)
+
+#     A0/=np.sqrt((l**2-m1**2)*(l**2-m2**2))
+#     A1=d100-m1*m2*1.0/l/(l-1.)
+#     A2=np.sqrt(((l-1)**2-m1**2)*((l-1)**2-m2**2))
+#     A2/=(l-1)*(2*l-1)
+#     il=0
+#     for i in np.arange(len(l[0,:])):
+#         if l[0,i]<np.absolute(m1) or l[0,i]<np.absolute(m2):
+#             continue
+#         if il<=2:
+#             dmat[:,i]=wigner_d(m1,m2,theta,np.atleast_1d(l[0,i]),l_use_bessel=l_use_bessel)[:,0]
+#             il+=1
+#         else:
+#             dmat[:,i]=A1[:,i]*dmat[:,i-1]-A2[0,i]*dmat[:,i-2]
+#             dmat[:,i]*=A0[0,i]
+#     return dmat
+
+def wigner_3j_asym(j_1,j_2,j_3,m_1,m_2,m_3): #assume j1,j2>>j3... not very accurate.. only seems to work when j1==j2
+    sj=(j_1+j_2+1)
+    th=np.arccos((m_1-m_2)/sj)
+    wd=wigner_d(m_3,j_2-j_1,np.atleast_1d(th),j_3)[0,0]
+    return ((-1)**(j_2+m_2))*wd/np.sqrt(sj)
