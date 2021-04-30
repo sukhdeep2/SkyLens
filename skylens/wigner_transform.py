@@ -197,6 +197,12 @@ class wigner_transform():
     def projected_covariance(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
                              wig_d1=None,wig_d2=None,wig_norm=None,wig_l=None,
                              grad_l=None,taper=False,**kwargs):
+        """
+        Turn the power spectra covariance into correlation function covariance. 
+        In this function, cl_cov is assumed to be a 1-d vector (the diagonal of the
+        power spectra covariance). See projected_covariance2 for the case when 
+        cl_cov is a two-dimensional matrix.
+        """
         if s1_s2_cross is None:
             s1_s2_cross=s1_s2
         if wig_d1 is None:
