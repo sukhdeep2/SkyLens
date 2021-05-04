@@ -64,6 +64,12 @@ store_win=True
 
 bi=(0,0) #tracer bin indices for cross correlations. always zero because we only use 1 tomographic bin.
 
+z0_galaxy=0.5
+z0_shear=1
+ns0_galaxy=10
+ns0_shear=30
+
 def corr_matrix(cov_mat=[]): #correlation matrix
     diag=np.diag(cov_mat)
     return cov_mat/np.sqrt(np.outer(diag,diag))
+

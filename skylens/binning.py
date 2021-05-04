@@ -75,12 +75,12 @@ class binning():
             wt_b=bin_utils['wt_b']
         if wt0 is None:
             wt0=bin_utils['wt0']
-
+        print('bin_2d_coupling: ',binning_mat.shape,wt_b.shape,wt0.shape)
         if len(wt0.shape)==1:
             binning_mat2=wt0[:,None]*binning_mat*wt_b
         else:
             binning_mat2=wt0@binning_mat@wt_b #FIXME: Test this.... doesnot work. not used anymore.
-        
+        print('bin_2d_coupling again: ',binning_mat.shape,wt_b.shape,wt0.shape)
         rdr=bin_utils['r_dr']
         r_dr_m=bin_utils['r_dr_m'][ndim]
         
