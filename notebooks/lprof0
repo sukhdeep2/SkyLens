@@ -1,0 +1,62 @@
+Timer unit: 1e-06 s
+
+Total time: 411.015 s
+File: <ipython-input-18-ffad9d1d622e>
+Function: SkyLens_cls at line 1
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+     1                                           def SkyLens_cls(nside, bg1, fsky, zmin = 0.1, zmax = 2.45104189964307, nowin = False):
+     2                                               """Returns Skylens Cls based on given maps.
+     3                                               
+     4                                               Inputs:
+     5                                                   nside (int) : nside for healpy
+     6                                                   bg1 (float) : linear bias term for galaxies
+     7                                                   fsky (float) : fsky of the map to be used 
+     8                                                   zmin (float) : min redshift for CMB lensing kernel
+     9                                                   zmax (float) : max redshift for CMB lensing kernel
+    10                                                   nowin (bool) : whether to calculate Cls without window
+    11                                                   
+    12                                               Returns:
+    13                                                   results (dict) : Skylens dict containing Cls, pCls, coupling matrices
+    14                                               """
+    15                                               
+    16         1          4.0      4.0      0.0      results = {}
+    17                                               
+    18                                               #tomographed redshift bins for the galaxies
+    19         2   40770818.0 20385409.0      9.9      zl_bin=DESI_elg_bins(f_sky = 0.04404143492380778,
+    20         1          3.0      3.0      0.0                      nside = NSIDE, bg1 = 1.5)
+    21                                               
+    22                                               #redshift bins for cmb
+    23         1   38786266.0 38786266.0      9.4      zs_bin=cmb_bins_here(l=l, nside = NSIDE, zmax = zmax)# lensing source bin
+    24                                               
+    25                                               #names of maps
+    26         1          5.0      5.0      0.0      corr_ll=('kappa','kappa')
+    27         1          2.0      2.0      0.0      corr_gg=('galaxy','galaxy')
+    28         1          2.0      2.0      0.0      corr_gl=('galaxy','kappa')
+    29         1          3.0      3.0      0.0      corrs=[corr_ll, corr_gg, corr_gl]
+    30                                               
+    31         1        480.0    480.0      0.0      z_PS=np.linspace(zmin, zmax, 100) #redshifts where P(k) will be evaluated
+    32                                               
+    33         2  331456879.0 165728439.5     80.6      kappa0=Skylens(kappa_zbins=zs_bin,do_cov=do_cov,bin_cl=bin_cl,l_bins=l_bins,l=l0, galaxy_zbins=zl_bin,
+    34         1          3.0      3.0      0.0                                         use_window=use_window,Tri_cov=Tri_cov, #Win = win,
+    35         1          3.0      3.0      0.0                                         use_binned_l=use_binned_l,wigner_files=wigner_files,
+    36         1          2.0      2.0      0.0                                         SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=fsky,
+    37         1          2.0      2.0      0.0                                         store_win=store_win,window_lmax=window_lmax,
+    38         1        924.0    924.0      0.0                                         corrs=corrs, scheduler_info=client.scheduler_info(), log_z_PS=1,
+    39         1          7.0      7.0      0.0                                         cosmo_params = cosmo_params, z_PS=z_PS)
+    40                                               
+    41         1          6.0      6.0      0.0      results['kappa0'] = kappa0
+    42                                               
+    43         1          1.0      1.0      0.0      if(nowin):
+    44                                                   kappa0_nowin=Skylens(kappa_zbins=zs_bin,do_cov=False,bin_cl=False,l_bins=None,l=l0_nowin, 
+    45                                                                galaxy_zbins=zl_bin,
+    46                                                                                  use_window=False,Tri_cov=Tri_cov, #Win = win,
+    47                                                                                  use_binned_l=use_binned_l,wigner_files=wigner_files,
+    48                                                                                  SSV_cov=SSV_cov,tidal_SSV_cov=tidal_SSV_cov,f_sky=fsky,
+    49                                                                                  store_win=store_win,window_lmax=window_lmax,
+    50                                                                                  corrs=corrs, scheduler_info=client.scheduler_info(), log_z_PS=1,
+    51                                                                                  cosmo_params = cosmo_params, z_PS=z_PS)
+    52                                                   results['kappa0_nowin'] = kappa0_nowin
+    53                                               
+    54         1          1.0      1.0      0.0      return results
