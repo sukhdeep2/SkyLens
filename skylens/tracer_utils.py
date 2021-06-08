@@ -18,9 +18,10 @@ d2r=np.pi/180.
 
 class Tracer_utils():
     def __init__(self,shear_zbins=None,galaxy_zbins=None,kappa_zbins=None,logger=None,l=None,
-                scheduler_info=None,zkernel_func_names=None):
+                scheduler_info=None,zkernel_func_names=None,do_cov=None):
         self.logger=logger
         self.l=l
+        self.do_cov=do_cov
         #Gravitaional const to get Rho crit in right units
         self.G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)
         self.G2*=8*np.pi/3.
@@ -142,9 +143,11 @@ class Tracer_utils():
         """
         z_bins=self.get_z_bins(tracer=tracer)
         n_bins=z_bins['n_bins']
-        self.SN[tracer]=np.zeros((len(self.l),n_bins,n_bins)) #if self.do_cov else None
-        for i in np.arange(n_bins):
-            self.SN[tracer][:,i,i]+=z_bins['SN'][tracer][:,i,i]
+        self.SN[tracer]=None
+        if self.do_cov:
+            self.SN[tracer]=np.zeros((len(self.l),n_bins,n_bins))
+            for i in np.arange(n_bins):
+                self.SN[tracer][:,i,i]+=z_bins['SN'][tracer][:,i,i]
     
     def reset_z_bins(self):
         """

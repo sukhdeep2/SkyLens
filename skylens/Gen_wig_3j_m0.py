@@ -1,6 +1,8 @@
 from wigner_functions import *
 import zarr
 import time
+from multiprocessing import Pool
+
 lmax=5000 #~nside*3.. or the lmax to be used in the analysis.
 wlmax=5000 #This needs to be 2Xlmax in general, unless you are certain window is narrow in ell space.
 
@@ -11,14 +13,14 @@ m3=0
 lmax=np.int(lmax)
 wlmax=np.int(wlmax)
 
-home='/home/tkarim/Skylens/temp/'
+home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
 fname=home+'/dask_wig3j_l{lmax}_w{wlmax}_{i}_reorder.zarr'  #path to save the files
 fname=fname.format(i=m2,lmax=lmax,wlmax=wlmax)
 print('will save to ',fname)
 
 lmax+=1
 wlmax+=1
-ncpu=4
+ncpu=30
 l_step=100 #not used with dask
 w_l=np.arange(wlmax)
 l=np.arange(lmax)

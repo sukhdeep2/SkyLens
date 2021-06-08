@@ -10,8 +10,8 @@ import itertools
 d2r=np.pi/180.
 
 class wigner_transform():
-    def __init__(self,theta=[],l=[],s1_s2=[(0,0)],logger=None,ncpu=None,wig_d_taper_order_low=16,
-                 wig_d_taper_order_high=20,scheduler_info=None,l_cut_weights=None,**kwargs):
+    def __init__(self,theta=[],l=[],s1_s2=[(0,0)],logger=None,ncpu=None,wig_d_taper_order_low=None,
+                 wig_d_taper_order_high=None,scheduler_info=None,l_cut_weights=None,**kwargs):
         self.__dict__.update(locals())
         self.name='Wigner'
         self.logger=logger
@@ -20,7 +20,7 @@ class wigner_transform():
         self.wig_norm=self.norm*self.grad_l
         
         self.grad_theta=np.gradient(theta)
-        self.inv_norm=self.theta*2*np.pi
+        self.inv_norm=np.sin(self.theta)*2*np.pi
         self.inv_wig_norm=self.inv_norm*self.grad_theta
 
         self.wig_d={}
@@ -103,7 +103,9 @@ class wigner_transform():
         self.__init__(theta=theta,l=l,s1_s2=self.s1_s2s,logger=self.logger)
     
     def wig_d_smoothing(self,s1_s2):
-        if self.wig_d_taper_order_low<=0:
+        if self.wig_d_taper_order_low is None or self.wig_d_taper_order_high is None: 
+            return
+        if self.wig_d_taper_order_low<=0: #try 16, 20
             return
         if self.wig_d_taper_order_high<=0:
             self.wig_d_taper_order_high=self.wig_d_taper_order_low+2
@@ -277,7 +279,7 @@ class wigner_transform():
             th,theta_coupling[(m1,m2)]=self.projected_correlation(l_cl=l_cl,cl=l_cut_weights,taper=taper,s1_s2=(m1,m2),**kwargs)
             theta=self.theta[(m1,m2)]
             theta_diff=np.abs(theta[:,None]-theta)
-            wth_intp=interp1d(theta,theta_coupling[(m1,m2)],bounds_error=False,kind='nearest')
+            wth_intp=interp1d(theta,theta_coupling[(m1,m2)],bounds_error=False,kind='nearest',fill_value="extrapolate")
             theta_coupling_mat[(m1,m2)]=wth_intp(theta_diff)
             print('l_cut_coupling:',theta_diff.shape,theta.shape,theta_coupling_mat[(m1,m2)].shape)
         return theta_coupling,theta_coupling_mat
