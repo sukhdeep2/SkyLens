@@ -21,9 +21,9 @@ if __name__=='__main__':
     test=True
 
     Fmost=False
-    
+
     eh_pk=False
-    
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--dask_dir", "-Dd", help="dask log directory")
     parser.add_argument("--scheduler", "-s", help="Scheduler file")
@@ -37,22 +37,25 @@ if __name__=='__main__':
 
     dask_dir=args.dask_dir
     Scheduler_file=args.scheduler
-    
+
     Desi=True if args.desi is None else np.bool(args.desi)
     train_sample=True if args.train is None else np.bool(args.train)
-    
-    nz_train_spectra=np.int32(1e6) if args.train_spectra is None else np.int32(args.train_spectra)
+
+    n_train_spectra=np.int32(1e6) if args.train_spectra is None else np.int32(args.train_spectra)
     area_train=150 if args.train_area is None else np.int32(args.train_area) #deg^2
 
     file_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/fisher/'
 
     #redshift bins
-    z_min=0.1 
+    z_min=0.1
     z_max=3.5 #max photoz
     z_max_galaxy=1.5 #max photoz
     zmin=z_min
     zmax=z_max
-    area=15000
+    area=15000 #same for both DESI and LSST
+    area_overlap=5000 #overlap area b/w DESI and LSST
+
+    area_overlap=area_overlap*1./area
 
     shear_n_zbins=5
     galaxy_n_zbins=5
@@ -72,24 +75,24 @@ if __name__=='__main__':
 
     train_sample_missed=1
     nz_shear_missed=6  #arcmin^-2
-    
-    nz_shear_train=nz_train_spectra/area_train/3600 #arcmin^-2
-    if not train_sample or nz_train_spectra*area_train==0:
-        if area_train>0 or nz_train_spectra>0 or train_sample:
-            raise Exception('miss matched args for training sample:',train_sample, area_train,nz_train_spectra)
-    if area_train==0 or nz_train_spectra==0 or not train_sample:
+
+    nz_shear_train=n_train_spectra/area_train/3600 #arcmin^-2
+    if not train_sample or n_train_spectra*area_train==0:
+        if area_train>0 or n_train_spectra>0 or train_sample:
+            raise Exception('miss matched args for training sample:',train_sample, area_train,n_train_spectra)
+    if area_train==0 or n_train_spectra==0 or not train_sample:
         area_train=0
-        nz_train_spectra=0
+        n_train_spectra=0
         nz_shear_train=0
         train_n_zbins=0
-        
+
     if train_sample_missed==0:
         nz_shear_missed=0  #arcmin^-2
 
     nz_shear-=nz_shear_missed
-    
+
     sigma_gamma=0.26
-    
+
     n_zPS=100
     z_max_PS=5
     z_true_max=z_max_PS
@@ -143,7 +146,7 @@ if __name__=='__main__':
     tidal_SSV_cov=SSV_cov
     Tri_cov=False
     do_sample_variance=True
-    
+
     f_sky=area*d2r**2/4/np.pi
     f_sky_train=area_train*d2r**2/4/np.pi
 
@@ -204,7 +207,7 @@ if __name__=='__main__':
 
     fname_out=fname_out.format(ns=shear_n_zbins,nsm=train_sample_missed,nl=galaxy_n_zbins,nlD=galaxyD_n_zbins_tot,
                                nlb=Nl_bins,lmax=lmax_cl,bary_nQ=bary_nQ,
-                               zmin=z_min,zmax=z_max,zlmax=z_max_galaxy,at=area_train,NT=nz_train_spectra)
+                               zmin=z_min,zmax=z_max,zlmax=z_max_galaxy,at=area_train,NT=n_train_spectra)
     fname_win=file_home+'/win_'+fname_out
 
     Skylens_kwargs=parse_dict(locals())
@@ -243,7 +246,7 @@ if __name__=='__main__':
                                             corrs=corrs,unit_window=unit_window,nz_shear_missed=nz_shear_missed,
                                             nz_shear_train=nz_shear_train,z_max_galaxy=z_max_galaxy,use_window=use_window,
                                             z_true_max=z_true_max,area_train=area_train,train_sample_missed=train_sample_missed,
-                                            train_n_zbins=train_n_zbins,
+                                            train_n_zbins=train_n_zbins,area_overlap=area_overlap,
                                             shear_n_zbins=shear_n_zbins,galaxy_n_zbins=galaxy_n_zbins,galaxyD_n_zbins=galaxyD_n_zbins,
                                               Win=WIN['full'],store_win=store_win,pk_params=pk_params,Skylens_kwargs=Skylens_kwargs)
 
@@ -316,9 +319,9 @@ if __name__=='__main__':
     priors['w']=np.inf
     priors['wa']=np.inf
 
-    priors['pz_B_s']=0.001 #bias =B*(1+z) 
+    priors['pz_B_s']=0.001 #bias =B*(1+z)
     priors['pz_B_sm']=priors['pz_B_s']*10
-    priors['pz_B_l']=0.0001 #bias =B*(1+z) 
+    priors['pz_B_l']=0.0001 #bias =B*(1+z)
     for i in np.arange(10): #photo-z bias
         priors['pz_b_s_'+str(i)]=0.001
         priors['pz_b_sm_'+str(i)]=0.001*10
@@ -333,7 +336,7 @@ if __name__=='__main__':
 
     for i in np.arange(10): #photo-z bias
         priors['pz_b_l_'+str(i)]=0.0001
-        
+
     pp_s={}
     for i in np.arange(z_bins_kwargs['shear_zbins']['n_bins']): #photo-z bias
         pp_s[i]=sigma_photoz(z_bins_kwargs['shear_zbins'][i])
@@ -395,8 +398,8 @@ if __name__=='__main__':
             if priors['nz_ana'].get(k) is not None:
                 continue
             priors['nz_ana'][k]=priors[k]
-        
-    cosmo_params=cosmo_parameters    
+
+    cosmo_params=cosmo_parameters
 
     fishes={}
     fishes['priors']=priors
@@ -416,7 +419,7 @@ if __name__=='__main__':
                         clS=cl_L,z_bins_kwargs=z_bins_kwargs,priors=priors,baryon_params=[])
 
     print('fisher cosmo only done.')
-    
+
     baryon_params=['Q{i}'.format(i=i) for i in np.arange(bary_nQ)]
     pz_params=['pz_b_s_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['shear_zbins']['n_bins'])]
     pz_params+=['pz_b_sm_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['shear_zbins_missed']['n_bins'])]
@@ -453,7 +456,7 @@ if __name__=='__main__':
     galaxy_params+=['mag_s_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['shear_zbins']['n_bins'])]
     galaxy_params+=['mag_sm_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['shear_zbins_missed']['n_bins'])]
     galaxy_params+=['mag_l_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['galaxy_zbins']['n_bins'])]
-    
+
     shear_params=['s_m_s_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['shear_zbins']['n_bins'])]
     shear_params+=['s_m_sm_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['shear_zbins_missed']['n_bins'])]
     shear_params+=['AI_s_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['shear_zbins']['n_bins'])]
@@ -549,7 +552,7 @@ if __name__=='__main__':
     with open(fname_fish,'wb') as of:
         pickle.dump(fishes,of)
 
-    client.shutdown() 
+    client.shutdown()
     LC.close()
 
     # import plot_fisher_tool
