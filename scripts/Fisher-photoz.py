@@ -18,23 +18,32 @@ import faulthandler; faulthandler.enable()
     # problem is likely to be in some package
 
 if __name__=='__main__':
-    test=False
+    test=True
 
-    Desi=True
     Fmost=False
+    
+    eh_pk=False
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--dask_dir", "-Dd", help="dask log directory")
     parser.add_argument("--scheduler", "-s", help="Scheduler file")
 
+    parser.add_argument("--desi", "-desi",type=int, help="use DESI samples")
+    parser.add_argument("--train", "-t", type=int, help="use training samples")
+    parser.add_argument("--train_spectra", "-ts", type=int, help="total number of training spectra")
+    parser.add_argument("--train_area", "-ta", type=int, help="area of training spectra, deg^2")
+
     args = parser.parse_args()
 
     dask_dir=args.dask_dir
     Scheduler_file=args.scheduler
+    
+    Desi=True if args.desi is None else np.bool(args.desi)
+    train_sample=True if args.train is None else np.bool(args.train)
+    
+    nz_train_spectra=np.int32(1e6) if args.train_spectra is None else np.int32(args.train_spectra)
+    area_train=150 if args.train_area is None else np.int32(args.train_area) #deg^2
 
-    fig_home='./figures/'
-    fig_format='pdf'
-    #file_home='../tests/fisher/'
     file_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/fisher/'
 
     #redshift bins
@@ -43,6 +52,7 @@ if __name__=='__main__':
     z_max_galaxy=1.5 #max photoz
     zmin=z_min
     zmax=z_max
+    area=15000
 
     shear_n_zbins=5
     galaxy_n_zbins=5
@@ -58,14 +68,28 @@ if __name__=='__main__':
     nz_shear=26 #galaxy/arcmin^-2
     nz_galaxy=3
 
-    nz_train_spectra=np.int32(1e6)
+    train_n_zbins=np.int((z_max-z_min)/.1)
 
     train_sample_missed=1
-    nz_shear_missed=6
+    nz_shear_missed=6  #arcmin^-2
+    
+    nz_shear_train=nz_train_spectra/area_train/3600 #arcmin^-2
+    if not train_sample or nz_train_spectra*area_train==0:
+        if area_train>0 or nz_train_spectra>0 or train_sample:
+            raise Exception('miss matched args for training sample:',train_sample, area_train,nz_train_spectra)
+    if area_train==0 or nz_train_spectra==0 or not train_sample:
+        area_train=0
+        nz_train_spectra=0
+        nz_shear_train=0
+        train_n_zbins=0
+        
+    if train_sample_missed==0:
+        nz_shear_missed=0  #arcmin^-2
 
     nz_shear-=nz_shear_missed
+    
     sigma_gamma=0.26
-
+    
     n_zPS=100
     z_max_PS=5
     z_true_max=z_max_PS
@@ -90,6 +114,7 @@ if __name__=='__main__':
     lb=l*1
     if bin_cl:
         lb=0.5*(l_bins[1:]+l_bins[:-1])
+    print('n ell bins: ',lb.shape)
 
     #xi args
     do_xi=False
@@ -104,8 +129,8 @@ if __name__=='__main__':
     wig_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/'
     wig_home=wig_home+'temp/'
     wigner_files={}
-    wigner_files[0]= wig_home+'/dask_wig3j_l3500_w2100_0_reorder.zarr'
-    wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
+    wigner_files[0]= wig_home+'/dask_wig3j_l2200_w4400_0_reorder.zarr'
+    wigner_files[2]= wig_home+'/dask_wig3j_l2200_w4400_2_reorder.zarr'
 
     store_win=True
     save_win=True
@@ -118,11 +143,6 @@ if __name__=='__main__':
     tidal_SSV_cov=SSV_cov
     Tri_cov=False
     do_sample_variance=True
-
-    area=15000
-    
-    area_train=150
-    nz_shear_train=nz_train_spectra/area_train/3600 #arcmin^-2
     
     f_sky=area*d2r**2/4/np.pi
     f_sky_train=area_train*d2r**2/4/np.pi
@@ -133,8 +153,11 @@ if __name__=='__main__':
         pk_func='baryon_pk'
     else:
         pk_func='camb_pk_too_many_z'
+    if eh_pk:
+        pk_func='eh_pk'
+        print('warning, power spectra in eh_pk')
     cosmo_parameters=np.atleast_1d(['As','Om','w','wa'])
-    pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':2000,'scenario':'dmo','pk_func':'baryon_pk'}# 'pk_func':'camb_pk_too_many_z'} #baryon_pk
+    pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':2000,'scenario':'dmo','pk_func':pk_func}# 'pk_func':'camb_pk_too_many_z'} #baryon_pk
     power_spectra_kwargs={'pk_params':pk_params}
 
     corrs=[corr_ggl,corr_gg,corr_ll]
@@ -144,6 +167,7 @@ if __name__=='__main__':
         l0,l_bins,l=get_cl_ells(lmax_cl=lmax_cl,Nl_bins=Nl_bins,lmin_cl=lmin_cl,bin_cl=bin_cl)
         shear_n_zbins=2
         galaxy_n_zbins=2
+        train_n_zbins=shear_n_zbins
         nside=32
         window_lmax=nside
         if Desi:
@@ -169,6 +193,8 @@ if __name__=='__main__':
         fname_out='unit_win'+str(nside)+'_'+fname_out
     if SSV_cov:
         fname_out='SSV_'+fname_out
+    if eh_pk:
+        fname_out='eh_pk_'+fname_out
 
     ncpu=5 #multiprocessing.cpu_count()-1
     LC,scheduler_info=start_client(Scheduler_file=Scheduler_file,local_directory=dask_dir,ncpu=None,n_workers=ncpu,threads_per_worker=1,
@@ -217,20 +243,11 @@ if __name__=='__main__':
                                             corrs=corrs,unit_window=unit_window,nz_shear_missed=nz_shear_missed,
                                             nz_shear_train=nz_shear_train,z_max_galaxy=z_max_galaxy,use_window=use_window,
                                             z_true_max=z_true_max,area_train=area_train,train_sample_missed=train_sample_missed,
+                                            train_n_zbins=train_n_zbins,
                                             shear_n_zbins=shear_n_zbins,galaxy_n_zbins=galaxy_n_zbins,galaxyD_n_zbins=galaxyD_n_zbins,
                                               Win=WIN['full'],store_win=store_win,pk_params=pk_params,Skylens_kwargs=Skylens_kwargs)
 
         cl0G=kappa_class.cl_tomo(corrs=corrs,stack_corr_indxs=z_bins_kwargs['corr_indxs'])
-
-#         kappa_class_lsst,z_bins_lsst_kwargs=init_fish(z_min=z_min,z_max=z_max,SSV=SSV_cov,nz_shear=nz_shear,f_sky=f_sky,nside=nside,
-#                                                       use_window=use_window,
-#                                                       unit_window=unit_window,z_true_max=z_true_max,area_train=area_train,nz_galaxy=nz_galaxy,
-#                                                       nz_shear_missed=nz_shear_missed,nz_shear_train=nz_shear_train,z_max_galaxy=z_max_galaxy,
-#                                                       train_sample_missed=train_sample_missed,n_zs_shear=n_zs_shear,n_zs_galaxy=n_zs_galaxy,
-#                                                 shear_n_zbins=shear_n_zbins,galaxy_n_zbins=galaxy_n_zbins,galaxyD_n_zbins=None,corrs=corrs,
-#                                               Win=WIN['lsst'],store_win=store_win,pk_params=pk_params,Skylens_kwargs=Skylens_kwargs)
-
-#         cl0G_lsst=kappa_class_lsst.cl_tomo(corrs=corrs,stack_corr_indxs=z_bins_lsst_kwargs['corr_indxs'])
 
         proc = psutil.Process()
         print('graphs done, memory: ',format_bytes(proc.memory_info().rss))
@@ -316,9 +333,7 @@ if __name__=='__main__':
 
     for i in np.arange(10): #photo-z bias
         priors['pz_b_l_'+str(i)]=0.0001
-    
-    if nz_shear_train>0 and area_train>0:
-        priors['nz_ana']=photoz_prior(kappa_class=kappa_class,Skylens_kwargs0=Skylens_kwargs,z_bins_kwargs=z_bins_kwargs,key_label='nz_s_')
+        
     pp_s={}
     for i in np.arange(z_bins_kwargs['shear_zbins']['n_bins']): #photo-z bias
         pp_s[i]=sigma_photoz(z_bins_kwargs['shear_zbins'][i])
@@ -327,7 +342,7 @@ if __name__=='__main__':
             priors['nz_s_'+str(i)+'_'+str(j)]=pp_s[i][j]
 
     for i in np.arange(z_bins_kwargs['shear_zbins_missed']['n_bins']): #photo-z bias
-        pp_s[i]=sigma_photoz(z_bins_kwargs['shear_zbins_missed'][i])
+        pp_s[i]=sigma_photoz(z_bins_kwargs['shear_zbins_missed'][i]) #FIXME
         for j in np.arange(n_zs_shear): #photo-z bias
     #         priors['nz_s_'+str(i)+'_'+str(j)]=0.01
             priors['nz_sm_'+str(i)+'_'+str(j)]=pp_s[i][j]
@@ -372,6 +387,15 @@ if __name__=='__main__':
     for i in np.arange(10): #baryon PCA
         priors['Q'+str(i)]=100
 
+    if nz_shear_train>0 and area_train>0:
+        priors['nz_ana']=photoz_prior(kappa_class=kappa_class,Skylens_kwargs0=Skylens_kwargs,z_bins_kwargs=z_bins_kwargs,key_label='nz_s_')
+        for k in priors.keys():
+            if k=='nz_ana' or 'nz_s_' in k:
+                continue
+            if priors['nz_ana'].get(k) is not None:
+                continue
+            priors['nz_ana'][k]=priors[k]
+        
     cosmo_params=cosmo_parameters    
 
     fishes={}
@@ -384,8 +408,15 @@ if __name__=='__main__':
 
     cosmo_fid=kappa_class.Ang_PS.PS.cosmo_params.copy()
 
-    cosmo_params=np.atleast_1d(['Ase9'])#,'Om','w','wa'])
+    cosmo_params=np.atleast_1d(['Ase9','Om','w','wa'])
 
+    fishes['f_C0']=fisher_calc(cosmo_params=cosmo_params #np.atleast_1d(['Ase9']) #,'Om','Omb','Omd','OmR'])
+                               ,z_params=[],
+                               galaxy_params=[],kappa_class=kappa_class,scheduler_info=scheduler_info,
+                        clS=cl_L,z_bins_kwargs=z_bins_kwargs,priors=priors,baryon_params=[])
+
+    print('fisher cosmo only done.')
+    
     baryon_params=['Q{i}'.format(i=i) for i in np.arange(bary_nQ)]
     pz_params=['pz_b_s_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['shear_zbins']['n_bins'])]
     pz_params+=['pz_b_sm_{j}'.format(j=i) for i in np.arange(z_bins_kwargs['shear_zbins_missed']['n_bins'])]

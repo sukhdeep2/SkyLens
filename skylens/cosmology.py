@@ -39,7 +39,8 @@ class cosmology():
         self.__dict__.update(locals()) #assign all input args to the class as properties
         self.__dict__.update(cosmo_params)
         self.c=3*10**5
-        self.set_z(z_max=cosmo_params['z_max'])
+        if not use_astropy:
+            self.set_z(z_max=cosmo_params['z_max'])
         self.comoving_distance=self.comoving_distance_trapz
         self.efunc=self.E_z
         self.set_cosmology(cosmo_params=cosmo_params)

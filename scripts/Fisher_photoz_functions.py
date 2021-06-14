@@ -9,7 +9,7 @@ import astropy
 import gc
 import time
 
-import psutil
+import psutil,os
 from distributed.utils import format_bytes
 
 from skylens import *
@@ -71,7 +71,7 @@ def fish_cosmo_model(p='As',Nx=2,dx_max=0.01,do_log=False,kappa_class=None,do_co
     z_bins={'shear':shear_zbins_comb,'galaxy':galaxy_zbins_comb}
     models={}
     covs={}
-    x_vars,x_grad=get_x_var(x0=x0,dx_max=dx_max,do_log=do_log,Nx=Nx)
+    x_vars,x_grad=get_x_var(x0=x0,dx_max=dx_max,do_log=do_log,Nx=Nx) #FIXME: NX
     print(p,x_vars)
     Ang_PS=copy.deepcopy(Ang_PS)
     for i in np.arange(Nx):
@@ -87,7 +87,10 @@ def fish_cosmo_model(p='As',Nx=2,dx_max=0.01,do_log=False,kappa_class=None,do_co
             x_vars[i]=kappa_class.Ang_PS.PS.s8
 #                 print(x_vars[p][i],s80,cosmo_t['s8'])
 #         cosmo_h2=cosmo_h_set(cosmo=cosmo,cosmo_params=cosmo_t)
+        t2=time.time()
         cl0G=kappa_class.tomo_short(cosmo_params=cosmo_t,z_bins=z_bins,Ang_PS=Ang_PS,Win=Win,stack_corr_indxs=z_bins_kwargs['corr_indxs']) #cosmo_h=cosmo_h2,
+        dt=time.time()-t2
+        print(p,'one calc done',dt,cl0G.shape)
         models[i]=cl0G
 #         cl_t=cl0G['stack'].compute()
 #         models[i]=cl_t['pcl_b']
@@ -640,6 +643,8 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
     out['params_missing']=params_missing
     if priors is not None:
         out=fish_apply_priors(fish=out,priors=priors)
+        if priors.get('nz_ana') is not None:
+            out=fish_apply_priors(fish=out,priors=priors['nz_ana'])
 #         i2=0
 #         for p1 in params_all:
 #             cov_p_inv[i2,i2]+=1./priors[p1]**2
@@ -710,7 +715,7 @@ corr_ll=('shear','shear')
 Fmost=False
 def get_z_bins(zmin,zmax,shear_n_zbins,galaxy_n_zbins,galaxyD_n_zbins=None,nz_shear=None,nz_galaxy=None,nz_galaxyD=None,use_window=None,
                nside=None,shear_zsigma=0.05,galaxy_zsigma=0.01,area_overlap=0.24,z_max_galaxy=None,f_sky=None,AI=0,AI_z=0,
-               nz_shear_missed=0,area_train=0,nz_shear_train=0,
+               nz_shear_missed=0,area_train=0,nz_shear_train=0,train_n_zbins=0,
                mag_fact=0,unit_window=False,z_true_max=None,train_sample_missed=None,n_zs_shear=0,n_zs_galaxy=0): #,**kwargs):
     
     shear_zbins=lsst_source_tomo_bins(zmin=zmin,zmax=zmax,nside=nside,ns0=nz_shear,nbins=shear_n_zbins,f_sky=f_sky,
@@ -726,7 +731,7 @@ def get_z_bins(zmin,zmax,shear_n_zbins,galaxy_n_zbins,galaxyD_n_zbins=None,nz_sh
     shear_zbins_train={'n_bins':0}
     if area_train>0:
         f_sky_train=area_train*d2r**2/4/np.pi
-        shear_zbins_train=lsst_source_tomo_bins(zmin=zmin,zmax=zmax,n_zs=n_zs_shear,nside=nside,ns0=nz_shear_train,nbins=shear_n_zbins,f_sky=f_sky_train,
+        shear_zbins_train=lsst_source_tomo_bins(zmin=zmin,zmax=zmax,n_zs=n_zs_shear,nside=nside,ns0=nz_shear_train,nbins=train_n_zbins,f_sky=f_sky_train,
                                   z_sigma_power=1,z_sigma=shear_zsigma,ztrue_func=ztrue_given_pz_Gaussian,unit_win=unit_window,
                                   use_window=use_window,AI=AI,AI_z=AI_z,z_true_max=z_true_max)#exactly same config as shear_zbins, including shear_zsigma as we want same p(zs)
     
@@ -855,7 +860,7 @@ def photoz_prior(kappa_class=None,Skylens_kwargs0={},z_bins_kwargs={},key_label=
 
 def init_fish(z_min=None,z_max=None,corrs=None,SSV=None,do_cov=None,
               pk_func=None,nz_shear=None,shear_n_zbins=None,f_sky=0.3,
-              z_true_max=None,train_sample_missed=0,area_train=0,nz_shear_missed=0,
+              z_true_max=None,train_sample_missed=0,area_train=0,nz_shear_missed=0,train_n_zbins=0,
               Win=None,store_win=None,mag_fact=0,nside=None,unit_window=False,
              galaxy_n_zbins=None,galaxyD_n_zbins=None,nz_galaxy=None,nz_galaxyD=None,z_bins_kwargs=None,pk_params=None,
               n_zs_shear=None,n_zs_galaxy=None,nz_shear_train=0,z_max_galaxy=None,use_window=True,
@@ -882,7 +887,7 @@ def init_fish(z_min=None,z_max=None,corrs=None,SSV=None,do_cov=None,
                        'n_zs_shear':n_zs_shear,'n_zs_galaxy':n_zs_galaxy,'nz_shear_train':nz_shear_train,'use_window':use_window,
                         'use_window':True,'nz_galaxy':nz_galaxy,'nz_galaxyD':nz_galaxyD,'nz_shear_missed':nz_shear_missed,
                        'area_overlap':0.2, 'f_sky':f_sky,'galaxy_zsigma':0.01,
-                       'mag_fact':mag_fact,'shear_zsigma':0.05}
+                       'mag_fact':mag_fact,'shear_zsigma':0.05,'train_n_zbins':train_n_zbins}
         
         shear_zbins,shear_zbins_train,shear_zbins_missed,galaxy_zbins,galaxyD_zbins=get_z_bins(**z_bins_kwargs)
 

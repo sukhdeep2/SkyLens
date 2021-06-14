@@ -42,7 +42,7 @@ class wigner_transform():
             self.theta[(m2,m1)]=self.theta[(m1,m2)]
             self.theta_deg[(m2,m1)]=self.theta_deg[(m1,m2)]
         if l_cut_weights is not None:
-            self.theta_coupling,self.theta_coupling_mat=self.l_cut_coupling()
+           self.theta_coupling_mat=self.l_cut_coupling()
         self.scatter_data()
     
     def scatter_data(self):
@@ -282,6 +282,8 @@ class wigner_transform():
         theta_coupling={}
         theta_coupling_mat={}
         for (m1,m2) in s1_s2:
+            if theta_out is None:
+                theta_out=self.theta[(m1,m2)]
             lw=l_cut_weights*1.
             dth=2*np.pi*np.gradient(theta_out)*np.sin(theta_out)
             s=(m1,m2) #(0,0)
