@@ -24,7 +24,7 @@ from skylens.parse_input import *
 d2r=np.pi/180.
 
 class Skylens():
-    def __init__(self,yaml_inp_file=None,python_inp_file=None,l=None,Ang_PS=None,
+    def __init__(self,yaml_inp_file=None,python_inp_file=None,l=None,l_cl=None,Ang_PS=None,
                 cov_utils=None,logger=None,tracer_utils=None,#lensing_utils=None,galaxy_utils=None,
                 shear_zbins=None,kappa_zbins=None,galaxy_zbins=None,
                 pk_params=None,cosmo_params=None,WT_kwargs=None,WT=None,
@@ -50,7 +50,12 @@ class Skylens():
             yaml_inp_args=parse_python(file_name=python_inp_file)
             self.__dict__.update(yaml_inp_args)
             del yaml_inp_args
+            
         self.l0=self.l*1.
+        if self.l_cl is None:
+            self.l_cl=self.l
+        self.l_cl0=self.l_cl*1.
+        
         self.set_WT()
         self.set_bin_params()
         self.set_binned_measure(locals())
@@ -63,7 +68,7 @@ class Skylens():
 
         if tracer_utils is None:
             self.tracer_utils=Tracer_utils(shear_zbins=self.shear_zbins,galaxy_zbins=self.galaxy_zbins,kappa_zbins=self.kappa_zbins,
-                                            logger=self.logger,l=self.l,scheduler_info=self.scheduler_info,
+                                            logger=self.logger,l=self.l_cl,scheduler_info=self.scheduler_info,
                                             zkernel_func_names=self.zkernel_func_names,do_cov=self.do_cov)
 
         self.set_corr_indxs(corr_indxs=self.corr_indxs,stack_indxs=self.stack_indxs)
@@ -76,7 +81,7 @@ class Skylens():
         self.z_bins=self.tracer_utils.z_bins
         
         if cov_utils is None:
-            self.cov_utils=Covariance_utils(f_sky=self.f_sky,l=self.l,logger=self.logger,
+            self.cov_utils=Covariance_utils(f_sky=self.f_sky,l=self.l_cl,logger=self.logger,
                                             do_xi=self.do_xi,xi_SN_analytical=self.xi_SN_analytical,
                                             do_sample_variance=self.do_sample_variance,WT=self.WT,
                                             use_window=self.use_window,use_binned_l=self.use_binned_l,
@@ -89,7 +94,7 @@ class Skylens():
         if Ang_PS is None:
             power_spectra_kwargs={'pk_params':self.pk_params,'cosmo_params':self.cosmo_params}
             self.Ang_PS=Angular_power_spectra(
-                                SSV_cov=self.SSV_cov,l=self.l,logger=self.logger,
+                                SSV_cov=self.SSV_cov,l=self.l_cl,logger=self.logger,
                                 power_spectra_kwargs=power_spectra_kwargs,
                                 cov_utils=self.cov_utils,window_l=self.window_l,
                                 z_PS=self.z_PS,nz_PS=self.nz_PS,log_z_PS=self.log_z_PS,
@@ -100,15 +105,16 @@ class Skylens():
 #         if self.do_xi and not self.xi_win_approx: #FIXME: Since the `aprrox' is actually the correct way, change the notation.
 #             self.do_pseudo_cl=True #we will use pseudo_cl transform to get correlation functions.
 
-        self.Win0=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,corrs=self.corrs,s1_s2s=self.s1_s2s,
-                        cov_indxs=self.cov_indxs,scheduler_info=self.scheduler_info,
-                        use_window=self.use_window,do_cov=self.do_cov,#cov_utils=self.cov_utils,f_sky=self.f_sky,
-                        corr_indxs=self.stack_indxs,z_bins=self.tracer_utils.z_win,
-                        window_lmax=self.window_lmax,Win=self.Win,WT=self.WT,do_xi=self.do_xi,
-                        do_pseudo_cl=self.do_pseudo_cl,wigner_step=self.wigner_step,
-                        kappa_class0=self.kappa0,kappa_class_b=self.kappa_b,kappa_b_xi=self.kappa_b_xi,
-                        xi_bin_utils=self.xi_bin_utils,store_win=self.store_win,wigner_files=self.wigner_files,
-                        bin_window=self.use_binned_l,bin_theta_window=self.use_binned_theta)
+        self.Win0=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,l_cl=self.l_cl0,
+                               corrs=self.corrs,s1_s2s=self.s1_s2s,
+                               cov_indxs=self.cov_indxs,scheduler_info=self.scheduler_info,
+                               use_window=self.use_window,do_cov=self.do_cov,#cov_utils=self.cov_utils,f_sky=self.f_sky,
+                               corr_indxs=self.stack_indxs,z_bins=self.tracer_utils.z_win,
+                               window_lmax=self.window_lmax,Win=self.Win,WT=self.WT,do_xi=self.do_xi,
+                               do_pseudo_cl=self.do_pseudo_cl,wigner_step=self.wigner_step,
+                               kappa_class0=self.kappa0,kappa_class_b=self.kappa_b,kappa_b_xi=self.kappa_b_xi,
+                               xi_bin_utils=self.xi_bin_utils,store_win=self.store_win,wigner_files=self.wigner_files,
+                               bin_window=self.use_binned_l,bin_theta_window=self.use_binned_theta)
         self.Win0.get_Win()
         self.bin_window=self.Win0.bin_window
         win=self.Win0.Win
@@ -205,6 +211,7 @@ class Skylens():
 #             self.kappa0.bin_xi=False #we want to get xi_bin_utils
 
             inp_args2['l']=self.l_bins_center
+            inp_args2['l_cl']=self.l_bins_center
             inp_args2['name']='S_b'
             inp_args2['l_bins']=None
             inp_args2['bin_cl']=False
@@ -226,6 +233,7 @@ class Skylens():
                 self.xi0=self.kappa0.xi_tomo()['xi']
                 self.xi_b=self.kappa_b_xi.xi_tomo()['xi']
             self.l=self.l_bins_center*1.
+            self.l_cl=self.l_bins_center*1.
             self.c_ell0=self.kappa0.cl_tomo()['cl']
             self.c_ell_b=self.kappa_b.cl_tomo()['cl']
             print('set binned measure done')

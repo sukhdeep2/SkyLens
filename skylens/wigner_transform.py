@@ -42,7 +42,7 @@ class wigner_transform():
             self.theta[(m2,m1)]=self.theta[(m1,m2)]
             self.theta_deg[(m2,m1)]=self.theta_deg[(m1,m2)]
         if l_cut_weights is not None:
-            self.theta_coupling,self.theta_coupling_mat=self.l_cut_coupling()
+           self.theta_coupling_mat=self.l_cut_coupling()
         self.scatter_data()
     
     def scatter_data(self):
@@ -197,6 +197,12 @@ class wigner_transform():
     def projected_covariance(self,l_cl=[],cl_cov=[],s1_s2=[],s1_s2_cross=None,
                              wig_d1=None,wig_d2=None,wig_norm=None,wig_l=None,
                              grad_l=None,taper=False,**kwargs):
+        """
+        Turn the power spectra covariance into correlation function covariance. 
+        In this function, cl_cov is assumed to be a 1-d vector (the diagonal of the
+        power spectra covariance). See projected_covariance2 for the case when 
+        cl_cov is a two-dimensional matrix.
+        """
         if s1_s2_cross is None:
             s1_s2_cross=s1_s2
         if wig_d1 is None:
@@ -267,7 +273,7 @@ class wigner_transform():
         #FIXME: Check normalization
         return self.theta[s1_s2],skew
     
-    def l_cut_coupling(self,l_cl=None,l_cut_weights=None,s1_s2=None,taper=False,**kwargs):
+    def l_cut_coupling(self,l_cl=None,theta_out=None,l_cut_weights=None,s1_s2=None,taper=False,**kwargs):
         if l_cut_weights is None:
             l_cl=self.l
             l_cut_weights=self.l_cut_weights
@@ -276,13 +282,15 @@ class wigner_transform():
         theta_coupling={}
         theta_coupling_mat={}
         for (m1,m2) in s1_s2:
-            th,theta_coupling[(m1,m2)]=self.projected_correlation(l_cl=l_cl,cl=l_cut_weights,taper=taper,s1_s2=(m1,m2),**kwargs)
-            theta=self.theta[(m1,m2)]
-            theta_diff=np.abs(theta[:,None]-theta)
-            wth_intp=interp1d(theta,theta_coupling[(m1,m2)],bounds_error=False,kind='nearest',fill_value="extrapolate")
-            theta_coupling_mat[(m1,m2)]=wth_intp(theta_diff)
-            print('l_cut_coupling:',theta_diff.shape,theta.shape,theta_coupling_mat[(m1,m2)].shape)
-        return theta_coupling,theta_coupling_mat
+            if theta_out is None:
+                theta_out=self.theta[(m1,m2)]
+            lw=l_cut_weights*1.
+            dth=2*np.pi*np.gradient(theta_out)*np.sin(theta_out)
+            s=(m1,m2) #(0,0)
+#             th,theta_coupling[(m1,m2)]=self.projected_correlation(l_cl=l_cl,cl=lw,taper=taper,s1_s2=s,**kwargs)
+            th,theta_coupling_mat[(m1,m2)]=self.projected_covariance(l_cl=l_cl,cl_cov=lw,taper=taper,s1_s2=s,**kwargs)
+            theta_coupling_mat[(m1,m2)]*=dth
+        return theta_coupling_mat
             
             
 

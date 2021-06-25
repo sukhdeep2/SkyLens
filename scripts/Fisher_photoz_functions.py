@@ -9,7 +9,7 @@ import astropy
 import gc
 import time
 
-import psutil
+import psutil,os
 from distributed.utils import format_bytes
 
 from skylens import *
@@ -67,11 +67,11 @@ def get_x_var(x0=None,dx_max=0.01,do_log=False,Nx=2):
 def fish_cosmo_model(p='As',Nx=2,dx_max=0.01,do_log=False,kappa_class=None,do_cov=False,z_bins_kwargs={},Win=None,Ang_PS=None):
     t0=time.time()
     x0=cosmo_fid[p]
-    shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)        
+    shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)
     z_bins={'shear':shear_zbins_comb,'galaxy':galaxy_zbins_comb}
     models={}
     covs={}
-    x_vars,x_grad=get_x_var(x0=x0,dx_max=dx_max,do_log=do_log,Nx=Nx)
+    x_vars,x_grad=get_x_var(x0=x0,dx_max=dx_max,do_log=do_log,Nx=Nx) #FIXME: NX
     print(p,x_vars)
     Ang_PS=copy.deepcopy(Ang_PS)
     for i in np.arange(Nx):
@@ -87,7 +87,10 @@ def fish_cosmo_model(p='As',Nx=2,dx_max=0.01,do_log=False,kappa_class=None,do_co
             x_vars[i]=kappa_class.Ang_PS.PS.s8
 #                 print(x_vars[p][i],s80,cosmo_t['s8'])
 #         cosmo_h2=cosmo_h_set(cosmo=cosmo,cosmo_params=cosmo_t)
+        t2=time.time()
         cl0G=kappa_class.tomo_short(cosmo_params=cosmo_t,z_bins=z_bins,Ang_PS=Ang_PS,Win=Win,stack_corr_indxs=z_bins_kwargs['corr_indxs']) #cosmo_h=cosmo_h2,
+        dt=time.time()-t2
+        print(p,'one calc done',dt,cl0G.shape)
         models[i]=cl0G
 #         cl_t=cl0G['stack'].compute()
 #         models[i]=cl_t['pcl_b']
@@ -129,7 +132,7 @@ def set_zbin_sigma(shear_zbins={},zsigma_frac=1,bin_id=0):
     idx=np.digitize(shear_zbins['zp'],shear_zbins['z_bins'])-1
     zp_sigma[np.where(idx==bin_id)]=zp_sigma[np.where(idx==bin_id)]*zsigma_frac
     return zp_sigma
-    
+
 def fish_z_model(p='pz_b_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,do_log=False,z_bins_kwargs0={},Win=None,Ang_PS=None):
     t1=time.time()
     z_bins_kwargs=copy.deepcopy(z_bins_kwargs0)#.copy()
@@ -150,14 +153,14 @@ def fish_z_model(p='pz_b_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,do_
             x0=shear_zbins_missed[bin_id]['pz'][z_id]
         elif 'nz_l' in p:
             x0=galaxy_zbins[bin_id]['pz'][z_id]
-            
+
         if x0<1.e-5:
             x0=0
     else:
         x0=1
-        
+
     x_vars,x_grad=get_x_var(x0=x0,dx_max=dx_max,do_log=do_log,Nx=Nx)
-    
+
     models={}
     covs={}
     print(p,x_vars)
@@ -195,7 +198,7 @@ def fish_z_model(p='pz_b_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,do_
             shear_zbins_i=lsst_source_tomo_bins(**shear_zbins_kwargs)#wrong
 #         print(p,'doing z',time.time()-t1)
 #         t1=time.time()
-        shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)        
+        shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)
         z_bins={'shear':shear_zbins_comb,'galaxy':galaxy_zbins_comb}
 #         kappa_class.update_zbins(z_bins=shear_zbins_comb,tracer='shear')
 #         kappa_class.update_zbins(z_bins=galaxy_zbins_comb,tracer='galaxy')
@@ -211,7 +214,7 @@ def fish_z_model(p='pz_b_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,do_
         models[i]=cl_t#['pcl_b']
         covs[i]=None #cl_t['cov']
 
-#     shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs0)        
+#     shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs0)
 #     kappa_class.update_zbins(z_bins=shear_zbins_comb,tracer='shear')
 #     kappa_class.update_zbins(z_bins=galaxy_zbins_comb,tracer='galaxy')
     print(p,'done',time.time()-t1)
@@ -225,7 +228,7 @@ def fish_galaxy_model(p='g_b_l_1_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=Fal
     shear_zbins_missed=z_bins_kwargs['shear_zbins_missed']
     galaxy_zbins=z_bins_kwargs['galaxy_zbins']
     galaxyD_zbins=z_bins_kwargs['galaxyD_zbins']
-    
+
     Dx=np.linspace((1-dx_max),(1+dx_max),Nx)
     p2=p.split('_')
     z_indx=np.nan
@@ -238,21 +241,21 @@ def fish_galaxy_model(p='g_b_l_1_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=Fal
         z_indx=np.int(p2[-3])
         if 'l' in p:
             if 'lD' in p:
-                x0=galaxyD_zbins[bin_indx][p_n][z_indx]      
-                pz=galaxyD_zbins[bin_indx]['pz'][z_indx]      
+                x0=galaxyD_zbins[bin_indx][p_n][z_indx]
+                pz=galaxyD_zbins[bin_indx]['pz'][z_indx]
             else:
 #                 print(galaxy_zbins[bin_indx][p_n].shape,n_zl)
-                x0=galaxy_zbins[bin_indx][p_n][z_indx]      
-                pz=galaxy_zbins[bin_indx]['pz'][z_indx]      
+                x0=galaxy_zbins[bin_indx][p_n][z_indx]
+                pz=galaxy_zbins[bin_indx]['pz'][z_indx]
         if 's' in p:
             if 'sm' in p:
-                x0=shear_zbins_missed[bin_indx][p_n][z_indx]      
-                pz=shear_zbins_missed[bin_indx]['pz'][z_indx]      
+                x0=shear_zbins_missed[bin_indx][p_n][z_indx]
+                pz=shear_zbins_missed[bin_indx]['pz'][z_indx]
             else:
-                x0=shear_zbins[bin_indx][p_n][z_indx]      
-                pz=shear_zbins[bin_indx]['pz'][z_indx]      
+                x0=shear_zbins[bin_indx][p_n][z_indx]
+                pz=shear_zbins[bin_indx]['pz'][z_indx]
         print(p,'pz:',pz)
-        
+
         if pz==0:
             print('pz zero, ignoring ',p)
             return models,covs,[],[]
@@ -261,9 +264,9 @@ def fish_galaxy_model(p='g_b_l_1_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=Fal
         p_n='b'+p2[-2]
         if 'l' in p:
             if 'lD' in p:
-                x0=galaxyD_zbins[bin_indx][p_n]      
+                x0=galaxyD_zbins[bin_indx][p_n]
             else:
-                x0=galaxy_zbins[bin_indx][p_n]      
+                x0=galaxy_zbins[bin_indx][p_n]
         if 's' in p:
             if 'sm' in p:
                 x0=shear_zbins_missed[bin_indx][p_n]
@@ -274,9 +277,9 @@ def fish_galaxy_model(p='g_b_l_1_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=Fal
         p_n='mag_fact'
         if 'l' in p:
             if 'lD' in p:
-                x0=galaxyD_zbins[bin_indx][p_n]      
+                x0=galaxyD_zbins[bin_indx][p_n]
             else:
-                x0=galaxy_zbins[bin_indx][p_n]      
+                x0=galaxy_zbins[bin_indx][p_n]
         if 's' in p:
             if 'sm' in p:
                 x0=shear_zbins_missed[bin_indx][p_n]
@@ -284,8 +287,8 @@ def fish_galaxy_model(p='g_b_l_1_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=Fal
                 x0=shear_zbins[bin_indx][p_n]
     else:
         pass
-    x_vars,x_grad=get_x_var(x0=x0,dx_max=dx_max,do_log=do_log,Nx=Nx)    
-    
+    x_vars,x_grad=get_x_var(x0=x0,dx_max=dx_max,do_log=do_log,Nx=Nx)
+
     print(p,x_vars)
     for i in np.arange(Nx):
 #         z_bins_kwargs=copy.deepcopy(z_bins_kwargs0)
@@ -344,8 +347,8 @@ def fish_galaxy_model(p='g_b_l_1_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=Fal
                     shear_zbins[bin_indx][p_n]=x_vars[i]
                     if zst_bins['n_bins']>0:
                         zst_bins[bin_indx][p_n]=x_vars[i]
-            
-        shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)        
+
+        shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)
         z_bins={'shear':shear_zbins_comb,'galaxy':galaxy_zbins_comb}
 #         kappa_class.update_zbins(z_bins=shear_zbins_comb,tracer='shear')
 #         kappa_class.update_zbins(z_bins=galaxy_zbins_comb,tracer='galaxy')
@@ -358,12 +361,12 @@ def fish_galaxy_model(p='g_b_l_1_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=Fal
 #         covs[i]=cl_t['cov']
 #         kappa_class.Ang_PS.reset()#FIXME
 
-    
-#     shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs0)        
+
+#     shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs0)
 #     kappa_class.update_zbins(z_bins=shear_zbins_comb,tracer='shear')
 #     kappa_class.update_zbins(z_bins=galaxy_zbins_comb,tracer='galaxy')
     print(p,'done',time.time()-t0)
-    return models,covs,x_vars,x_grad    
+    return models,covs,x_vars,x_grad
 
 
 def fish_shear_model(p='s_m_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,do_log=False,
@@ -374,7 +377,7 @@ def fish_shear_model(p='s_m_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,
     shear_zbins_missed=z_bins_kwargs['shear_zbins_missed']
     galaxy_zbins=z_bins_kwargs['galaxy_zbins']
     galaxyD_zbins=z_bins_kwargs['galaxyD_zbins']
-    
+
     Dx=np.linspace((1-dx_max),(1+dx_max),Nx)
     p2=p.split('_')
     z_indx=np.nan
@@ -386,7 +389,7 @@ def fish_shear_model(p='s_m_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,
         if 'sm' in p:
             x0=shear_zbins_missed[bin_indx][p_n]
         else:
-            x0=shear_zbins[bin_indx][p_n] 
+            x0=shear_zbins[bin_indx][p_n]
     elif 'AI' in p:
         bin_indx=np.int(p2[-1])
         p_n='AI'
@@ -394,9 +397,9 @@ def fish_shear_model(p='s_m_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,
             x0=shear_zbins_missed[bin_indx][p_n]
         else:
             x0=shear_zbins[bin_indx][p_n]
-            
-    x_vars,x_grad=get_x_var(x0=x0,dx_max=dx_max,do_log=do_log,Nx=Nx)    
-    
+
+    x_vars,x_grad=get_x_var(x0=x0,dx_max=dx_max,do_log=do_log,Nx=Nx)
+
     print(p,x_vars)
     for i in np.arange(Nx):
 #         z_bins_kwargs=copy.deepcopy(z_bins_kwargs0)
@@ -410,8 +413,8 @@ def fish_shear_model(p='s_m_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,
             zsm_bins[bin_indx][p_n]=x_vars[i]
         else:
             shear_zbins[bin_indx][p_n]=x_vars[i]
-            
-        shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)     
+
+        shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)
         z_bins={'shear':shear_zbins_comb,'galaxy':galaxy_zbins_comb}
 #         kappa_class.update_zbins(z_bins=shear_zbins_comb,tracer='shear')
 #         kappa_class.update_zbins(z_bins=galaxy_zbins_comb,tracer='galaxy')
@@ -420,12 +423,12 @@ def fish_shear_model(p='s_m_s_1',Nx=2,dx_max=0.01,kappa_class=None,do_cov=False,
 #         cl_t=cl0G['stack'].compute()
 #         models[i]=cl_t['pcl_b']
 #         covs[i]=cl_t['cov']
-    
-#     shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs0)        
+
+#     shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs0)
 #     kappa_class.update_zbins(z_bins=shear_zbins_comb,tracer='shear')
 #     kappa_class.update_zbins(z_bins=galaxy_zbins_comb,tracer='galaxy')
     print(p,'done',time.time()-t0)
-    return models,covs,x_vars,x_grad    
+    return models,covs,x_vars,x_grad
 
 
 def fish_baryon_model(p='Q1',Nx=2,dx_max=0.01,kappa_class=None,clS=None,cl0=None,do_cov=False,do_log=False,
@@ -437,27 +440,27 @@ def fish_baryon_model(p='Q1',Nx=2,dx_max=0.01,kappa_class=None,clS=None,cl0=None
         x0=0
     else:
         pass
-    x_vars,x_grad=get_x_var(x0=x0,dx_max=dx_max,do_log=do_log,Nx=Nx)    
-    
+    x_vars,x_grad=get_x_var(x0=x0,dx_max=dx_max,do_log=do_log,Nx=Nx)
+
     models={}
     covs={}
     cov_F=1.#/np.median(np.diag(clS['cov']))
     print(p,x_vars)
-    
+
     PCS=PCA_shear(kappa_class=kappa_class,NmarQ=NmarQ,clS=clS)
-    
+
     for i in np.arange(Nx):
         Q0=[0]*NmarQ
         Q0[Q_indx]=x_vars[i]
-        
+
         cl_t=PCS.compute_modelv_bary(cosmo_params=cosmo_fid,Q=Q0)
-        models[i]=np.zeros_like(cl0) #this is needed to keep everything in right shape. Baryon stuff is only for shear right now. 
+        models[i]=np.zeros_like(cl0) #this is needed to keep everything in right shape. Baryon stuff is only for shear right now.
         models[i][:len(cl_t)]+=cl_t #['cl_b']
         models[i][len(cl_t):]+=cl0[len(cl_t):]
         print(models[i].shape,PCS.COV.shape)
         covs[i]=PCS.COV
         kappa_class.Ang_PS.reset()
-    return models,covs,x_vars,x_grad    
+    return models,covs,x_vars,x_grad
 
 def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[],shear_params=[],
                 Nx=2,dx_max=0.01,do_log=False,scheduler_info=None,
@@ -472,15 +475,15 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
     do_cov0=np.copy(kappa_class.do_cov)
     kappa_class.do_cov=do_cov
     cl0G=kappa_class.cl_tomo()
-    
+
     if clS is None:
         kappa_class.do_cov=True #need covariance to start things.
         cl0G=kappa_class.cl_tomo()
-    
+
         clS=cl0G['stack'].compute()
 #     cl_t=client.submit(cl0G['stack'])
     cl0=clS['pcl_b']
-    
+
     zk=['shear_zbins','galaxy_zbins','galaxyD_zbins','shear_zbins_missed','shear_zbins_train','corr_indxs']
     cc=[]
     for k in z_bins_kwargs['corr_indxs'].keys():
@@ -497,7 +500,7 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
     params_all=np.append(np.append(cosmo_params,z_params),galaxy_params)
     params_all=np.append(params_all,shear_params)
     params_all=np.append(params_all,baryon_params)
-    
+
     x_vars={}
     models={}
     model_derivs={}
@@ -508,7 +511,7 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
     gc.disable()
     outp={}
     t0=time.time()
-    
+
     client=client_get(scheduler_info)
     kappa_class.gather_data()
     z_bins_kwargs2=scatter_dict(z_bins_kwargs2,broadcast=True,scheduler_info=scheduler_info,depth=2)
@@ -554,7 +557,7 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
 #     gc.enable()
 #     gc.collect()
 #     gc.disable()
-    
+
     for p in shear_params:
 #         models[p],covs[p],x_vars[p],x_grads[p]=fish_shear_model(p=p,Nx=Nx,dx_max=dx_max,
         outp[p]=delayed(fish_shear_model)(p=p,Nx=Nx,dx_max=dx_max,Win=Win,Ang_PS=Ang_PS,
@@ -580,16 +583,16 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
         t=t1
 #     gc.enable()
 #     gc.collect()
-    
+
     ndim=len(params_all)
     print(ndim,params_all)
     client=client_get(scheduler_info=scheduler_info)
     outp=client.compute(outp).result()
     print(p,'all done time: ',time.time()-t0)
-    
+
     kappa_class=client.gather(kappa_class)
     z_bins_kwargs2=gather_dict(z_bins_kwargs2,scheduler_info=scheduler_info)
-    
+
     params_missing=[]
     for p in params_all:
         models[p],covs[p],x_vars[p],x_grads[p]=outp[p]
@@ -605,22 +608,22 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
             print('model derivs zero ',p, np.all(model_derivs[p]==0))
             print('model0:', models[p][0],models[p][0]-models[p][1])
             print('z:',kappa_class.Ang_PS.z,z_bins_kwargs['galaxy_zbins'][0]['z'])
-        
+
         if do_cov:
             cov_derivs[p]=np.gradient(np.array([covs[p][i] for i in np.arange(Nx)]),axis=0).T
             cov_derivs[p]/=x_grads[p]
 #             print(cov_derivs[p].shape,x_grad.shape)
             cov_derivs[p]=cov_derivs[p][:,:,np.int(Nx/2)]
-    
+
     for p in params_missing:
         x=params_all!=p
         params_all=params_all[x]
     ndim=len(params_all)
-    
+
     if kappa_class.sparse_cov:
         cov=cov.todense()
     cov_inv=np.linalg.inv(cov)
-    
+
     cov_p_inv=np.zeros([ndim]*2)
     i1=0
     for p1 in params_all:
@@ -640,6 +643,8 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
     out['params_missing']=params_missing
     if priors is not None:
         out=fish_apply_priors(fish=out,priors=priors)
+        if priors.get('nz_ana') is not None:
+            out=fish_apply_priors(fish=out,priors=priors['nz_ana'])
 #         i2=0
 #         for p1 in params_all:
 #             cov_p_inv[i2,i2]+=1./priors[p1]**2
@@ -667,7 +672,7 @@ def fish_apply_priors(priors=None,fish=[]):
 #     params_all=np.append(params_all,baryon_params)
     params_all=fish['params_all']
     ndim=len(params_all)
-    
+
     cov_p_inv=np.copy(fish['cov_p_inv'])
     fish['prior']={}
     priors2={}
@@ -710,9 +715,9 @@ corr_ll=('shear','shear')
 Fmost=False
 def get_z_bins(zmin,zmax,shear_n_zbins,galaxy_n_zbins,galaxyD_n_zbins=None,nz_shear=None,nz_galaxy=None,nz_galaxyD=None,use_window=None,
                nside=None,shear_zsigma=0.05,galaxy_zsigma=0.01,area_overlap=0.24,z_max_galaxy=None,f_sky=None,AI=0,AI_z=0,
-               nz_shear_missed=0,area_train=0,nz_shear_train=0,
+               nz_shear_missed=0,area_train=0,nz_shear_train=0,train_n_zbins=0,
                mag_fact=0,unit_window=False,z_true_max=None,train_sample_missed=None,n_zs_shear=0,n_zs_galaxy=0): #,**kwargs):
-    
+
     shear_zbins=lsst_source_tomo_bins(zmin=zmin,zmax=zmax,nside=nside,ns0=nz_shear,nbins=shear_n_zbins,f_sky=f_sky,
                                   z_sigma_power=1,z_sigma=shear_zsigma,ztrue_func=ztrue_given_pz_Gaussian,
                                       n_zs=n_zs_shear,
@@ -726,10 +731,10 @@ def get_z_bins(zmin,zmax,shear_n_zbins,galaxy_n_zbins,galaxyD_n_zbins=None,nz_sh
     shear_zbins_train={'n_bins':0}
     if area_train>0:
         f_sky_train=area_train*d2r**2/4/np.pi
-        shear_zbins_train=lsst_source_tomo_bins(zmin=zmin,zmax=zmax,n_zs=n_zs_shear,nside=nside,ns0=nz_shear_train,nbins=shear_n_zbins,f_sky=f_sky_train,
+        shear_zbins_train=lsst_source_tomo_bins(zmin=zmin,zmax=zmax,n_zs=n_zs_shear,nside=nside,ns0=nz_shear_train,nbins=train_n_zbins,f_sky=f_sky_train,
                                   z_sigma_power=1,z_sigma=shear_zsigma,ztrue_func=ztrue_given_pz_Gaussian,unit_win=unit_window,
                                   use_window=use_window,AI=AI,AI_z=AI_z,z_true_max=z_true_max)#exactly same config as shear_zbins, including shear_zsigma as we want same p(zs)
-    
+
     galaxy_zbins=lsst_source_tomo_bins(zmin=zmin,zmax=z_max_galaxy,n_zs=n_zs_galaxy,ns0=nz_galaxy,nbins=galaxy_n_zbins,nside=nside,f_sky=f_sky,
                          ztrue_func=ztrue_given_pz_Gaussian,use_window=use_window,mag_fact=mag_fact,unit_win=unit_window,
                         z_sigma=galaxy_zsigma,z_true_max=z_true_max)
@@ -772,10 +777,10 @@ def combine_z_bins_all(z_bins_kwargs={}):
     if z_bins_kwargs['shear_zbins_train']['n_bins']>0:
         galaxy_zbins_comb=combine_zbins(z_bins1=z_bins_kwargs['shear_zbins_train'],z_bins2=galaxy_zbins_comb)
     galaxy_zbins_comb=combine_zbins(z_bins1=shear_zbins_comb,z_bins2=galaxy_zbins_comb)
-    
+
     return shear_zbins_comb,galaxy_zbins_comb
 
-def mask_comb(win1,win2): 
+def mask_comb(win1,win2):
     """
     combined the mask from two windows which maybe partially overlapping.
     Useful for some covariance calculations, specially SSC, where we assume a uniform window.
@@ -793,8 +798,8 @@ def photoz_prior(kappa_class=None,Skylens_kwargs0={},z_bins_kwargs={},key_label=
 #     kappa_class.gather_data()
     window_l=np.arange(Skylens_kwargs0['window_lmax']+1)
     zbins=client.gather(z_bins_kwargs['shear_zbins_train']) #dictionary of z_bins of the training sample, in skylens format
-    
-    #we need new skylens object to compute power spectra at window_l 
+
+    #we need new skylens object to compute power spectra at window_l
 #     Skylens_kwargs=copy.deepcopy(Skylens_kwargs0)
 #     Skylens_kwargs['galaxy_zbins']=zbins
 #     Skylens_kwargs['shear_zbins']=None
@@ -809,15 +814,15 @@ def photoz_prior(kappa_class=None,Skylens_kwargs0={},z_bins_kwargs={},key_label=
     AP2=copy.deepcopy(kappa_class.Ang_PS)
     AP2.l=window_l
     AP2.reset()
-    
+
     f_sky=z_bins_kwargs['area_train']*d2r**2/4/np.pi
     area_train_arcmin=z_bins_kwargs['area_train']*3600
     Om_w12=4*np.pi*f_sky
-    
+
     sigma_win={}
-    
+
     #following computes cl for each histogram bin, centered on zl.
-#     clz=kappa_class2.Ang_PS.angular_power_z() #this is dimensionaless power spectra, normalized with some factors of chi and on ell grid. 
+#     clz=kappa_class2.Ang_PS.angular_power_z() #this is dimensionaless power spectra, normalized with some factors of chi and on ell grid.
     clz=AP2.angular_power_z()
     cosmo_h=AP2.PS
     zl=AP2.z
@@ -844,7 +849,7 @@ def photoz_prior(kappa_class=None,Skylens_kwargs0={},z_bins_kwargs={},key_label=
                         except:
                             continue
                         var+=sigma_win*pzf
-                    if bi==bj and zi==zj: 
+                    if bi==bj and zi==zj:
                         var+=1*zbins[bi]['pz'][zi]/(zbins[bi]['ns']*area_train_arcmin) #denominator is the total number of galaxies
                         kk=key_label+str(bi)+'_'+str(zj)
                         prior[kk]=np.sqrt(var) #FIXME: this is neglecting cross correlations between bins
@@ -854,17 +859,17 @@ def photoz_prior(kappa_class=None,Skylens_kwargs0={},z_bins_kwargs={},key_label=
 
 
 def init_fish(z_min=None,z_max=None,corrs=None,SSV=None,do_cov=None,
-              pk_func=None,nz_shear=None,shear_n_zbins=None,f_sky=0.3,
-              z_true_max=None,train_sample_missed=0,area_train=0,nz_shear_missed=0,
+              pk_func=None,nz_shear=None,shear_n_zbins=None,f_sky=0.3,area_overlap=0.2,
+              z_true_max=None,train_sample_missed=0,area_train=0,nz_shear_missed=0,train_n_zbins=0,
               Win=None,store_win=None,mag_fact=0,nside=None,unit_window=False,
              galaxy_n_zbins=None,galaxyD_n_zbins=None,nz_galaxy=None,nz_galaxyD=None,z_bins_kwargs=None,pk_params=None,
               n_zs_shear=None,n_zs_galaxy=None,nz_shear_train=0,z_max_galaxy=None,use_window=True,
              Skylens_kwargs=None):
-    
+
     pk_params2=copy.deepcopy(pk_params)
     pk_params2['pk_func']=pk_func
 #     power_spectra_kwargs2={'pk_params':pk_params2}
-    
+
 #     Skylens_kwargs={'do_cov':do_cov,'bin_cl':bin_cl,'use_binned_l':use_binned_l, #'l':l0,'l_bins':l_bins,
 #             'SSV_cov':SSV,'tidal_SSV_cov':SSV,'do_xi':False,'use_window':use_window,'window_lmax':window_lmax,
 #             'f_sky':f_sky,'corrs':corrs,'store_win':store_win,'Win':Win, 'wigner_files':wigner_files, #'sigma_gamma':sigma_gamma
@@ -881,9 +886,9 @@ def init_fish(z_min=None,z_max=None,corrs=None,SSV=None,do_cov=None,
                        'train_sample_missed':train_sample_missed,'area_train':area_train,'z_max_galaxy':z_max_galaxy,
                        'n_zs_shear':n_zs_shear,'n_zs_galaxy':n_zs_galaxy,'nz_shear_train':nz_shear_train,'use_window':use_window,
                         'use_window':True,'nz_galaxy':nz_galaxy,'nz_galaxyD':nz_galaxyD,'nz_shear_missed':nz_shear_missed,
-                       'area_overlap':0.2, 'f_sky':f_sky,'galaxy_zsigma':0.01,
-                       'mag_fact':mag_fact,'shear_zsigma':0.05}
-        
+                       'area_overlap':area_overlap, 'f_sky':f_sky,'galaxy_zsigma':0.01,
+                       'mag_fact':mag_fact,'shear_zsigma':0.05,'train_n_zbins':train_n_zbins}
+
         shear_zbins,shear_zbins_train,shear_zbins_missed,galaxy_zbins,galaxyD_zbins=get_z_bins(**z_bins_kwargs)
 
         z_bins_kwargs['shear_zbins']=shear_zbins
@@ -891,7 +896,7 @@ def init_fish(z_min=None,z_max=None,corrs=None,SSV=None,do_cov=None,
         z_bins_kwargs['galaxyD_zbins']=galaxyD_zbins
         z_bins_kwargs['shear_zbins_train']=shear_zbins_train
         z_bins_kwargs['shear_zbins_missed']=shear_zbins_missed
-    
+
         shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)
 
         print('nbins',shear_zbins['n_bins'],galaxy_zbins['n_bins'],galaxyD_zbins['n_bins'],galaxy_zbins_comb['n_bins'],shear_zbins_comb['n_bins'])
@@ -911,9 +916,9 @@ def init_fish(z_min=None,z_max=None,corrs=None,SSV=None,do_cov=None,
 
     #     print('init fish, indxs:',z_bins_kwargs['corr_indxs'])
 
-        Skylens_kwargs['galaxy_zbins']=galaxy_zbins_comb 
-        Skylens_kwargs['shear_zbins']=shear_zbins_comb 
-        
+        Skylens_kwargs['galaxy_zbins']=galaxy_zbins_comb
+        Skylens_kwargs['shear_zbins']=shear_zbins_comb
+
     #     print('running Skylens',l0.max(),galaxy_zbins_comb['n_bins'],Skylens_kwargs.keys())
         use_window=copy.deepcopy(Skylens_kwargs['use_window'])
         Skylens_kwargs['use_window']=False #not needed in this particular calc. removed for speed
@@ -955,7 +960,7 @@ def init_fish(z_min=None,z_max=None,corrs=None,SSV=None,do_cov=None,
                     f_sky[corr][(i,j)]=f_sky_ij
                     f_sky[corr[::-1]][(j,i)]=f_sky_ij
                     sc[corr][(i,j)]=sc_ij
-        if not use_window:           
+        if not use_window:
             for corr in kappa_class.cov_indxs:#FIXME: should be parallelized.
                 f_sky[corr]={}
                 for (i,j,k,l) in kappa_class.cov_indxs[corr]:
@@ -973,9 +978,9 @@ def init_fish(z_min=None,z_max=None,corrs=None,SSV=None,do_cov=None,
     else:
         print('fisher_init using provided zbins',z_bins_kwargs['shear_zbins'][0]['window'].shape,z_bins_kwargs['shear_zbins'][0]['window'].mask.shape)
         shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)
-        Skylens_kwargs['galaxy_zbins']=galaxy_zbins_comb 
+        Skylens_kwargs['galaxy_zbins']=galaxy_zbins_comb
         Skylens_kwargs['shear_zbins']=shear_zbins_comb
-        
+
     Skylens_kwargs['f_sky']=z_bins_kwargs['f_sky']
     Skylens_kwargs['stack_indxs']=z_bins_kwargs['corr_indxs']
     kappa_class=Skylens(**Skylens_kwargs)

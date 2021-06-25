@@ -1,10 +1,23 @@
+"""
+This file contains scripts to compute the wigner_3j matrix in parallel, with m1=m2=m3=0. The main 
+funtion used to compute the matrix is defined in wigner_functions.py.
+
+The matrix returned is of the form:   l_1  l_2  wl
+                                        0   0   0 
+l_1 and l_2 are both assumed to have the same range: [0,lmax]. This can easily changed in the code
+if desired (lmax is user defined), including allowing different range for l_1 and l_2.
+wl has the range [0,wlmax], wlmax is used defined. wlmax is recommended to be 2*lmax
+
+The wigner files are stored as compressed arrays using the zarr package.
+"""
+
 from wigner_functions import *
 import zarr
 import time
 from multiprocessing import Pool
 
 lmax=5000 #~nside*3.. or the lmax to be used in the analysis.
-wlmax=5000 #This needs to be 2Xlmax in general, unless you are certain window is narrow in ell space.
+wlmax=5000 #This needs to be atleast 2X lmax in general, unless you are certain window is narrow in ell space.
 
 m1=0
 m2=0
@@ -13,15 +26,16 @@ m3=0
 lmax=np.int(lmax)
 wlmax=np.int(wlmax)
 
+#define path to save the file.
 home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
-fname=home+'/dask_wig3j_l{lmax}_w{wlmax}_{i}_reorder.zarr'  #path to save the files
+fname=home+'/wig3j_l{lmax}_w{wlmax}_{i}_reorder.zarr'  #path to save the files
 fname=fname.format(i=m2,lmax=lmax,wlmax=wlmax)
 print('will save to ',fname)
 
 lmax+=1
 wlmax+=1
 ncpu=30
-l_step=100 #not used with dask
+l_step=100 
 w_l=np.arange(wlmax)
 l=np.arange(lmax)
 
@@ -35,12 +49,11 @@ calc_factlist(j_max)
 
 j3=np.arange(wlmax)
     
-#from https://stackoverflow.com/questions/62904123/how-to-properly-paralleize-a-blackbox-likelihood-in-emcee/66763153#66763153
-#to make Pool work
-#import multiprocessing as mp
-#Pool = mp.get_context('fork').Pool
-
 def wig3j_recur_2d(j1b,m1,m2,m3,j3_outmax,step,j2b):
+    """
+    Computes a smaller part of the wigner_3j matrix.
+    Called multiple times in parallel.
+    """
     if j2b<j1b: #we exploit j1-j2 symmetry and hence only compute for j2>=j1
         return [j1b,j2b,0]
     if np.absolute(j2b-j1b-step-1)>j3_outmax: #given j1-j2, there is a min j3 for non-zero values. If it falls outside the required j3 range, nothing to compute

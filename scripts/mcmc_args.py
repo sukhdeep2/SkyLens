@@ -21,7 +21,7 @@ lmax_cl_Bins=lmax_cl
 Nl_bins=25
 l_bins=np.int64(np.logspace(np.log10(lmin_cl_Bins),np.log10(lmax_cl_Bins),Nl_bins))
 lb=0.5*(l_bins[1:]+l_bins[:-1])
-
+print('n ell bins: ',lb.shape)
 l=l0
 # l=np.unique(np.int64(np.logspace(np.log10(lmin_cl),np.log10(lmax_cl),Nl_bins*20))) #if we want to use fewer ell
 
@@ -81,7 +81,7 @@ f_sky=0.35 #if there is no window. This can also be a dictionary for different c
 """generate simulated samples"""
 #for this example. You should define your own tracer_zbins
 nzbins=5
-shear_zbins={'n_bins':nzbins} #lsst_source_tomo_bins(nbins=nzbins,use_window=use_window,nside=nside)
+shear_zbins=lsst_source_tomo_bins(nbins=nzbins,use_window=use_window,nside=nside)
 galaxy_zbins=shear_zbins
 
 """cosmology and power spectra"""
@@ -90,7 +90,7 @@ cosmo_params=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.
                 'Ase9':2.2,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
                 'OmR':cosmo.Ogamma0+cosmo.Onu0,'w':-1,'wa':0,'Tcmb':cosmo.Tcmb0})
 cosmo_params['Oml']=1.-cosmo_params['Om']-cosmo_params['Omk']
-pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'camb_pk_too_many_z','halofit_version':'takahashi'}
+pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'camb_pk_too_many_z','halofit_version':'takahashi','use_astropy':True}
 
 z_PS=None #redshifts at which to compute power spectra.
 nz_PS=100 #number of redshifts to sample power spectra. used if z_PS is none

@@ -27,7 +27,7 @@ import psutil
 from itertools import islice
 
 class window_utils():
-    def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,corrs=None,s1_s2s=None,use_window=None,#f_sky=None,cov_utils=None,
+    def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,l_cl=None,corrs=None,s1_s2s=None,use_window=None,#f_sky=None,cov_utils=None,
                 do_cov=False,corr_indxs=None,z_bins=None,WT=None,xi_bin_utils=None,do_xi=False,
                 store_win=False,Win=None,wigner_files=None,step=None,#xi_win_approx=False,
                 cov_indxs=None,client=None,scheduler_info=None,wigner_step=None,
@@ -42,11 +42,12 @@ class window_utils():
             nworkers=10 #assume, to decide number of jobs to submit
         
         self.njobs_submit=njobs_submit_per_worker*nworkers
-        
+        if self.l_cl is None:
+            self.l_cl=self.l
         nl=len(self.l)
         nwl=len(self.window_l)*1.0
         
-        self.MF=(2*self.l[:,None]+1)# this is multiplied with coupling matrices, before binning.
+        self.MF=(2*self.l_cl[:,None]+1)# this is multiplied with coupling matrices, before binning.
 
         self.step=wigner_step
         if self.step is None:
@@ -161,10 +162,10 @@ class window_utils():
         step=self.step
         wig_3j=zarr.open(self.wigner_files[m],mode='r')
         if sem_lock is None:
-            out=wig_3j.oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l)]
+            out=wig_3j.oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l_cl)]
         else:
             with sem_lock:
-                out=wig_3j.oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l)]
+                out=wig_3j.oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l_cl)]
         out=out.transpose(1,2,0)
         del wig_3j
         return out
@@ -268,6 +269,7 @@ class window_utils():
             M[k]/=4.*np.pi
             if not cov:
                 M[k]*=self.MF[lm:lm+self.step,:] #FIXME: not used in covariance?
+            print('coupling_matrix_large',M[k].shape)
             if self.bin_window:# and bin_wt is not None:
                 M[k]=self.binnings.bin_2d_coupling(M=M[k],bin_utils=cl_bin_utils,
                     partial_bin_side=2,lm=lm,lm_step=self.step,wt0=bin_wt[k]['wt0'],wt_b=bin_wt[k]['wt_b'],cov=cov)
@@ -1167,7 +1169,6 @@ def get_window_power_cl(corr_indxs,WU,c_ell0=None,c_ell_b=None,z_bin1=None,z_bin
         win['bin_wt']['N']={'wt_b':np.ones_like(cl_b),'wt0':np.ones_like(cl0)}
         if np.all(cl_b==0):#avoid nan
             win['bin_wt']={'wt_b':cl_b,'wt0':cl0}
-
     win['W_pm']=W_pm
     win['s1s2']=s1s2
     if self.do_xi:
