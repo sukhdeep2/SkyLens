@@ -290,19 +290,30 @@ class Power_Spectra(cosmology):
             pk_params=self.pk_params
         cosmoC=Class()
         h=cosmo_params['h']
-        class_params={'h':h,'omega_b':cosmo_params['Omb']*h**2,
-                        'omega_cdm':(cosmo_params['Om']-cosmo_params['Omb'])*h**2,
-                        'A_s':cosmo_params['Ase9']*1.e-9,'n_s':cosmo_params['ns'],
-                        'output': 'mPk','z_max_pk':100, #max(z)*2, #to avoid class error.
+        
+        class_params= cosmo_params.copy()
+        #pop parameters that are defined in CAMB formalism and reinsert them in CLASS formalism
+        pop_list = ['Omb', 'Om', 'Ase9', 'ns', 'Oml', 'w', 'wa']
+        [class_params.pop(key) for key in pop_list]
+        
+        #reinsert cosmology parameters in CAMB formalism
+        if('omega_cdm' in class_params): #check if omega_cdm is provided;
+            pass
+        else:
+            class_params.update({'omega_cdm':(cosmo_params['Om']-cosmo_params['Omb'])*h**2})
+            
+        if(('P_k_max_1/Mpc' in class_params) | ('P_k_max_h/Mpc' in class_params)):
+            pass
+        else:
+            class_params.update({'P_k_max_1/Mpc':pk_params['kmax']*h*1.1}) #default Skylens choice
+        class_params.update({'omega_b':cosmo_params['Omb']*h**2,
+                             'A_s':cosmo_params['Ase9']*1.e-9,
+                             'n_s':cosmo_params['ns'],
+                             'Omega_fld':cosmo_params['Oml'],
+                             'w0_fld':cosmo_params['w'],
+                             'wa_fld':cosmo_params['wa'],
+                             'output': 'mPk','z_max_pk':100}) #max(z)*2, #to avoid class error.
                                                       #Allegedly a compiler error, whatever that means
-                        'P_k_max_1/Mpc':pk_params['kmax']*h*1.1,
-                    'alpha_s':cosmo_params['alpha_s'],
-                     'N_ur':cosmo_params['N_ur'],
-                     'N_ncdm':cosmo_params['N_ncdm'],
-                     'omega_ncdm':cosmo_params['omega_ncdm'],
-                      'Omega_fld':cosmo_params['Oml'],
-                     'w0_fld':cosmo_params['w'],
-                     'wa_fld':cosmo_params['wa']}
         
         if pk_params['non_linear']==1:
             class_params['non linear']='halofit'
