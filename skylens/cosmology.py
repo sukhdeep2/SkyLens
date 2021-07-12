@@ -8,9 +8,10 @@ import numpy as np
 #from galsim.integ import int1d
 from scipy.integrate import quad as scipy_int1d
 import warnings
-from astropy.cosmology import Planck15 as cosmo
-cosmo_h=cosmo.clone(H0=100)
-cosmo_planck15=cosmo
+from astropy.cosmology import Planck15 as cosmo_planck
+from astropy.cosmology import FlatLambdaCDM as cosmo
+cosmo_h=cosmo_planck.clone(H0=100)
+cosmo_flatLCDM=cosmo
 
 from astropy.constants import c,G
 from astropy import units as u
@@ -29,9 +30,9 @@ H100=H100.value
 
 tol=1.e-9
 
-cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817,'Om':cosmo.Om0,
-                'Ase9':2.2,'mnu':cosmo.m_nu[-1].value,'Ok':cosmo.Ok0,'tau':0.06,'ns':0.965, 'OmR':cosmo.Ogamma0+cosmo.Onu0,
-                'Tcmb':cosmo.Tcmb0,'w':-1,'wa':0})
+cosmo_fid=dict({'h':cosmo_planck.h,'Omb':cosmo_planck.Ob0,'Omd':cosmo_planck.Om0-cosmo_planck.Ob0, 's8':0.817,
+                'Ase9':2.2,'mnu':cosmo_planck.m_nu[-1].value,'Ok':cosmo_planck.Ok0,'tau':0.06,'ns':0.965, 'OmR':cosmo_planck.Ogamma0+cosmo_planck.Onu0,
+                'Tcmb':cosmo_planck.Tcmb0,'w':-1,'wa':0})
 
 class cosmology():
     def __init__(self,cosmo_params=cosmo_fid,dz=0.005,do_calcs=1,rtol=1.e-4,h_inv=True,use_astropy=True,
@@ -58,11 +59,11 @@ class cosmology():
             return
         self.__dict__.update(cosmo_params) #assign all input args to the class as properties
         self.Om=self.Omb+self.Omd
-        self.OmL=1-self.Om-self.OmR#FIXME
+        #self.OmL=1-self.Om-self.OmR#FIXME
         self.H0=self.h*100.0
         self.Dh=self.c/self.H0
-        if self.Omk!=0:
-            self.Dh=self.c*(np.sqrt(np.absolute(self.Omk))) #a0h0=1./sqrt(Omega_k)
+        #if self.Omk!=0:
+        #    self.Dh=self.c*(np.sqrt(np.absolute(self.Omk))) #a0h0=1./sqrt(Omega_k)
         if self.h_inv:
             self.Dh=self.c/100.
 #         self.rho=self.Rho_crit()*self.Om
@@ -87,13 +88,15 @@ class cosmology():
             if not self.astropy_cosmo is None:
                 return
         if self.astropy_cosmo is None:
-            self.astropy_cosmo=cosmo_planck15
+            self.astropy_cosmo=cosmo
 
-        m_nu=self.astropy_cosmo.m_nu.value
-        m_nu[-1]=cosmo_params['mnu']
-        m_nu*=self.astropy_cosmo.m_nu.unit
-        self.astropy_cosmo=self.astropy_cosmo.clone(H0=cosmo_params['h']*100,Ob0=cosmo_params['Omb'],Om0=cosmo_params['Om'],
-                                   m_nu=m_nu)#,Ok0=cosmo_params['Omk'])
+        #m_nu=self.astropy_cosmo.m_nu.value
+        #m_nu[-1]=cosmo_params['mnu']
+        #m_nu*=self.astropy_cosmo.m_nu.unit
+        self.astropy_cosmo=cosmo(H0=cosmo_params['h']*100, Om0=self.Om,
+                                                    Tcmb0 = cosmo_params['T_cmb'], Neff = cosmo_params['Neff'],
+                                                    m_nu = (cosmo_params['mnu'] * u.eV).to(u.eV, equivalencies=u.mass_energy()),
+                                   Ob0=cosmo_params['Omb'])
         if cosmo_params.get('w0') is not None:
             if cosmo_params.get('wa') is None:
                 cosmo_params['wa']=0
@@ -104,8 +107,9 @@ class cosmology():
         self.efunc=self.astropy_cosmo.efunc
         self.comoving_distance=self.astropy_comoving_distance
         self.comoving_transverse_distance=self.astropy_comoving_transverse_distance
-
-
+        self.OmR=self.astropy_cosmo.Ogamma0 + self.astropy_cosmo.Onu0
+        self.OmL=self.astropy_cosmo.Ode0
+        
     def E_z(self,z):
         z=np.array(z)
         z1=1+z

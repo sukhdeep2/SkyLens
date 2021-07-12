@@ -26,7 +26,7 @@ sys.path.insert(0,'./')
 from dask.distributed import Lock
 import numpy as np
 from scipy.interpolate import interp1d
-from astropy.cosmology import Planck15 as cosmo
+from astropy.cosmology import Planck15 as cosmo_planck
 from astropy import units as u
 from scipy.integrate import quad as scipy_int1d
 import pandas as pd
@@ -35,12 +35,12 @@ import copy
 import time
 from skylens.cosmology import *
 
-cosmo_h=cosmo.clone(H0=100)
+cosmo_h=cosmo_planck.clone(H0=100)
 #c=c.to(u.km/u.second)
 
-cosmo_fid=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817,'Om':cosmo.Om0,
-                'Ase9':2.2,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
-                'OmR':cosmo.Ogamma0+cosmo.Onu0,'w':-1,'wa':0,'Tcmb':cosmo.Tcmb0,'z_max':4,'use_astropy':True})
+cosmo_fid=dict({'h':cosmo_planck.h,'Omb':cosmo_planck.Ob0,'Omd':cosmo_planck.Om0-cosmo_planck.Ob0,'s8':0.817,'Om':cosmo_planck.Om0,
+                'Ase9':2.2,'mnu':cosmo_planck.m_nu[-1].value,'Omk':cosmo_planck.Ok0,'tau':0.06,'ns':0.965,
+                'OmR':cosmo_planck.Ogamma0+cosmo_planck.Onu0,'w':-1,'wa':0,'Tcmb':cosmo_planck.Tcmb0,'z_max':4,'use_astropy':True})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
 pk_params_default={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'class_pk','halofit_version':'takahashi'}
 
@@ -293,7 +293,7 @@ class Power_Spectra(cosmology):
         
         class_params= cosmo_params.copy()
         #pop parameters that are defined in CAMB formalism and reinsert them in CLASS formalism
-        pop_list = ['Omb', 'Om', 'Ase9', 'ns', 'Oml', 'w', 'wa']
+        pop_list = ['Omb', 'Omd', 'Ase9', 'ns', 'w', 'wa', 'zmax', 'Neff', 'mnu']
         [class_params.pop(key) for key in pop_list]
         
         #reinsert cosmology parameters in CAMB formalism
@@ -309,7 +309,7 @@ class Power_Spectra(cosmology):
         class_params.update({'omega_b':cosmo_params['Omb']*h**2,
                              'A_s':cosmo_params['Ase9']*1.e-9,
                              'n_s':cosmo_params['ns'],
-                             'Omega_fld':cosmo_params['Oml'],
+                             #'Omega_fld':cosmo_params['Oml'],
                              'w0_fld':cosmo_params['w'],
                              'wa_fld':cosmo_params['wa'],
                              'output': 'mPk','z_max_pk':100}) #max(z)*2, #to avoid class error.
