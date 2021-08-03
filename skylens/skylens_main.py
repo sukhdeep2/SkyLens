@@ -106,7 +106,7 @@ class Skylens():
 #             self.do_pseudo_cl=True #we will use pseudo_cl transform to get correlation functions.
 
         self.Win0=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,l_cl=self.l_cl0,
-                               corrs=self.corrs,s1_s2s=self.s1_s2s,
+                               corrs=self.corrs,s1_s2s=self.s1_s2s,SSV_cov=SSV_cov,
                                cov_indxs=self.cov_indxs,scheduler_info=self.scheduler_info,
                                use_window=self.use_window,do_cov=self.do_cov,#cov_utils=self.cov_utils,f_sky=self.f_sky,
                                corr_indxs=self.stack_indxs,z_bins=self.tracer_utils.z_win,

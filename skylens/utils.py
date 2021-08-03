@@ -4,6 +4,7 @@ from dask.distributed import Client,get_client,wait
 from distributed import LocalCluster
 from collections.abc import Mapping #to check for dicts
 from distributed.client import Future
+import copy
 
 # print('pid: ',pid, sys.version)
 
@@ -22,6 +23,15 @@ def thread_count():
 
     return nlwp, thc
 
+
+def update_dict(dict1,dict2):
+    dict_comb=copy.deepcopy(dict1)
+    for k in dict2.keys():
+        if dict1.get(k) is None:
+            dict_comb[k]=dict2[k]
+        elif isinstance(dict1.get(k),dict):
+            dict_comb[k]=update_dict(dict1[k],dict2[k])
+    return dict_comb
 
 def get_size(obj, seen=None): #https://stackoverflow.com/questions/449560/how-do-i-determine-the-size-of-an-object-in-python
         """Recursively finds size of objects"""
@@ -138,8 +148,10 @@ def wait_futures(futures,sleep_time=.05,threshold=0.5):
     all_done=False
     while not all_done:
         time.sleep(sleep_time)
-        all_done=np.mean([future.status=='finished' for future in futures])>threshold
-#         all_done=np.all([future.status=='finished' for future in futures])
+        if isinstance(futures,dict):
+            all_done=np.mean([futures[k].status=='finished' for k in futures.keys()])>threshold
+        else:
+            all_done=np.mean([future.status=='finished' for future in futures])>threshold
 
 def gather_dict(dic,scheduler_info=None): 
     """

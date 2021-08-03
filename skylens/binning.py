@@ -31,6 +31,8 @@ class binning():
         bu['r_dr']*=wt
         bu['norm']=np.dot(bu['r_dr'],binning_mat)
 
+        bu['binning_mat_r_dr']=bu['binning_mat']*bu['r_dr'][:,None]/bu['norm'][None,:]
+        
         x=np.logical_or(r_bins[1:]<=np.amin(r),r_bins[:-1]>=np.amax(r))
         bu['norm'][x]=np.inf
 #         print(bu['norm'])
@@ -75,16 +77,17 @@ class binning():
             wt_b=bin_utils['wt_b']
         if wt0 is None:
             wt0=bin_utils['wt0']
-        print('bin_2d_coupling: ',binning_mat.shape,wt_b.shape,wt0.shape)
+
         if len(wt0.shape)==1:
             binning_mat2=wt0[:,None]*binning_mat*wt_b
         else:
             binning_mat2=wt0@binning_mat@wt_b #FIXME: Test this.... doesnot work. not used anymore.
-        print('bin_2d_coupling again: ',binning_mat.shape,wt_b.shape,wt0.shape)
-        rdr=bin_utils['r_dr']
-        r_dr_m=bin_utils['r_dr_m'][ndim]
-        
-        binning_mat=binning_mat*rdr[:,None]/bin_utils['norm'][None,:]
+
+#         rdr=bin_utils['r_dr']
+#         r_dr_m=bin_utils['r_dr_m'][ndim]
+#         binning_mat=binning_mat*rdr[:,None]/bin_utils['norm'][None,:]
+
+        binning_mat=bin_utils['binning_mat_r_dr']
         if partial_bin_side is None:
             cov_b=binning_mat.T@M@binning_mat2
         elif partial_bin_side==1:

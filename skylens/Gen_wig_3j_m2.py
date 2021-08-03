@@ -14,8 +14,8 @@ The wigner files are stored as compressed arrays using the zarr package.
 from wigner_functions import *
 import zarr
 import time
-lmax=2200 #1e4
-wlmax=np.int(lmax*2)
+lmax=5000 #1e4
+wlmax=5000 #np.int(lmax*2)
 m1=2
 m2=-2
 m3=0
@@ -31,7 +31,7 @@ print('will save to ',fname)
 
 lmax+=1
 wlmax+=1
-ncpu=12
+ncpu=24
 l_step=100 #not used with dask
 w_l=np.arange(wlmax)
 l=np.arange(lmax)
@@ -64,7 +64,7 @@ def wig3j_recur_2d(j1b,j2b,m1,m2,m3,j3_outmax,step,z1_out):
 
     t1=time.time()
     funct=partial(wig3j_recur_1d, j2s,m1,m2,m3,j3_outmax)
-    pool=Pool(10)
+    pool=Pool(ncpu)
     out_ij=pool.map(funct,j1s,chunksize=np.int(step/40))
     pool.close()
     t2=time.time()

@@ -11,14 +11,14 @@ d2r=np.pi/180
 #start local dask cluster
 ncpu=2
 LC,scheduler_info=start_client(Scheduler_file=None,local_directory=None,ncpu=None,n_workers=ncpu,threads_per_worker=1,
-                              memory_limit='120gb',dashboard_address=8811,processes=True)
+                              memory_limit='70gb',dashboard_address=8811,processes=True)
 client=client_get(scheduler_info=scheduler_info)
 
 #set path to wigner-3j files.
 wig_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
 wigner_files={}
 wigner_files[0]= wig_home+'dask_wig3j_l5000_w5000_0_reorder.zarr'
-wigner_files[2]= wig_home+'/dask_wig3j_l2200_w4400_2_reorder.zarr'
+wigner_files[2]= wig_home+'/wig3j_l5000_w5000_2_reorder.zarr'
 wigner_step=100
 
 #directory to save the figures

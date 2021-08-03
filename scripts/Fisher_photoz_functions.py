@@ -765,6 +765,7 @@ def get_z_bins(zmin,zmax,shear_n_zbins,galaxy_n_zbins,galaxyD_n_zbins=None,nz_sh
     return shear_zbins,shear_zbins_train,shear_zbins_missed,galaxy_zbins,galaxyD_zbins
 
 def combine_z_bins_all(z_bins_kwargs={}):
+    #FIXME: add training sample to shear also.
     if z_bins_kwargs['shear_zbins_missed']['n_bins']>0:
         shear_zbins_comb=combine_zbins(z_bins1=z_bins_kwargs['shear_zbins'],z_bins2=z_bins_kwargs['shear_zbins_missed'])
     else:
@@ -774,9 +775,11 @@ def combine_z_bins_all(z_bins_kwargs={}):
         galaxyD_n_zbins2=z_bins_kwargs['galaxyD_zbins']['n_bins']
     else:
         galaxy_zbins_comb=z_bins_kwargs['galaxy_zbins']
-    if z_bins_kwargs['shear_zbins_train']['n_bins']>0:
-        galaxy_zbins_comb=combine_zbins(z_bins1=z_bins_kwargs['shear_zbins_train'],z_bins2=galaxy_zbins_comb)
     galaxy_zbins_comb=combine_zbins(z_bins1=shear_zbins_comb,z_bins2=galaxy_zbins_comb)
+    if z_bins_kwargs['shear_zbins_train']['n_bins']>0:
+        galaxy_zbins_comb=combine_zbins(z_bins1=galaxy_zbins_comb,z_bins2=z_bins_kwargs['shear_zbins_train'])
+        shear_zbins_comb=combine_zbins(z_bins1=shear_zbins_comb,z_bins2=z_bins_kwargs['shear_zbins_train'])
+    
 
     return shear_zbins_comb,galaxy_zbins_comb
 
@@ -901,18 +904,24 @@ def init_fish(z_min=None,z_max=None,corrs=None,SSV=None,do_cov=None,
 
         print('nbins',shear_zbins['n_bins'],galaxy_zbins['n_bins'],galaxyD_zbins['n_bins'],galaxy_zbins_comb['n_bins'],shear_zbins_comb['n_bins'])
 
-        ii_galaxy=np.arange(shear_zbins_comb['n_bins'],galaxy_zbins_comb['n_bins'])
-        ii_galaxy2=np.arange(shear_zbins_comb['n_bins']+shear_zbins_train['n_bins'],galaxy_zbins_comb['n_bins'])
-        ii_s=np.arange(shear_zbins_comb['n_bins'])
+        n_bins_shear_photo=shear_zbins['n_bins']+shear_zbins_missed['n_bins']
+        
+        ii_galaxy_photo=np.arange(n_bins_shear_photo)
+        ii_shear_photo=np.arange(n_bins_shear_photo)
+        ii_galaxy_spec=np.arange(n_bins_shear_photo,galaxy_zbins_comb['n_bins']) #DESI+training
+        ii_shear_spec=np.arange(n_bins_shear_photo,shear_zbins_comb['n_bins']) #training
+        ii_galaxy_train=np.arange(n_bins_shear_photo+galaxyD_zbins['n_bins'],galaxy_zbins_comb['n_bins']) #training
 
         z_bins_kwargs['corr_indxs']={corr_gg:{},corr_ll:{},corr_ggl:{}}
-        z_bins_kwargs['corr_indxs'][corr_gg]=[(i,j) for i in ii_s for j in ii_galaxy]+[(i,i) for i in ii_galaxy]
-        z_bins_kwargs['corr_indxs'][corr_gg]+=[(i,j) for i in ii_s for j in np.arange(i,shear_zbins_comb['n_bins'] )] #only auto corr for galaxy bins, auto+cross for shear bins.
+        z_bins_kwargs['corr_indxs'][corr_gg]=[(i,i) for i in ii_galaxy_spec] #auto for spec
+        z_bins_kwargs['corr_indxs'][corr_gg]+=[(i,j) for i in ii_galaxy_photo for j in ii_galaxy_spec] #cross between photo and spec samples
+        z_bins_kwargs['corr_indxs'][corr_gg]+=[(i,j) for i in ii_galaxy_photo for j in np.arange(i,n_bins_shear_photo)] #auto and cross b/w photo samples
 
-        z_bins_kwargs['corr_indxs'][corr_ll]=[(i,j) for i in ii_s for j in np.arange(i,shear_zbins_comb['n_bins'] )]
+        z_bins_kwargs['corr_indxs'][corr_ll]=[(i,j) for i in ii_shear_photo for j in np.arange(i,n_bins_shear_photo)] #auto and cross with photo samples only.
 
-        z_bins_kwargs['corr_indxs'][corr_ggl]=[(j,i) for i in ii_s for j in ii_galaxy2 ] #we ignore galaxying around training sample
-        z_bins_kwargs['corr_indxs'][corr_ggl]+=[(j,i) for i in ii_s for j in np.arange(i,shear_zbins_comb['n_bins'])]
+        z_bins_kwargs['corr_indxs'][corr_ggl]=[(j,i) for i in ii_shear_photo for j in ii_galaxy_spec ] #shear: photo, lens: spec
+        z_bins_kwargs['corr_indxs'][corr_ggl]+=[(j,i) for i in ii_shear_photo for j in np.arange(i,n_bins_shear_photo)]#shear: photo, lens: photo
+        z_bins_kwargs['corr_indxs'][corr_ggl]+=[(j,i) for i in ii_shear_spec for j in ii_galaxy_train]#shear: spec, lens: spec. auto only, for IA
 
     #     print('init fish, indxs:',z_bins_kwargs['corr_indxs'])
 
@@ -956,6 +965,10 @@ def init_fish(z_min=None,z_max=None,corrs=None,SSV=None,do_cov=None,
                 if f_sky_ij==0 or sc_ij==0:
                     print('Fish init: ',corr,(i,j),'removed because fsky=',f_sky_ij,' kernel product=',sc_ij)
                     z_bins_kwargs['corr_indxs'][corr].remove((i,j))
+                    try:
+                        z_bins_kwargs['corr_indxs'][corr[::-1]].remove((j,i))
+                    except:
+                        pass
                 else:
                     f_sky[corr][(i,j)]=f_sky_ij
                     f_sky[corr[::-1]][(j,i)]=f_sky_ij

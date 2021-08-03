@@ -19,10 +19,12 @@ import faulthandler; faulthandler.enable()
 
 if __name__=='__main__':
     test=True
-
-    Fmost=False
+    
+    do_pseudo_cl=True
 
     eh_pk=False
+    
+    Fmost=False
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--dask_dir", "-Dd", help="dask log directory")
@@ -59,9 +61,10 @@ if __name__=='__main__':
 
     shear_n_zbins=5
     galaxy_n_zbins=5
-    galaxyD_n_zbins={} #galaxyD==DESI
+    galaxyD_n_zbins=None #galaxyD==DESI
     galaxyD_n_zbins_tot=0
     if Desi:
+        galaxyD_n_zbins={}
         galaxyD_n_zbins['elg']=5
         galaxyD_n_zbins['lrg']=4
         galaxyD_n_zbins['BG']=2
@@ -77,7 +80,7 @@ if __name__=='__main__':
     nz_shear_missed=6  #arcmin^-2
 
     nz_shear_train=n_train_spectra/area_train/3600 #arcmin^-2
-    if not train_sample or n_train_spectra*area_train==0:
+    if train_sample and n_train_spectra*area_train==0:
         if area_train>0 or n_train_spectra>0 or train_sample:
             raise Exception('miss matched args for training sample:',train_sample, area_train,n_train_spectra)
     if area_train==0 or n_train_spectra==0 or not train_sample:
@@ -112,7 +115,6 @@ if __name__=='__main__':
     Nl_bins=12
     bin_cl=True #False
     use_binned_l=True
-    do_pseudo_cl=True
     l0,l_bins,l=get_cl_ells(lmax_cl=lmax_cl,Nl_bins=Nl_bins,lmin_cl=lmin_cl,bin_cl=bin_cl)
     lb=l*1
     if bin_cl:
@@ -125,10 +127,12 @@ if __name__=='__main__':
     #window
     use_window=do_pseudo_cl
     unit_window=False
-    nside=1024 #32
+    nside=256 #32
+    if not use_window:
+        nside=64
     window_lmax=nside #30
 
-    print('doing nside',nside,window_lmax,use_binned_l)
+    print('doing nside',nside,window_lmax,use_binned_l,use_window)
     wig_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/'
     wig_home=wig_home+'temp/'
     wigner_files={}
@@ -137,6 +141,8 @@ if __name__=='__main__':
 
     store_win=True
     save_win=True
+    if not use_window:
+        save_win=False
 
     #covariance and area
     SSV_cov=False #[False,True]
@@ -185,7 +191,7 @@ if __name__=='__main__':
     proc = psutil.Process()
     print(format_bytes(proc.memory_info().rss))
 
-    fname_out='{ns}_{nsm}_{nl}_{nlD}_nlb{nlb}_lmax{lmax}_z{zmin}-{zmax}_zlmax{zlmax}_bary{bary_nQ}_AT{at}_NT{NT}.pkl'
+    fname_out='ns{ns}_nsm{nsm}_ng{nl}_nD{nlD}_nlb{nlb}_lmax{lmax}_z{zmin}-{zmax}_zlmax{zlmax}_bary{bary_nQ}_AT{at}_NT{NT}.pkl'
     if bin_cl and use_binned_l:
         fname_out='binnedL_'+fname_out
     elif bin_cl and not use_binned_l:
@@ -214,11 +220,11 @@ if __name__=='__main__':
 
     from Fisher_photoz_functions import * #to prevent some skylens galaxies getting assigned to Skylens_kwargs
 
-    # fname='temp/win_D_{ns}{nl}{nlD}.pkl'.format(ns=nbins,nl=galaxy_n_zbins,nlD=n_lensD_bins)
     if use_window and store_win:
         fname_out='win_'+fname_out
         try:
-#             crash
+            if test:
+                crash
             with open(fname_win,'rb') as of:
                 WIN=pickle.load(of)
             print('window read')
@@ -230,7 +236,8 @@ if __name__=='__main__':
     fname_cl=file_home+'/cl_cov_'+fname_out
 
     try:
-#         crash
+        if test:
+            crash
         with open(fname_cl,'rb') as of:
             cl_all=pickle.load(of)
         cl_L=cl_all['cl_L']
