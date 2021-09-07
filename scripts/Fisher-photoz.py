@@ -18,7 +18,7 @@ import faulthandler; faulthandler.enable()
     # problem is likely to be in some package
 
 if __name__=='__main__':
-    test=True
+    test=False
     
     do_pseudo_cl=True
 
@@ -43,7 +43,7 @@ if __name__=='__main__':
     Desi=True if args.desi is None else np.bool(args.desi)
     train_sample=True if args.train is None else np.bool(args.train)
 
-    n_train_spectra=np.int32(1e6) if args.train_spectra is None else np.int32(args.train_spectra)
+    n_train_spectra=np.int32(1e5) if args.train_spectra is None else np.int32(args.train_spectra)
     area_train=150 if args.train_area is None else np.int32(args.train_area) #deg^2
 
     file_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/fisher/'
@@ -124,6 +124,8 @@ if __name__=='__main__':
     #xi args
     do_xi=False
 
+    wigner_step=100 #lmax_cl+1
+    
     #window
     use_window=do_pseudo_cl
     unit_window=False
@@ -191,7 +193,7 @@ if __name__=='__main__':
     proc = psutil.Process()
     print(format_bytes(proc.memory_info().rss))
 
-    fname_out='ns{ns}_nsm{nsm}_ng{nl}_nD{nlD}_nlb{nlb}_lmax{lmax}_z{zmin}-{zmax}_zlmax{zlmax}_bary{bary_nQ}_AT{at}_NT{NT}.pkl'
+    fname_out='ns{ns}_nsm{nsm}_ng{nl}_nD{nlD}_nlb{nlb}_lmax{lmax}_z{zmin}-{zmax}_zlmax{zlmax}_bary{bary_nQ}_AT{at}_NT{NT}'
     if bin_cl and use_binned_l:
         fname_out='binnedL_'+fname_out
     elif bin_cl and not use_binned_l:
@@ -205,7 +207,7 @@ if __name__=='__main__':
     if eh_pk:
         fname_out='eh_pk_'+fname_out
 
-    ncpu=5 #multiprocessing.cpu_count()-1
+    ncpu=2 #multiprocessing.cpu_count()-1
     LC,scheduler_info=start_client(Scheduler_file=Scheduler_file,local_directory=dask_dir,ncpu=None,n_workers=ncpu,threads_per_worker=1,
                                       memory_limit='120gb',dashboard_address=8801,processes=True)
     client=client_get(scheduler_info=scheduler_info)
@@ -214,39 +216,47 @@ if __name__=='__main__':
     fname_out=fname_out.format(ns=shear_n_zbins,nsm=train_sample_missed,nl=galaxy_n_zbins,nlD=galaxyD_n_zbins_tot,
                                nlb=Nl_bins,lmax=lmax_cl,bary_nQ=bary_nQ,
                                zmin=z_min,zmax=z_max,zlmax=z_max_galaxy,at=area_train,NT=n_train_spectra)
-    fname_win=file_home+'/win_'+fname_out
+    fname_win=file_home+'/win_'+fname_out+'.pkl'
 
     Skylens_kwargs=parse_dict(locals())
 
     from Fisher_photoz_functions import * #to prevent some skylens galaxies getting assigned to Skylens_kwargs
 
     if use_window and store_win:
-        fname_out='win_'+fname_out
         try:
-            if test:
-                crash
+#             if test:
+#             crash
             with open(fname_win,'rb') as of:
                 WIN=pickle.load(of)
             print('window read')
+            save_win=False
         except Exception as err:
             save_win=True
             print('window not found. Will compute',err)
 
     clean_tracer_window=False
-    fname_cl=file_home+'/cl_cov_'+fname_out
-
+    fname_cl=file_home+'/cl_cov_'+fname_out+'.npz'
+    fname_z=file_home+'/zbins_'+fname_out+'.pkl'
     try:
-        if test:
-            crash
-        with open(fname_cl,'rb') as of:
-            cl_all=pickle.load(of)
-        cl_L=cl_all['cl_L']
-        #cl_L_lsst=cl_all['cl_L_lsst']
-        z_bins_kwargs=cl_all['z_bins']
-        #z_bins_lsst_kwargs=cl_all['z_bins_lsst']
+#         if test:
+        crash
+        with open(fname_z,'rb') as of:
+            z_bins_kwargs=pickle.load(of)
         print('read cl / cov from file: ',fname_cl)
     except Exception as err:
-        print('cl not found. Will compute',fname_cl,err)
+        print('zbins not found')
+
+    try:
+#         if test:
+        crash
+#         with open(fname_cl,'rb') as of:
+#             cl_all=pickle.load(of)
+        cl_all=np.load(fname_cl)
+        cl_L=cl_all['cl_L']
+        z_bins_kwargs=cl_all['z_bins']
+        print('read cl / cov from file: ',fname_cl)
+    except Exception as err:
+        print('cl not found. Will compute',fname_cl,err,save_win)
 
         kappa_class,z_bins_kwargs=init_fish(z_min=z_min,z_max=z_max,SSV=SSV_cov,nz_shear=nz_shear,f_sky=f_sky,nside=nside,
                                             nz_galaxy=nz_galaxy,n_zs_shear=n_zs_shear,n_zs_galaxy=n_zs_galaxy,
@@ -255,9 +265,16 @@ if __name__=='__main__':
                                             z_true_max=z_true_max,area_train=area_train,train_sample_missed=train_sample_missed,
                                             train_n_zbins=train_n_zbins,area_overlap=area_overlap,
                                             shear_n_zbins=shear_n_zbins,galaxy_n_zbins=galaxy_n_zbins,galaxyD_n_zbins=galaxyD_n_zbins,
-                                              Win=WIN['full'],store_win=store_win,pk_params=pk_params,Skylens_kwargs=Skylens_kwargs)
+                                            store_win=store_win,pk_params=pk_params,Skylens_kwargs=Skylens_kwargs,Win=WIN['full'])
+        if save_win:
+            win_all={'full':gather_dict(kappa_class.Win,scheduler_info=kappa_class.scheduler_info)}#,'lsst':client.gather(kappa_class_lsst.Win)}
+            with open(fname_win,'wb') as of:
+                pickle.dump(win_all,of)
+            WIN=win_all
+            kappa_class.gather_data()
+            kappa_class.scatter_data()
 
-        cl0G=kappa_class.cl_tomo(corrs=corrs,stack_corr_indxs=z_bins_kwargs['corr_indxs'])
+        cl0G=kappa_class.cl_tomo(corrs=corrs,stack_corr_indxs=z_bins_kwargs['corr_indxs'],stack_file_write=fname_cl)
 
         proc = psutil.Process()
         print('graphs done, memory: ',format_bytes(proc.memory_info().rss))
@@ -266,29 +283,23 @@ if __name__=='__main__':
 #         cl_L_lsst=None
 
         if cl_L is None:
-            #get_ipython().run_line_magic('time', "
             cl_L=cl0G['stack'].compute()
+        cl_L=np.load(fname_cl)#,allow_pickle=True)
+#         cl_L=cl_L['arr_0'][()] #cl_L.files.... [()] gets out of 0 index array
+        sparse_cov=False
+#         with open(cl_L,'rb') as of:
+#             cl_L=pickle.load(of)
+        print('got cl,cov')
 
-#         if cl_L_lsst is None:
-#             #get_ipython().run_line_magic('time', "
-#             cl_L_lsst=cl0G_lsst['stack'].compute()
+        cl_all={'cl_L':cl_L,'z_bins':z_bins_kwargs}
 
-        cl_all={'cl_L':cl_L,'z_bins':z_bins_kwargs}#,'cl_L_lsst':cl_L_lsst,'z_bins_lsst':z_bins_lsst_kwargs}
+        with open(fname_z,'wb') as of:
+            pickle.dump(z_bins_kwargs,of)
 
-
-        with open(fname_cl,'wb') as of:
-            pickle.dump(cl_all,of)
-
-        if save_win:
-            win_all={'full':gather_dict(kappa_class.Win,scheduler_info=kappa_class.scheduler_info)}#,'lsst':client.gather(kappa_class_lsst.Win)}
-            with open(fname_win,'wb') as of:
-                pickle.dump(win_all,of)
-            WIN=win_all
-        del kappa_class  #,kappa_class_lsst
+        del kappa_class
 
     if sparse_cov:
         cov_p_inv_test1=np.linalg.inv(cl_L['cov'].todense())
-#         cov_p_inv_test2=np.linalg.inv(cl_L_lsst['cov'].todense())
         del cov_p_inv_test1,#cov_p_inv_test2
     proc = psutil.Process()
     print('cl, cov done. memory:',format_bytes(proc.memory_info().rss),
@@ -308,7 +319,7 @@ if __name__=='__main__':
                                         nz_shear_missed=nz_shear_missed,nz_shear_train=nz_shear_train,use_window=use_window,
                                         store_win=store_win,do_cov=do_cov,z_bins_kwargs=z_bins_kwargs,
                                         n_zs_shear=n_zs_shear,n_zs_galaxy=n_zs_galaxy,z_max_galaxy=z_max_galaxy,pk_params=pk_params,
-                                        Skylens_kwargs=Skylens_kwargs)#reset after cl,cov calcs
+                                        Skylens_kwargs=Skylens_kwargs,Win=WIN['full'])#reset after cl,cov calcs
 
 #     kappa_class_lsst,z_bins_lsst_kwargs=init_fish(z_min=z_min,z_max=z_max,SSV=SSV_cov,nz_shear=nz_shear,f_sky=f_sky,nside=nside,nz_galaxy=nz_galaxy,
 #                                                   use_window=use_window,pk_params=pk_params,

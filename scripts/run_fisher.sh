@@ -3,8 +3,8 @@
 #SBATCH -J fish
 #SBATCH -e /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/fisher_many%A_%a.err
 #SBATCH -o /verafs/scratch/phy200040p/sukhdeep/project/skylens/temp/log/fisher_many%A_%a.out
-#SBATCH -t 60:00:00
-#SBATCH -N 5
+#SBATCH -t 80:00:00
+#SBATCH -N 8
 ##SBATCH -n 28
 #SBATCH --ntasks-per-node=28
 ##SBATCH --mem=128G
@@ -32,6 +32,8 @@ tmp_file=$temp_home"/""$ID""$job_id"".tmp"
 echo 0 > $tmp_file
 
 echo 'doing'
+
+# conda activate intel
 
 for desi in "${desis[@]}"
 do

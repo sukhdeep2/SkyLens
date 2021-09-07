@@ -3,8 +3,9 @@ from skylens.utils import *
 from skylens.survey_utils import *
 
 """to start a dask cluster"""
-LC,scheduler_info=start_client(Scheduler_file=None,local_directory='../temp/',ncpu=None,n_workers=1,threads_per_worker=None,
-                              memory_limit='20gb',dashboard_address=8801)
+LC,scheduler_info=start_client(Scheduler_file=None,local_directory='../temp/',ncpu=None,n_workers=1,
+                                threads_per_worker=None,
+                                memory_limit='20gb',dashboard_address=8801)
 client=client_get(scheduler_info=scheduler_info)
 
 """tracer pairs for correlations"""

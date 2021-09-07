@@ -3,7 +3,7 @@ import traceback
 # import pyccl as ccl
 import pickle
 import camb
-sys.path.insert(0,'../skylens/')
+# sys.path.insert(0,'../skylens/')
 
 from distributed import LocalCluster
 from dask.distributed import Client  # we already had this above
@@ -23,14 +23,12 @@ client=client_get(scheduler_info=scheduler_info)
 
 
 wigner_files={}
-# wigner_files[0]= '/Users/Deep/dask_temp/dask_wig3j_l3500_w2100_0_reorder.zarr'
-# wigner_files[2]= '/Users/Deep/dask_temp/dask_wig3j_l3500_w2100_2_reorder.zarr'
-wig_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
-wigner_files[0]= wig_home+'dask_wig3j_l3500_w2100_0_reorder.zarr'
-wigner_files[2]= wig_home+'/dask_wig3j_l3500_w2100_2_reorder.zarr'
+wig_home='./tests/'
+wigner_files[0]= wig_home+'dask_wig3j_l100_w100_0_reorder.zarr'
+wigner_files[2]= wig_home+'dask_wig3j_l100_w100_2_reorder.zarr'
 
 #setup parameters
-lmax_cl=200
+lmax_cl=100
 lmin_cl=2
 l0=np.arange(lmin_cl,lmax_cl)
 
@@ -65,7 +63,7 @@ do_cov=True
 do_xi=True
 bin_xi=True
 bin_cl=True
-th_min=2.5/60
+th_min=25/60
 th_max=250./60
 n_th_bins=20
 th_bins=np.logspace(np.log10(th_min),np.log10(th_max),n_th_bins+1)
@@ -92,7 +90,7 @@ corrs=[corr_ll,corr_ggl,corr_gg]
 
 use_binned_ls=[False,True]
 
-store_wins=[False,True]
+store_wins=[True] #[False,True] # False is deprecated, needs fixing if to be used.
 
 # In[21]:
 
@@ -139,7 +137,8 @@ for do_xi in do_xis:
                                                store_win=store_win,window_lmax=window_lmax,
                                                sparse_cov=True,corrs=corrs,
                                                do_xi=do_xi,bin_xi=bin_xi,theta_bins=th_bins,WT=WT,
-                                                use_binned_theta=use_binned_l
+                                                use_binned_theta=use_binned_l,
+                                               scheduler_info=scheduler_info
                                                )
                                 if do_xi:
                                     G=kappa0.xi_tomo()

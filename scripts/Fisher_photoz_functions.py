@@ -620,8 +620,8 @@ def fisher_calc(cosmo_params=['As'],z_params=[],galaxy_params=[],baryon_params=[
         params_all=params_all[x]
     ndim=len(params_all)
 
-    if kappa_class.sparse_cov:
-        cov=cov.todense()
+#     if kappa_class.sparse_cov:
+#         cov=cov.todense()
     cov_inv=np.linalg.inv(cov)
 
     cov_p_inv=np.zeros([ndim]*2)
@@ -864,10 +864,10 @@ def photoz_prior(kappa_class=None,Skylens_kwargs0={},z_bins_kwargs={},key_label=
 def init_fish(z_min=None,z_max=None,corrs=None,SSV=None,do_cov=None,
               pk_func=None,nz_shear=None,shear_n_zbins=None,f_sky=0.3,area_overlap=0.2,
               z_true_max=None,train_sample_missed=0,area_train=0,nz_shear_missed=0,train_n_zbins=0,
-              Win=None,store_win=None,mag_fact=0,nside=None,unit_window=False,
+              store_win=None,mag_fact=0,nside=None,unit_window=False,
              galaxy_n_zbins=None,galaxyD_n_zbins=None,nz_galaxy=None,nz_galaxyD=None,z_bins_kwargs=None,pk_params=None,
               n_zs_shear=None,n_zs_galaxy=None,nz_shear_train=0,z_max_galaxy=None,use_window=True,
-             Skylens_kwargs=None):
+             Skylens_kwargs=None,Win=None):
 
     pk_params2=copy.deepcopy(pk_params)
     pk_params2['pk_func']=pk_func
@@ -988,14 +988,20 @@ def init_fish(z_min=None,z_max=None,corrs=None,SSV=None,do_cov=None,
                     f_sky[corr][(i,j,k,l)]=f_sky_1234
         z_bins_kwargs['f_sky']=f_sky
         z_bins_kwargs['kernel_product']=sc
+        kappa_class.gather_data()
+        del kappa_class
     else:
         print('fisher_init using provided zbins',z_bins_kwargs['shear_zbins'][0]['window'].shape,z_bins_kwargs['shear_zbins'][0]['window'].mask.shape)
         shear_zbins_comb,galaxy_zbins_comb=combine_z_bins_all(z_bins_kwargs=z_bins_kwargs)
         Skylens_kwargs['galaxy_zbins']=galaxy_zbins_comb
         Skylens_kwargs['shear_zbins']=shear_zbins_comb
-
-    Skylens_kwargs['f_sky']=z_bins_kwargs['f_sky']
+    
+    Skylens_kwargs['f_sky']=None
+    if not use_window:
+        Skylens_kwargs['f_sky']=z_bins_kwargs['f_sky']
     Skylens_kwargs['stack_indxs']=z_bins_kwargs['corr_indxs']
+    Skylens_kwargs['Win']=Win
+    print('fisher_init getting final skylens')
     kappa_class=Skylens(**Skylens_kwargs)
     return kappa_class,z_bins_kwargs
 

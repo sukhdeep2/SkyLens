@@ -4,6 +4,7 @@ from dask.distributed import Client,get_client,wait
 from distributed import LocalCluster
 from collections.abc import Mapping #to check for dicts
 from distributed.client import Future
+from dask import delayed
 import copy
 
 # print('pid: ',pid, sys.version)
@@ -23,6 +24,17 @@ def thread_count():
 
     return nlwp, thc
 
+
+def get_workers_njobs(scheduler_info,njobs_submit_per_worker):
+    if scheduler_info is not None:
+        workers=list(scheduler_info['workers'].keys())
+        nworkers=len(workers)
+    else:
+        workers=None
+        nworkers=10 #assume, to decide batch size of jobs to submit
+
+    njobs_submit=njobs_submit_per_worker*nworkers
+    return workers,nworkers,njobs_submit
 
 def update_dict(dict1,dict2):
     dict_comb=copy.deepcopy(dict1)
@@ -89,38 +101,66 @@ def chunks(lst, n):
 def pickle_deepcopy(obj):
        return pickle.loads(pickle.dumps(obj, -1))
 
-def scatter_dict(dic,scheduler_info=None,depth=2,broadcast=False,return_workers=False,workers=None): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
+def scatter_pickled(obj,scheduler_info=None,broadcast=False,return_workers=False,workers=None):
+    obj_p=pickle.dumps(obj,-1)
+    client=client_get(scheduler_info=scheduler_info)
+    obj_p=client.scatter(obj_p,broadcast=broadcast,workers=workers)
+    workers=list(client.who_has(obj_p).values())[0]
+    if return_workers:
+        return obj_p,workers
+    return obj_p
+
+def gather_pickled(obj_p,scheduler_info=None): 
+    client=client_get(scheduler_info=scheduler_info)
+    obj_p=client.gather(obj_p)
+    obj=pickle.loads(obj_p)
+    return obj
+
+def unpickle(obj):
+    return pickle.loads(obj)
+
+def scatter_dict(dic,scheduler_info=None,depth=2,broadcast=False,workers=None,
+                 pickle_obj=False,i_worker=0): #FIXME: This needs some improvement to ensure data stays on same worker. Also allow for broadcasting.
     """
         depth: Need to think this through. It appears dask can see one level of depth when scattering and gathering, but not more.
     """
+    
     if dic is None:
         print('scatter_dict got empty dictionary')
     else:
         client=client_get(scheduler_info=scheduler_info)
-#         dic['scatter_depth']=depth
+        all_workers=None
+        n_workers=None
+        i_worker=int(i_worker*1.)
+        if scheduler_info is not None:
+            all_workers=list(scheduler_info['workers'].keys())
+            n_workers=len(all_workers)
         for k in dic.keys():
-            if k=='scatter_depth':
-                continue
             if isinstance(dic[k],dict) and depth>0:
-                dic[k],workers=scatter_dict(dic[k],scheduler_info=scheduler_info,depth=depth-1,
-                                            broadcast=broadcast,return_workers=True,workers=workers)
-            elif isinstance(dic[k],Future): #don't want future of future.
-                print('scatter dict was passed a future, gathering and re-scattering', k)
-                dic[k]=client.gather(dic[k])
-                dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
-                workers=list(client.who_has(dic[k]).values())[0]
+                dic[k]=scatter_dict(dic[k],scheduler_info=scheduler_info,depth=depth-1,i_worker=i_worker,
+                                            broadcast=broadcast,workers=workers,pickle_obj=pickle_obj)
             else:
-                if isinstance(dic[k], np.ma.MaskedArray): #there is a numpy bug that creates problems inside dask scatter.
-                        #https://github.com/numpy/numpy/issues/10217
-#                     print('scatter-dict got masked array: ',k,type(dic[k]),' will be scattered with filled values ')
-                    dic[k]=client.scatter(dic[k].filled(),broadcast=broadcast,workers=workers)
+                if isinstance(dic[k],Future): #don't want future of future.
+                    print('scatter dict was passed a future, gathering and re-scattering', k)
+                    dic[k]=client.gather(dic[k])
                 else:
-#                     print('scatter_dict:',k,dic[k],workers)
-                    dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
-                workers=list(client.who_has(dic[k]).values())[0]
-#                 print('scatter-dict ',k,workers)
-    if return_workers:
-        return dic,workers
+                    if isinstance(dic[k], np.ma.MaskedArray): #there is a numpy bug that creates problems inside dask scatter.
+                            #https://github.com/numpy/numpy/issues/10217
+                        dic[k]=dic[k].filled()
+                        
+                if pickle_obj:
+                    dic[k]=pickle.dumps(dic[k],-1)
+#                 if workers is None and scheduler_info is not None:
+#                     if broadcast:
+#                         workers=all_workers
+#                     else:
+#                         workers=all_workers[i_worker%n_workers]
+                workers=None
+                dic[k]=client.scatter(dic[k],broadcast=broadcast,workers=workers)
+                if pickle_obj:
+                    dic_t=delayed(unpickle)(dic[k])
+                    dic[k]=client.compute(dic_t,workers=workers) #FIXME: need to broadcast
+            i_worker+=1
     return dic
 
 
@@ -179,6 +219,9 @@ def gather_dict(dic,scheduler_info=None):
                 except Exception as err:
                     print('gather dict got error at key: ', k)
                     raise(err)
+                if isinstance(dic[k],bytes):
+                    print('gather dict found byte object, will unpickle.')
+                    dic[k]=pickle.loads(dic[k])
                 dic[k]=gather_dict(dic[k],scheduler_info=scheduler_info)
     return dic
 
