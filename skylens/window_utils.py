@@ -28,11 +28,11 @@ from itertools import islice
 
 class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,l_cl=None,corrs=None,s1_s2s=None,use_window=None,#f_sky=None,cov_utils=None,
-                do_cov=False,SSV_cov=False,corr_indxs=None,z_bins=None,WT=None,xi_bin_utils=None,do_xi=False,
-                store_win=False,Win=None,wigner_files=None,step=None,keep_wig3j_in_memory=False,#xi_win_approx=False,
+                do_cov=None,SSV_cov=None,corr_indxs=None,z_bins=None,WT=None,xi_bin_utils=None,do_xi=None,
+                store_win=None,Win=None,wigner_files=None,step=None,keep_wig3j_in_memory=None,#xi_win_approx=False,
                 cov_indxs=None,client=None,scheduler_info=None,wigner_step=None,cov_iter_size=int(5e4),
-                kappa_b_xi=None,bin_theta_window=False,njobs_submit_per_worker=10,zarr_parallel_read=25,
-                kappa_class0=None,kappa_class_b=None,bin_window=True,do_pseudo_cl=True):
+                kappa_b_xi=None,bin_theta_window=None,njobs_submit_per_worker=10,zarr_parallel_read=25,
+                kappa_class0=None,kappa_class_b=None,bin_window=None,do_pseudo_cl=None):
 
         self.__dict__.update(locals()) #assign all input args to the class as properties
         if self.l_cl is None:

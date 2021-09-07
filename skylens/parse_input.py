@@ -7,6 +7,7 @@ from skylens.survey_utils import *
 import astropy.cosmology
 import importlib
 from importlib import import_module
+from skylens.default_values import Skylens_default_kwargs
 d2r=np.pi/180.
 
 
@@ -15,9 +16,11 @@ corr_gg=('galaxy','galaxy')
 corr_ll=('shear','shear')
 
 
-skylens_args_names=['yaml_inp_file','l','Ang_PS',
+skylens_args_names=['yaml_inp_file','python_inp_file','use_defaults',
+                'l','l_cl','Ang_PS',
                 'cov_utils','logger','tracer_utils',
                 'shear_zbins','kappa_zbins','galaxy_zbins',
+                'zkernel_func_names',
                 'pk_params','cosmo_params','WT_kwargs','WT',
                 'z_PS','nz_PS','log_z_PS',
                 'do_cov','SSV_cov','tidal_SSV_cov','do_sample_variance',
@@ -29,29 +32,35 @@ skylens_args_names=['yaml_inp_file','l','Ang_PS',
                 'use_binned_theta','xi_SN_analytical', #xi_win_approx
                 'corrs','corr_indxs','stack_indxs',
                 'wigner_files','name','clean_tracer_window',
-                'scheduler_info']
+                'scheduler_info','njobs_submit_per_worker']
 
-def parse_dict(dic={}):
+def parse_dict(dic={},use_defaults=True):
     """
     Get skylens input arguments from a dictionary.
     """
     skylens_kwargs={}
+    defaults_used={}
     for k in skylens_args_names:
         skylens_kwargs[k]=dic.get(k)
+        if dic.get(k) is None and use_defaults:
+            skylens_kwargs[k]=Skylens_default_kwargs.get(k)
+            defaults_used[k]=skylens_kwargs[k]
         if isinstance(skylens_kwargs[k],types.ModuleType):
             skylens_kwargs[k]=None #remove objects obtained from imports
+    if use_defaults:
+        print('skylens will use following default values: ',defaults_used)
     return skylens_kwargs
         
-def parse_python(file_name=None):
+def parse_python(file_name=None,use_defaults=True):
     """
     Run the given python file and then get the skylens
     arguments from it.
     """
     exec(open(file_name).read())
     dic=locals()
-    return parse_dict(dic=dic)
+    return parse_dict(dic=dic,use_defaults=use_defaults)
 
-def parse_yaml(file_name=''):
+def parse_yaml(file_name='',use_defaults=True):
     """
     Get skylens arguments from a yaml file.
     """
@@ -74,7 +83,7 @@ def parse_yaml(file_name=''):
     
 #     skylens_kwargs=cleanup(skylens_kwargs)
     
-    return parse_dict(dic=skylens_kwargs)
+    return parse_dict(dic=skylens_kwargs,use_defaults=use_defaults)
 
 # def cleanup(skylens_kwargs): #remove unwanted args ... not necesasry since we use parse_dict now
 #     keys=['Nl_bins','l_bin_min','l_bin_max','log_bins']

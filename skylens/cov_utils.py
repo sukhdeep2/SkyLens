@@ -421,10 +421,10 @@ class Covariance_utils():
                     elif k=='NN' and not self.xi_SN_analytical: 
                         G_ti=SN2[c1]*SN2[c2]
                     if k=='NN' and self.xi_SN_analytical:
-                        if not self.use_binned_theta:
-                                G_t_SNi=SN2[c1][-1]*SN2[c2][-1]/(WT_kwargs['theta']['s1_s2'])#Fixme: wont' work with binned_theta
-                        else:
-                                G_t_SNi=SN2[c1][-1]*SN2[c2][-1]/self.WT.theta_bins_center/self.WT.delta_theta_bins
+                        # if not self.use_binned_theta:
+                        #   G_t_SNi=SN2[c1][-1]*SN2[c2][-1]/WT_kwargs['wig_theta']/WT_kwargs['wig_grad_theta']#(WT_kwargs['theta']['s1_s2'])#Fixme: wont' work with binned_theta
+                        # else:
+                            G_t_SNi=SN2[c1][-1]*SN2[c2][-1]/WT_kwargs['wig_theta']/WT_kwargs['wig_grad_theta']#self.WT.theta_bins_center/self.WT.delta_theta_bins
 
                     if a_EB>0:
                         G_ti*=Bmode_mf #need to -1 for xi+/- cross covariance

@@ -34,7 +34,7 @@ from scipy import interpolate
 import copy
 import time
 from skylens.cosmology import *
-from skylens.default_values import cosmo_fid,pk_params_default
+# from skylens.default_values import cosmo_fid,pk_params_default
 
 # cosmo_h=cosmo.clone(H0=100)
                     #c=c.to(u.km/u.second)
@@ -97,22 +97,23 @@ class Power_Spectra(cosmology):
                  silence_camb=True,SSV_cov=False,scenario=None,
                  logger=None):
         self.__dict__.update(locals()) #assign all input args to the class as properties
-        if self.pk_params is None:
-            self.pk_params=pk_params_default
-            pk_params=pk_params_default
-            print('pk_params dict was none, intialized with default')
-        if self.cosmo_params is None:
-            self.cosmo_params=cosmo_fid
-            cosmo_params=cosmo_fid
-            print('cosmo_params dict was none, intialized with default')
+        # if self.pk_params is None:
+        #     self.pk_params=pk_params_default
+        #     pk_params=pk_params_default
+        #     print('pk_params dict was none, intialized with default')
+        # if self.cosmo_params is None:
+        #     self.cosmo_params=cosmo_fid
+        #     cosmo_params=cosmo_fid
+        #     print('cosmo_params dict was none, intialized with default')
         super().__init__(cosmo_params=cosmo_params)
         self.name='PS'
         pk_func=pk_params.get('pk_func')
         pk_func_default=self.camb_pk_too_many_z
         if camb is None:
             pk_func_default=self.class_pk
-        print('power spectra',pk_func)
+        
         self.pk_func=pk_func_default if pk_func is None else getattr(self,pk_func)
+        print('power spectra function: ',self.pk_func)
         if not pk_params is None:
             self.kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),
             pk_params['nk'])

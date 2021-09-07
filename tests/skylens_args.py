@@ -8,6 +8,8 @@ LC,scheduler_info=start_client(Scheduler_file=None,local_directory='../temp/',nc
                                 memory_limit='20gb',dashboard_address=8801)
 client=client_get(scheduler_info=scheduler_info)
 
+use_defaults=True
+
 """tracer pairs for correlations"""
 #tracers currently supported: galaxy,shear,kappa
 corr_ggl=('galaxy','shear')
@@ -135,8 +137,10 @@ tracer_zbin={ n_bins: 2, #total number of z_bins
 from astropy.cosmology import Planck15 as cosmo
 cosmo_params=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817,'Om':cosmo.Om0,
                 'Ase9':2.2,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
-                'OmR':cosmo.Ogamma0+cosmo.Onu0,'w':-1,'wa':0,'Tcmb':cosmo.Tcmb0})
+                'OmR':cosmo.Ogamma0+cosmo.Onu0,'w':-1,'wa':0,'Tcmb':cosmo.Tcmb0,'z_max':4,'use_astropy':True})
 cosmo_params['Oml']=1.-cosmo_params['Om']-cosmo_params['Omk']
+
+cosmo_params['astropy_cosmo']=cosmo
 pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'camb_pk_too_many_z','halofit_version':'takahashi'}
 
 z_PS=None #redshifts at which to compute power spectra.

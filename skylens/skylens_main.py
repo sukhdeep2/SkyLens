@@ -24,33 +24,34 @@ from skylens.parse_input import *
 d2r=np.pi/180.
 
 class Skylens():
-    def __init__(self,yaml_inp_file=None,python_inp_file=None,l=None,l_cl=None,Ang_PS=None,
-                cov_utils=None,logger=None,tracer_utils=None,#lensing_utils=None,galaxy_utils=None,
+    def __init__(self,use_defaults=True,yaml_inp_file=None,python_inp_file=None,
+                l=None,l_cl=None,l_bins=None,l_bins_center=None,bin_cl=None,use_binned_l=None,do_pseudo_cl=None,
+                stack_data=None,bin_xi=None,do_xi=None,theta_bins=None,theta_bins_center=None,
+                use_binned_theta=None,WT_kwargs=None,WT=None,
+                cl_func_names=None,zkernel_func_names=None,
                 shear_zbins=None,kappa_zbins=None,galaxy_zbins=None,
-                pk_params=None,cosmo_params=None,WT_kwargs=None,WT=None,
-                z_PS=None,nz_PS=100,log_z_PS=2,
-                do_cov=False,SSV_cov=False,tidal_SSV_cov=False,do_sample_variance=True,
-                Tri_cov=False,sparse_cov=False,
-                use_window=True,window_lmax=None,window_l=None,store_win=False,Win=None,
-                f_sky=None,wigner_step=None,cl_func_names={},zkernel_func_names={},
-                l_bins=None,l_bins_center=None,bin_cl=False,use_binned_l=False,do_pseudo_cl=True,
-                stack_data=False,bin_xi=False,do_xi=False,theta_bins=None,theta_bins_center=None,
-                use_binned_theta=False, xi_SN_analytical=False,
+                Ang_PS=None,cov_utils=None,logger=None,tracer_utils=None,
+                pk_params=None,cosmo_params=None,z_PS=None,nz_PS=None,log_z_PS=None,
+                do_cov=None,SSV_cov=None,tidal_SSV_cov=None,do_sample_variance=None,
+                Tri_cov=None,sparse_cov=None,xi_SN_analytical=None,
+                use_window=None,window_lmax=None,window_l=None,store_win=None,Win=None,
+                wigner_files=None,name='',clean_tracer_window=None,
+                f_sky=None,wigner_step=None,
                 corrs=None,corr_indxs=None,stack_indxs=None,
-                wigner_files=None,name='',clean_tracer_window=True,
-                scheduler_info=None,njobs_submit_per_worker=10):
+                scheduler_info=None,njobs_submit_per_worker=None):
 
-        self.__dict__.update(locals()) #assign all input args to the class as properties
+        # self.__dict__.update(locals()) #assign all input args to the class as properties
+        self.use_defaults=use_defaults
         if yaml_inp_file is not None:
-            yaml_inp_args=parse_yaml(file_name=yaml_inp_file)
-            self.__dict__.update(yaml_inp_args)
-            #print('skylens init, yaml args',yaml_inp_args.keys())
-            del yaml_inp_args
+            inp_args=parse_yaml(file_name=yaml_inp_file,use_defaults=use_defaults)
+            self.__dict__.update(inp_args)
         elif python_inp_file is not None:
-            yaml_inp_args=parse_python(file_name=python_inp_file)
-            self.__dict__.update(yaml_inp_args)
-            del yaml_inp_args
-            
+            inp_args=parse_python(file_name=python_inp_file,use_defaults=use_defaults)
+            self.__dict__.update(inp_args)
+        else:
+            inp_args=parse_dict(dic=locals(),use_defaults=use_defaults)
+            self.__dict__.update(inp_args)
+            # del inp_args
         self.l0=self.l*1.
         if self.l_cl is None:
             self.l_cl=self.l
@@ -58,7 +59,8 @@ class Skylens():
         
         self.set_WT()
         self.set_bin_params()
-        self.set_binned_measure(locals())
+        self.set_binned_measure(inp_args)#(locals())
+        del inp_args
 
         if logger is None:#not really being used right now
             self.logger=logging.getLogger() 
@@ -92,13 +94,12 @@ class Skylens():
                                            cl_bin_utils=self.cl_bin_utils,xi_bin_utils=self.xi_bin_utils,)
 
         if Ang_PS is None:
-            power_spectra_kwargs={'pk_params':self.pk_params,'cosmo_params':self.cosmo_params}
             self.Ang_PS=Angular_power_spectra(
                                 SSV_cov=self.SSV_cov,l=self.l_cl,logger=self.logger,
-                                power_spectra_kwargs=power_spectra_kwargs,
                                 cov_utils=self.cov_utils,window_l=self.window_l,
                                 z_PS=self.z_PS,nz_PS=self.nz_PS,log_z_PS=self.log_z_PS,
-                                z_PS_max=self.tracer_utils.z_PS_max)
+                                z_PS_max=self.tracer_utils.z_PS_max,
+                                pk_params=self.pk_params,cosmo_params=self.cosmo_params)
                         #FIXME: Need a dict for these args
         self.set_cl_funcs()
         
@@ -106,7 +107,7 @@ class Skylens():
 #             self.do_pseudo_cl=True #we will use pseudo_cl transform to get correlation functions.
 
         self.Win0=window_utils(window_l=self.window_l,l=self.l0,l_bins=self.l_bins,l_cl=self.l_cl0,
-                               corrs=self.corrs,s1_s2s=self.s1_s2s,SSV_cov=SSV_cov,
+                               corrs=self.corrs,s1_s2s=self.s1_s2s,SSV_cov=self.SSV_cov,
                                cov_indxs=self.cov_indxs,scheduler_info=self.scheduler_info,
                                use_window=self.use_window,do_cov=self.do_cov,#cov_utils=self.cov_utils,f_sky=self.f_sky,
                                corr_indxs=self.stack_indxs,z_bins=self.tracer_utils.z_win,
@@ -115,7 +116,7 @@ class Skylens():
                                kappa_class0=self.kappa0,kappa_class_b=self.kappa_b,kappa_b_xi=self.kappa_b_xi,
                                xi_bin_utils=self.xi_bin_utils,store_win=self.store_win,wigner_files=self.wigner_files,
                                bin_window=self.use_binned_l,bin_theta_window=self.use_binned_theta,
-                               njobs_submit_per_worker=njobs_submit_per_worker)
+                               njobs_submit_per_worker=self.njobs_submit_per_worker)
         self.Win0.get_Win()
         self.bin_window=self.Win0.bin_window
         win=self.Win0.Win
@@ -124,7 +125,7 @@ class Skylens():
         self.scatter_win()
         self.set_WT_binned()
         self.set_binned_measure(None,clean_up=True)
-        workers,self.nworkers,self.njobs_submit=get_workers_njobs(scheduler_info,njobs_submit_per_worker)
+        workers,self.nworkers,self.njobs_submit=get_workers_njobs(self.scheduler_info,self.njobs_submit_per_worker)
         
         if clean_tracer_window:
             self.tracer_utils.clean_z_window()

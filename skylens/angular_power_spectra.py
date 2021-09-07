@@ -14,9 +14,9 @@ from scipy.integrate import quad as scipy_int1d
 d2r=np.pi/180.
 
 class Angular_power_spectra():
-    def __init__(self,l=np.arange(2,2001),power_spectra_kwargs={},
-                z_PS=None,nz_PS=100,log_z_PS=2,z_PS_max=None,logger=None,window_l=None,
-                SSV_cov=False,tracer='kappa',cov_utils=None):
+    def __init__(self,l=None,cosmo_params=None,pk_params=None,
+                z_PS=None,nz_PS=None,log_z_PS=None,z_PS_max=None,logger=None,window_l=None,
+                SSV_cov=None,tracer=None,cov_utils=None):
         self.logger=logger
         self.l=l
         self.window_l=window_l
@@ -30,9 +30,9 @@ class Angular_power_spectra():
         self.cov_utils=cov_utils
         self.set_z_PS(z=z_PS,nz=nz_PS,log_z=log_z_PS,z_max=z_PS_max)
         self.dz=np.gradient(self.z)
-        self.PS=Power_Spectra(SSV_cov=SSV_cov,**power_spectra_kwargs)
+        self.PS=Power_Spectra(SSV_cov=SSV_cov,cosmo_params=cosmo_params,pk_params=pk_params)
 
-    def set_z_PS(self,z=None,nz=10,log_z=2,z_max=None):
+    def set_z_PS(self,z=None,nz=None,log_z=None,z_max=None):
         """
             Define redshifts where we compute the matter power spectra.
             These can be input when intializing the class or set here.
