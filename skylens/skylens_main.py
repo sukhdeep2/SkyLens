@@ -175,7 +175,19 @@ class Skylens():
             if not callable(self.cl_func[corr]):
                 raise Exception(self.cl_func[corr],'is not a callable function')
             self.cl_func[corr[::-1]]=self.cl_func[corr]
-            
+
+    def bin_SN(self,SN=None,bin_utils=None):
+        SN_b={}
+        for k in SN.keys():
+            if SN[k].shape[0]==1 or SN[k].shape[0]==len(self.l_bins)-1:
+                SN_b[k]=SN[k]
+                continue
+            print('Received unbinned shot noise with use_binned_l=',self.use_binned_l,', binning now.')
+            SN2=SN[k].transpose(1,2,0)
+            SN_b[k]=self.binning.bin_1d(xi=SN2,bin_utils=bin_utils)
+            SN_b[k]=SN_b[k].transpose(2,0,1)
+        return SN_b
+
     def set_binned_measure(self,local_args,clean_up=False):
         """
             If we only want to run computations at effective bin centers, then we 
@@ -192,6 +204,17 @@ class Skylens():
             return 
         if self.use_binned_l or self.use_binned_theta:
             inp_args={}
+            client=client_get(self.scheduler_info)
+            if self.do_cov and self.use_binned_l:
+                if self.galaxy_zbins is not None:
+                    self.galaxy_zbins['SN']=delayed(self.bin_SN)(SN=self.galaxy_zbins['SN'],bin_utils=self.cl_bin_utils)
+                    self.galaxy_zbins['SN']=client.compute(self.galaxy_zbins['SN']).result()
+                if self.shear_zbins is not None:
+                    self.shear_zbins['SN']=delayed(self.bin_SN)(SN=self.shear_zbins['SN'],bin_utils=self.cl_bin_utils)
+                    self.shear_zbins['SN']=client.compute(self.shear_zbins['SN']).result()
+                if self.kappa_zbins is not None:
+                    self.kappa_zbins['SN']=delayed(self.bin_SN)(SN=self.kappa_zbins['SN'],bin_utils=self.cl_bin_utils)
+                    self.kappa_zbins['SN']=client.compute(self.kappa_zbins['SN']).result()
             for k in local_args.keys():
                 if k=='self' or k=='client' or 'yaml' in k or 'python' in k or 'Win' in k:
                     continue
@@ -602,7 +625,7 @@ class Skylens():
 
                 cov[corr1+corr2]=client.compute(cov[corr1+corr2],workers=workers)
                 cov[corr2+corr1]=cov[corr1+corr2]
-                print('Done cov graph:', corr1,corr2,workers)
+                # print('Done cov graph:', corr1,corr2,workers)
                         
             cov['cov_indxs']=cov_indxs
 
@@ -864,7 +887,7 @@ class Skylens():
                                                             zkernel=zkernel,WT_kwargs=WT_kwargs)
 
                 cov_xi[corr1+corr2]=client.compute(cov_xi[corr1+corr2],workers=workers)
-
+        print('Done xi cov graph')
         out['stack']=delayed(self.stack_dat)({'cov':cov_xi,'xi':xi,'est':'xi'},corrs=corrs,
         stack_file_write=stack_file_write)
         out['xi']=xi

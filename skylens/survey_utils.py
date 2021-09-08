@@ -112,7 +112,7 @@ def set_window(shear_zbins={},f_sky=0.3,nside=256,mask_start_pix=0,window_cl_fac
             cl_map=hp.ma(np.ones(12*nside*nside))
 #             cl_i=1
         else:            
-            cl_i+=shear_zbins['SN']['galaxy'][:,i,i]
+            cl_i+=shear_zbins['SN']['galaxy'][-1,i,i]
             if window_cl_fact is not None:
                 cl_i*=window_cl_fact
             cl_map=hp.ma(1+hp.synfast(cl_i,nside=nside))

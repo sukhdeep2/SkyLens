@@ -281,11 +281,6 @@ class window_utils():
         m_s=np.concatenate([np.abs(i).flatten() for i in self.s1_s2s.values()])
         self.m_s=np.sort(np.unique(m_s))
 
-        if self.wigner_files is None:
-            self.wigner_files={}
-            self.wigner_files[0]= 'temp/dask_wig3j_l6500_w1100_0_reorder.zarr'
-            self.wigner_files[2]= 'temp/dask_wig3j_l6500_w1100_2_reorder.zarr'
-
         print('wigner_files:',self.wigner_files)
 
         if self.store_win:

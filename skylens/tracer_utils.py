@@ -57,7 +57,7 @@ class Tracer_utils():
             if self.zkernel_func.get(tracer) is None: 
                     self.zkernel_func[tracer]=globals()[self.zkernel_func_names[tracer]]
             if not callable(self.zkernel_func[tracer]):
-                raise Exception(self.cl_func[corr],'is not a callable function')
+                raise Exception(self.zkernel_func[tracer],'is not a callable function')
         
     def set_z_PS_max(self):
         """

@@ -24,7 +24,7 @@ import argparse
 
 if __name__=='__main__':
     
-    test_run=False
+    test_run=True
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--do_xi", "-do_xi",type=int, help="")
@@ -38,7 +38,7 @@ if __name__=='__main__':
     args = parser.parse_args()
 
     fix_cosmo=False if args.fix_cosmo is None else np.bool(args.fix_cosmo)
-    do_xi=True if args.do_xi is None else np.bool(args.do_xi)
+    do_xi=False if args.do_xi is None else np.bool(args.do_xi)
     eh_pk=True if args.eh_pk is None else np.bool(args.eh_pk)
     use_binned_l=True if args.bin_l is None else np.bool(args.bin_l)
 
@@ -86,15 +86,14 @@ if __name__=='__main__':
         print('mcmc will use eh_pk')
         skylens_args['pk_params']['pk_func']='eh_pk'
     skylens_args['scheduler_info']=scheduler_info
-    
     zs_bin=skylens_args['shear_zbins']
     file_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/imaster/'
     if do_xi:
-        fname_out='mcmc_dat_xi_{nz}_bl{bl}_bth{bth}_eh{eh_pk}.pkl'.format(nz=zs_bin['n_bins'],bl=np.int(use_binned_l),
-                                                                              bth=np.int(use_binned_theta),eh_pk=int(eh_pk))
+        fname_out='mcmc_dat_xi_{nz}_bl{bl}_bth{bth}_eh{eh_pk}.pkl'.format(nz=zs_bin['n_bins'],bl=int(use_binned_l),
+                                                                              bth=int(use_binned_theta),eh_pk=int(eh_pk))
     if do_pseudo_cl:
-        fname_out='mcmc_dat_pcl_{nz}_bl{bl}_bth{bth}_eh{eh_pk}.pkl'.format(nz=zs_bin['n_bins'],bl=np.int(use_binned_l),
-                                                                               bth=np.int(use_binned_theta),eh_pk=int(eh_pk))
+        fname_out='mcmc_dat_pcl_{nz}_bl{bl}_bth{bth}_eh{eh_pk}.pkl'.format(nz=zs_bin['n_bins'],bl=int(use_binned_l),
+                                                                               bth=int(use_binned_theta),eh_pk=int(eh_pk))
 
     get_cov=False
     try:
@@ -117,7 +116,7 @@ if __name__=='__main__':
         get_cov=True
         print('cl not found. Will compute',fname_cl,err)
 
-    
+    outp={}
     if get_cov:    
         kappa0=Skylens(**skylens_args)
         print('kappa0 size',get_size_pickle(kappa0))#,kappa0.Win)
@@ -128,27 +127,47 @@ if __name__=='__main__':
             xi0G=kappa0.xi_tomo()
             print('MCMC getting xi0 stack')
             xi_cov=client.compute(xi0G['stack']).result()
-            cov_inv=np.linalg.inv(xi_cov['cov'].todense())
+            cov_inv=np.linalg.inv(xi_cov['cov'])#.todense())
             data=xi_cov['xi']
         else:
             print('MCMC getting cl0G')
             cl0G=kappa0.cl_tomo()
             print('MCMC getting stack')
             cl_cov=client.compute(cl0G['stack']).result()
-            cov_inv=np.linalg.inv(cl_cov['cov'].todense())
+            cov_inv=np.linalg.inv(cl_cov['cov'])
             data=cl_cov['pcl_b']
 
+        kappa0.gather_data()
         Win=kappa0.Win
         outp['Win']=kappa0.Win
-        outp['zs_bin']=kappa0.tracer_utils.z_bins['shear']
+        outp['zs_bin']=skylens_args['shear_zbins']
         with open(fname_cl,'wb') as of:
             pickle.dump(outp,of)
         del kappa0
 
+    def check_finite(dat=None,prefix=None):
+        if prefix is None:
+            prefix='Check_finite: '
+        all_finite=True
+        if isinstance(dat,dict):
+            for k in dat.keys():
+                all_finite=np.logical_and(all_finite,check_finite(dat=dat[k],prefix=prefix+' dict key '+str(k)))
+        else:
+            try:
+                x=np.isfinite(dat)
+                if not np.all(x):
+                    print(prefix,' not finite',data[~x],np.where(x))
+                    all_finite=False
+            except Exception as err:
+                print('Check_finite error',err,dat)
+        return all_finite
+
+
     print('Got data and cov')
-    if not np.all(np.isfinite(data)):
-        x=np.isfinite(data)
-        print('data problem',data[~x],np.where(x))
+    all_finite=check_finite(dat=data,prefix='data problem ')
+    if not all_finite:
+        check_finite(dat=outp['zs_bin'],prefix='data problem, zbins: ')
+        check_finite(dat=outp['Win'],prefix='data problem, Win: ')
 
     Win['cov']=None
     skylens_args['do_cov']=False
@@ -166,8 +185,8 @@ if __name__=='__main__':
     data=client.scatter(data,broadcast=True)
     cov_inv=client.scatter(cov_inv,broadcast=True)
 
-    cosmo_fid=kappa0.Ang_PS.PS.cosmo_params
-
+    cosmo_fid=copy.deepcopy(kappa0.Ang_PS.PS.cosmo_params)
+    cosmo_fid.pop('astropy_cosmo')
     params_order=['b1_{i}'.format(i=i) for i in np.arange(kappa0.tracer_utils.z_bins['galaxy']['n_bins'])]#,'Ase9','Om']
 
     priors_max=np.ones(len(params_order))*2
@@ -214,7 +233,7 @@ if __name__=='__main__':
     def assign_zparams(zbins={},p_name='',p_value=None):
         pp=p_name.split('_')
         p_n=pp[0]
-        bin_indx=np.int(pp[1])
+        bin_indx=int(pp[1])
         zbins[bin_indx][p_n]=p_value
         return zbins
 
@@ -251,6 +270,10 @@ if __name__=='__main__':
         loss=data-model
         chisq=-0.5*loss@cov_inv@loss
         chisq+=log_prior
+        if np.isnan(chisq):
+            print('chisq problem: ',chisq,model)
+            check_finite(dat=z_bins,prefix='chisq problem: zbins: ')
+            chisq=-np.inf
         return chisq #model
     
     def get_PS(kappa0,args_p):  
@@ -286,7 +309,7 @@ if __name__=='__main__':
             else:
                 pp=p.split('_')
                 p_n=pp[0]
-                bin_indx=np.int(pp[1])
+                bin_indx=int(pp[1])
     #             print(bin_indx,p_n,zs_bin1[bin_indx].keys())
                 p0[i]=zs_bin[bin_indx][p_n]
                 p0f=.2
@@ -349,25 +372,25 @@ if __name__=='__main__':
     outp=sample_params()
     print('calcs done')
 
-    outp['l0']=l0
-    outp['l_bins']=l_bins
-    outp['do_xi']=do_xi
-    outp['do_pseudo_cl']=do_pseudo_cl
-    outp['use_binned_l']=use_binned_l
-    outp['use_binned_theta']=use_binned_theta
+    outp['skylens_args']=skylens_args
+    # outp['l_bins']=
+    # outp['do_xi']=do_xi
+    # outp['do_pseudo_cl']=do_pseudo_cl
+    # outp['use_binned_l']=use_binned_l
+    # outp['use_binned_theta']=use_binned_theta
+    # outp['zbins']=zs_bin1
     outp['data']=data
-    outp['zbins']=zs_bin1
     outp['cov_inv']=cov_inv
     outp['params_order']=params_order
 
     file_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/imaster/'
     zs_bin1=client.gather(zs_bin1)
     if do_xi:
-        fname_out='xi_{nz}_bl{bl}_bth{bth}_nw{nw}_ns{ns}_camb{fc}.pkl'.format(nz=zs_bin1['n_bins'],bl=np.int(use_binned_l),
-                                                                              bth=np.int(use_binned_theta),ns=nsteps,nw=nwalkers,fc=int(fix_cosmo))
+        fname_out='xi_{nz}_bl{bl}_bth{bth}_nw{nw}_ns{ns}_camb{fc}.pkl'.format(nz=zs_bin1['n_bins'],bl=int(use_binned_l),
+                                                                              bth=int(use_binned_theta),ns=nsteps,nw=nwalkers,fc=int(fix_cosmo))
     if do_pseudo_cl:
-        fname_out='pcl_{nz}_bl{bl}_bth{bth}_nw{nw}_ns{ns}_camb{fc}.pkl'.format(nz=zs_bin1['n_bins'],bl=np.int(use_binned_l),
-                                                                               bth=np.int(use_binned_theta),ns=nsteps,nw=nwalkers,fc=int(fix_cosmo))
+        fname_out='pcl_{nz}_bl{bl}_bth{bth}_nw{nw}_ns{ns}_camb{fc}.pkl'.format(nz=zs_bin1['n_bins'],bl=int(use_binned_l),
+                                                                               bth=int(use_binned_theta),ns=nsteps,nw=nwalkers,fc=int(fix_cosmo))
 
     fname_out=file_home+fname_out
     with open(fname_out, 'wb') as f:
