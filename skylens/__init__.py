@@ -19,6 +19,7 @@ from skylens.utils import *
 from astropy.constants import c,G
 from astropy import units as u
 import numpy as np
+import jax.numpy as jnp
 from scipy.interpolate import interp1d
 import warnings,logging
 import copy

@@ -7,7 +7,8 @@ from hankel_transform import *
 from binning import *
 from astropy.constants import c,G
 from astropy import units as u
-import numpy as np
+# import numpy as np
+import jax.numpy as np
 from scipy.interpolate import interp1d
 from scipy.integrate import quad as scipy_int1d
 

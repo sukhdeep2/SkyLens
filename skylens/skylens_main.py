@@ -1,6 +1,8 @@
 import os,sys
 sys.path.append('/verafs/scratch/phy200040p/sukhdeep/project/skylens/skylens/')
 import dask
+# import numpy as np
+import jax.numpy as jnp
 import numpy as np
 import warnings,logging
 import copy
@@ -21,7 +23,7 @@ from skylens.window_utils import *
 from skylens.utils import *
 from skylens.parse_input import *
 
-d2r=np.pi/180.
+d2r=jnp.pi/180.
 
 class Skylens():
     def __init__(self,use_defaults=True,yaml_inp_file=None,python_inp_file=None,
@@ -76,7 +78,7 @@ class Skylens():
         self.set_corr_indxs(corr_indxs=self.corr_indxs,stack_indxs=self.stack_indxs)
 
         self.window_lmax=30 if window_lmax is None else window_lmax
-        self.window_l=np.arange(self.window_lmax+1) if self.window_l is None else self.window_l
+        self.window_l=jnp.arange(self.window_lmax+1) if self.window_l is None else self.window_l
 
         self.set_WT_spins()
 
@@ -221,7 +223,7 @@ class Skylens():
                 inp_args[k]=copy.deepcopy(self.__dict__[k])#when passing yaml, most of input_args are updated. use updated ones
             #print('binned_meansure',inp_args.keys())
             if self.l_bins_center is None:
-                self.l_bins_center=np.int32((self.l_bins[1:]+self.l_bins[:-1])*.5)
+                self.l_bins_center=jnp.int32((self.l_bins[1:]+self.l_bins[:-1])*.5)
             inp_args['use_binned_l']=False
             inp_args['use_binned_theta']=False
             inp_args['use_window']=False
@@ -289,8 +291,8 @@ class Skylens():
             else:
                 nt=len(self.tracer_utils.tracers)
                 self.corrs=[(self.tracer_utils.tracers[i],self.tracer_utils.tracers[j])
-                            for i in np.arange(nt)
-                            for j in np.arange(i,nt)
+                            for i in jnp.arange(nt)
+                            for j in jnp.arange(i,nt)
                             ]
                 
         if not self.do_cov and self.corr_indxs is None:
@@ -307,10 +309,10 @@ class Skylens():
             
         for tracer in self.tracer_utils.tracers:
             self.corr_indxs[(tracer,tracer)]=[j for j in itertools.combinations_with_replacement(
-                                                    np.arange(self.tracer_utils.n_bins[tracer]),2)]
+                                                    jnp.arange(self.tracer_utils.n_bins[tracer]),2)]
 
 #             if tracer=='galaxy' and not self.do_cov:
-#                 self.corr_indxs[(tracer,tracer)]=[(i,i) for i in np.arange(self.tracer_utils.n_bins[tracer])] 
+#                 self.corr_indxs[(tracer,tracer)]=[(i,i) for i in jnp.arange(self.tracer_utils.n_bins[tracer])] 
                 #by default, assume no cross correlations between galaxy bins
 
         for tracer1 in self.tracer_utils.tracers:#zbin-indexs for cross correlations
@@ -319,9 +321,9 @@ class Skylens():
                     continue
                 if self.corr_indxs.get((tracer1,tracer2)) is not None:
                     continue
-                self.corr_indxs[(tracer1,tracer2)]=[ k for l in [[(i,j) for i in np.arange(
+                self.corr_indxs[(tracer1,tracer2)]=[ k for l in [[(i,j) for i in jnp.arange(
                                         self.tracer_utils.n_bins[tracer1])] 
-                                        for j in np.arange(self.tracer_utils.n_bins[tracer2])] for k in l]
+                                        for j in jnp.arange(self.tracer_utils.n_bins[tracer2])] for k in l]
         
         if self.stack_indxs is None:# or not bool(self.stack_indxs):
             self.stack_indxs=self.corr_indxs
@@ -329,16 +331,16 @@ class Skylens():
         if self.do_cov:
             stack_corr_indxs=self.stack_indxs
             corrs=self.corrs
-            corrs_iter=[(corrs[i],corrs[j]) for i in np.arange(len(corrs)) for j in np.arange(i,len(corrs))]
+            corrs_iter=[(corrs[i],corrs[j]) for i in jnp.arange(len(corrs)) for j in jnp.arange(i,len(corrs))]
             for (corr1,corr2) in corrs_iter:
                 corr1_indxs=stack_corr_indxs[(corr1[0],corr1[1])]
                 corr2_indxs=stack_corr_indxs[(corr2[0],corr2[1])]
                 if corr1==corr2:
-                    cov_indxs_iter=[ k for l in [[corr1_indxs[i]+corr2_indxs[j] for j in np.arange(i,
-                                     len(corr1_indxs))] for i in np.arange(len(corr2_indxs))] for k in l]
+                    cov_indxs_iter=[ k for l in [[corr1_indxs[i]+corr2_indxs[j] for j in jnp.arange(i,
+                                     len(corr1_indxs))] for i in jnp.arange(len(corr2_indxs))] for k in l]
                 else:
-                    cov_indxs_iter=[ k for l in [[corr1_indxs[i]+corr2_indxs[j] for i in np.arange(
-                                    len(corr1_indxs))] for j in np.arange(len(corr2_indxs))] for k in l]
+                    cov_indxs_iter=[ k for l in [[corr1_indxs[i]+corr2_indxs[j] for i in jnp.arange(
+                                    len(corr1_indxs))] for j in jnp.arange(len(corr2_indxs))] for k in l]
                 self.cov_indxs[corr1+corr2]=cov_indxs_iter
 
     def set_WT_spins(self):
@@ -381,17 +383,17 @@ class Skylens():
         if self.do_xi and (self.use_binned_l or self.use_binned_theta):
             for corr in self.corrs:
                 s1_s2s=self.s1_s2s[corr]
-                self.WT_binned[corr]={s1_s2s[im]:{} for im in np.arange(len(s1_s2s))}
-                self.inv_WT_binned[corr]={s1_s2s[im]:{} for im in np.arange(len(s1_s2s))}
-                self.WT_binned_cov[corr]={s1_s2s[im]:{} for im in np.arange(len(s1_s2s))}
+                self.WT_binned[corr]={s1_s2s[im]:{} for im in jnp.arange(len(s1_s2s))}
+                self.inv_WT_binned[corr]={s1_s2s[im]:{} for im in jnp.arange(len(s1_s2s))}
+                self.WT_binned_cov[corr]={s1_s2s[im]:{} for im in jnp.arange(len(s1_s2s))}
                 for indxs in self.corr_indxs[corr]:    
                     cl0=client.compute(self.c_ell0[corr][indxs]).result()
                     cl_b=client.compute(self.c_ell_b[corr][indxs]).result()
                     wt0=cl0
                     wt_b=1./cl_b
-                    if np.all(cl_b==0):
+                    if jnp.all(cl_b==0):
                         wt_b[:]=0
-                    for im in np.arange(len(s1_s2s)):
+                    for im in jnp.arange(len(s1_s2s)):
                         s1_s2=s1_s2s[im]
                         win_xi=None
                         if self.use_window:# and self.xi_win_approx:
@@ -411,7 +413,7 @@ class Skylens():
                             xi_b=client.compute(self.xi_b[corr][s1_s2][indxs]).result()
                             wt0_inv=xi0
                             wt_b_inv=1./xi_b
-                            if np.all(xi_b==0):
+                            if jnp.all(xi_b==0):
                                 wt_b_inv[:]=0
                             self.inv_WT_binned[corr][s1_s2][indxs]=delayed(self.binning.bin_2d_inv_WT)(
                                                             wig_mat=self.WT.wig_d[s1_s2],
@@ -475,8 +477,8 @@ class Skylens():
         f=Ang_PS.cl_f
         sc=zbin1['kernel_int']*zbin1['kernel_int']
         dchi=clz['dchi']
-        cl=np.dot(cls.T*sc,dchi)
-                # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
+        cl=jnp.dot(cls.T*sc,dchi)
+                # cl*=2./jnp.pi #FIXME: needed to match camb... but not CCL
         return cl
 
     def bin_cl_func(self,cl=None,cov=None):#moved out of class. This is no longer used
@@ -526,8 +528,8 @@ class Skylens():
         
         corrs2=corrs.copy()
         if self.do_cov:
-            for i in np.arange(len(tracers)):
-                for j in np.arange(i,len(tracers)):
+            for i in jnp.arange(len(tracers)):
+                for j in jnp.arange(i,len(tracers)):
                     if (tracers[i],tracers[j]) not in corrs2 and (tracers[j],tracers[i]) in corrs2:
                         corrs2+=[(tracers[i],tracers[j])]
                         print('added extra corr calc for covariance',corrs2)
@@ -595,7 +597,7 @@ class Skylens():
         if self.do_cov:# and (self.do_pseudo_cl or not self.do_xi):
             Win_cov=None
             Win_cl=None
-            corrs_iter=[(corrs[i],corrs[j]) for i in np.arange(len(corrs)) for j in np.arange(i,len(corrs))]
+            corrs_iter=[(corrs[i],corrs[j]) for i in jnp.arange(len(corrs)) for j in jnp.arange(i,len(corrs))]
             cov_indxs={}
             
             CU=client.scatter(self.cov_utils,broadcast=True)
@@ -681,7 +683,7 @@ class Skylens():
         if stack_corr_indxs is None:
             stack_corr_indxs=self.stack_indxs
 
-        tracers=np.unique([j for i in corrs for j in i])
+        tracers=jnp.unique([j for i in corrs for j in i])
         
         Ang_PS.angular_power_z(cosmo_h=cosmo_h,pk_params=pk_params,pk_lock=pk_lock,
                                     cosmo_params=cosmo_params)
@@ -740,7 +742,7 @@ class Skylens():
                     pcl=self.cl_func[corr](zbin1=zkernel[corr[0]][i],zbin2=zkernel[corr[1]][j],
                                                              corr=corr,cosmo_params=cosmo_params,Ang_PS=Ang_PS)
                     pcl_b+=[bin_cl_func(cl=pcl,use_binned_l=self.use_binned_l,bin_cl=self.bin_cl,cl_bin_utils=self.cl_bin_utils)]
-        pcl_b=np.concatenate(pcl_b).ravel()
+        pcl_b=jnp.concatenate(pcl_b).ravel()
         return pcl_b
 
     def get_xi(self,cls={},s1_s2=[],corr=None,indxs=None,Win=None):
@@ -826,7 +828,7 @@ class Skylens():
             s1_s2s=self.s1_s2s[corr]
             xi[corr]={}
             xi[corr[::-1]]={}
-            for im in np.arange(len(s1_s2s)):
+            for im in jnp.arange(len(s1_s2s)):
                 s1_s2=s1_s2s[im]
                 xi[corr][s1_s2]={}
                 xi[corr[::-1]][s1_s2]={}
@@ -851,7 +853,7 @@ class Skylens():
 
         print('Done xi graph')
         if self.do_cov:
-            corrs_iter=[(corrs[i],corrs[j]) for i in np.arange(len(corrs)) for j in np.arange(i,len(corrs))]
+            corrs_iter=[(corrs[i],corrs[j]) for i in jnp.arange(len(corrs)) for j in jnp.arange(i,len(corrs))]
             cov_indxs={}
             zkernel=cls_tomo_nu['zkernel']
             CU=client.scatter(self.cov_utils,broadcast=True)
@@ -927,7 +929,7 @@ class Skylens():
             wig_grad_l=WT.grad_l
         for corr in corrs:
             s1_s2s=self.s1_s2s[corr]
-            for im in np.arange(len(s1_s2s)):
+            for im in jnp.arange(len(s1_s2s)):
                 s1_s2=s1_s2s[im]
                 if not self.use_binned_theta:
                     wig_d=WT.wig_d[s1_s2]
@@ -942,7 +944,7 @@ class Skylens():
                              xi_bin_utils=xi_bin_utils[s1_s2],bin_xi=self.bin_xi,use_binned_theta=self.use_binned_theta,Win=win)
 #                     xi_bi=bin_xi_func(xi=xi,xi_bin_utils=self.xi_bin_utils[s1_s2],bin_xi=self.bin_xi,use_binned_theta=self.use_binned_theta,Win=Win)
                     xi_b+=[xi]#[xi_bi]
-        xi_b=np.concatenate(xi_b).ravel()
+        xi_b=jnp.concatenate(xi_b).ravel()
         return xi_b
 
     def stack_dat(self,dat,corrs,corr_indxs=None,stack_file_write=None):
@@ -978,8 +980,8 @@ class Skylens():
             n_s1_s2=1
             if est=='xi':
                 n_s1_s2=len(self.s1_s2s[corr])
-            n_bins+=len(corr_indxs[corr])*n_s1_s2 #np.int64(nbins*(nbins-1.)/2.+nbins)
-        D_final=np.zeros(n_bins*len_bins)
+            n_bins+=len(corr_indxs[corr])*n_s1_s2 #jnp.int64(nbins*(nbins-1.)/2.+nbins)
+        D_final=jnp.zeros(n_bins*len_bins)
         i=0
         for corr in corrs:
             n_s1_s2=1
@@ -987,15 +989,16 @@ class Skylens():
                 s1_s2=self.s1_s2s[corr]
                 n_s1_s2=len(s1_s2)
 
-            for im in np.arange(n_s1_s2):
+            for im in jnp.arange(n_s1_s2):
                 if est=='xi':
                     dat_c=dat[est][corr][s1_s2[im]]
                 else:
                     dat_c=dat[est][corr]#[corr] #cl_b gets keys twice. dask won't allow standard dict merge.. should be fixed
                     
                 for indx in corr_indxs[corr]:
-                    D_final[i*len_bins:(i+1)*len_bins]=dat_c[indx]
-#                     if not np.all(np.isfinite(dat_c[indx])):
+                    D_final=D_final.at[i*len_bins:(i+1)*len_bins].set(dat_c[indx])
+                    # D_final[i*len_bins:(i+1)*len_bins]=dat_c[indx]
+#                     if not jnp.all(jnp.isfinite(dat_c[indx])):
 #                         print('stack data not finite at',corr,indx,dat_c[indx])
                     i+=1
         print('stack got 2pt')
@@ -1005,18 +1008,18 @@ class Skylens():
             return out
 
         
-        cov_final=np.zeros((len(D_final),len(D_final)))#-999.#np.int(nD2*(nD2+1)/2)
+        cov_final=jnp.zeros((len(D_final),len(D_final)))#-999.#jnp.int(nD2*(nD2+1)/2)
 #         if self.sparse_cov:
 #             cov_final=sparse.DOK(cov_final)
 
         indx0_c1=0
-        for ic1 in np.arange(len(corrs)):
+        for ic1 in jnp.arange(len(corrs)):
             corr1=corrs[ic1]
             indxs_1=corr_indxs[corr1]
             n_indx1=len(indxs_1)
 
             indx0_c2=indx0_c1
-            for ic2 in np.arange(ic1,len(corrs)):
+            for ic2 in jnp.arange(ic1,len(corrs)):
                 corr2=corrs[ic2]
                 indxs_2=corr_indxs[corr2]
                 n_indx2=len(indxs_2)
@@ -1030,22 +1033,22 @@ class Skylens():
                     n_s1_s2_1=len(s1_s2_1)
                     n_s1_s2_2=len(s1_s2_2)
 
-                for im1 in np.arange(n_s1_s2_1):
+                for im1 in jnp.arange(n_s1_s2_1):
                     start_m2=0
                     if corr1==corr2:
                         start_m2=im1
-                    for im2 in np.arange(start_m2,n_s1_s2_2):
+                    for im2 in jnp.arange(start_m2,n_s1_s2_2):
                         indx0_m1=(im1)*n_indx1*len_bins
                         indx0_m2=(im2)*n_indx2*len_bins
-                        for i1 in np.arange(n_indx1):
+                        for i1 in jnp.arange(n_indx1):
                             start2=0
                             if corr1==corr2:
                                 start2=i1
-                            for i2 in np.arange(start2,n_indx2):
+                            for i2 in jnp.arange(start2,n_indx2):
                                 indx0_1=(i1)*len_bins
                                 indx0_2=(i2)*len_bins
                                 indx=indxs_1[i1]+indxs_2[i2]
-#                                 i_here=np.where(self.cov_indxs[corr]==indx)[0]
+#                                 i_here=jnp.where(self.cov_indxs[corr]==indx)[0]
                                 #i_here=dat['cov']['cov_indxs'][corr].index(indx)
                                 i_here=indx
                                 if est=='xi':
@@ -1061,13 +1064,13 @@ class Skylens():
                                 i=indx0_c1+indx0_1+indx0_m1
                                 j=indx0_c2+indx0_2+indx0_m2
 
-                                cov_final[i:i+len_bins,j:j+len_bins]=cov_here
-                                cov_final[j:j+len_bins,i:i+len_bins]=cov_here.T
+                                cov_final=cov_final.at[i:i+len_bins,j:j+len_bins].set(cov_here)
+                                cov_final=cov_final.at[j:j+len_bins,i:i+len_bins].set(cov_here.T)
                                 if im1!=im2 and corr1==corr2:
                                     i=indx0_c1+indx0_1+indx0_m2
                                     j=indx0_c2+indx0_2+indx0_m1
-                                    cov_final[i:i+len_bins,j:j+len_bins]=cov_here.T
-                                    cov_final[j:j+len_bins,i:i+len_bins]=cov_here
+                                    cov_final=cov_final.at[i:i+len_bins,j:j+len_bins].set(cov_here.T)
+                                    cov_final=cov_final.at[j:j+len_bins,i:i+len_bins].set(cov_here)
                                     #gc.collect()
 
                 indx0_c2+=n_indx2*len_bins*n_s1_s2_2
@@ -1079,8 +1082,8 @@ class Skylens():
         if stack_file_write is not None:
             print('stack writing to',stack_file_write)
             with open(stack_file_write,'wb') as of:
-                np.savez(of,**out)
-#                 np.savez(of,est=D_final,cov=cov_final)#np.array(cov_final.todense()))
+                jnp.savez(of,**out)
+#                 jnp.savez(of,est=D_final,cov=cov_final)#jnp.array(cov_final.todense()))
 #                 pickle.dump(out,of)
             print('stack write done')
             out=stack_file_write
@@ -1096,9 +1099,9 @@ def calc_cl(zbin1={}, zbin2={},corr=('shear','shear'),cosmo_params=None,Ang_PS=N
     f=clz['cl_f']
     sc=zbin1['kernel_int']*zbin2['kernel_int']
     dchi=clz['dchi']
-    cl=np.dot(cls.T*sc,dchi)
+    cl=jnp.dot(cls.T*sc,dchi)
 #     cl/=f**2 #accounted for in kernel
-            # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
+            # cl*=2./jnp.pi #FIXME: needed to match camb... but not CCL
     return cl
 
 def calc_pseudo_cl(cl,Win):
@@ -1114,9 +1117,9 @@ def calc_cl_pseudo_cl(zbin1={}, zbin2={},corr=('shear','shear'),cosmo_params=Non
     f=clz['cl_f']
     sc=zbin1['kernel_int']*zbin2['kernel_int']
     dchi=clz['dchi']
-    cl=np.dot(cls.T*sc,dchi)
+    cl=jnp.dot(cls.T*sc,dchi)
     pcl=cl@Win['M']
-            # cl*=2./np.pi #FIXME: needed to match camb... but not CCL
+            # cl*=2./jnp.pi #FIXME: needed to match camb... but not CCL
     return pcl
 
 def bin_cl_func(cl,use_binned_l=False,bin_cl=False,cl_bin_utils=None):

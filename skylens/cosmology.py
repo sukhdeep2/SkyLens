@@ -4,7 +4,8 @@
 # 3. implement sigma8 calculation, useful for EH pk normalization.
 # 4. change c to speed_of_light everywhere.
 
-import numpy as np
+# import numpy as np
+import jax.numpy as jnp
 #from galsim.integ import int1d
 from scipy.integrate import quad as scipy_int1d
 import warnings
@@ -48,8 +49,8 @@ class cosmology():
 
     def set_z(self,z_max=None):
         self._z_max=z_max
-        self._z=np.arange(start=0,stop=z_max+self.dz*2,step=self.dz)
-        self._dz=np.gradient(self._z)
+        self._z=jnp.arange(start=0,stop=z_max+self.dz*2,step=self.dz)
+        self._dz=jnp.gradient(self._z)
         print('cosmology interpolation range',self._z.min(),self._z.max())
         if hasattr(self,'_dc'):
             del self._dc
@@ -63,7 +64,7 @@ class cosmology():
         self.H0=self.h*100.0
         self.Dh=self.c/self.H0
         if self.Omk!=0:
-            self.Dh=self.c*(np.sqrt(np.absolute(self.Omk))) #a0h0=1./sqrt(Omega_k)
+            self.Dh=self.c*(jnp.sqrt(jnp.absolute(self.Omk))) #a0h0=1./sqrt(Omega_k)
         if self.h_inv:
             self.Dh=self.c/100.
 #         self.rho=self.Rho_crit()*self.Om
@@ -108,11 +109,11 @@ class cosmology():
 
 
     def E_z(self,z):
-        z=np.array(z)
+        z=jnp.array(z)
         z1=1+z
         if self.wa!=0:
             return self.E_z_wa(z)
-        return np.sqrt(self.Om*(z1)**3+self.Omk*(z1)**2+self.OmR*(z1)**4+self.OmL*(z1)**(3*(1+self.w)))
+        return jnp.sqrt(self.Om*(z1)**3+self.Omk*(z1)**2+self.OmR*(z1)**4+self.OmL*(z1)**(3*(1+self.w)))
 
     def E_z_inv(self,z,Ez_func=None): #1/E_z
         if not Ez_func:
@@ -132,13 +133,13 @@ class cosmology():
             return (1+self.w_z(z2))/(1+z2) #huterer & turner 2001
         if hasattr(z, "__len__"):
             j=0
-            ez=np.zeros_like(z,dtype='float64')
+            ez=jnp.zeros_like(z,dtype='float64')
             for i in z:
                 try:
                     DE_int=int1d(DE_int_funct,0,i)
                 except:
                     DE_int=scipy_int1d(DE_int_funct,0,i,epsrel=self.rtol,epsabs=tol)[0]
-                ez[j]= np.sqrt(self.Om*(1+i)**3+self.Omk*(1+i)**2+self.OmR*(1+i)**4 + self.OmL*np.exp(DE_int))
+                ez[j]= jnp.sqrt(self.Om*(1+i)**3+self.Omk*(1+i)**2+self.OmR*(1+i)**4 + self.OmL*jnp.exp(DE_int))
                 #print i,DE_int,self.Omega_m*(1+i)**3+self.Omega_k*(1+i)**2+self.Omega_R*(1+i)**4,ez[j]
                 j+=1
         else:
@@ -147,14 +148,14 @@ class cosmology():
             except:
                 DE_int=scipy_int1d(DE_int_funct,0,z,epsrel=self.rtol,epsabs=tol)[0]
 
-            ez= np.sqrt(self.Om*(1+z)**3+ self.Omk*(1+z)**2+ self.OmR*(1+z)**4
+            ez= jnp.sqrt(self.Om*(1+z)**3+ self.Omk*(1+z)**2+ self.OmR*(1+z)**4
                         +self.OmL*DE_int)
         return ez
 
     def comoving_distance_int(self,z=[0]): #line of sight comoving distance
         if hasattr(z, "__len__"):
             j=0
-            ez=np.zeros_like(z)
+            ez=jnp.zeros_like(z)
             for i in z:
                 try:
                     ezi=int1d(self.E_z_inv,0,i)
@@ -178,9 +179,9 @@ class cosmology():
 #             self.set_z(max(z))
         if not hasattr(self,'_dc'):
             ez_inv=self.E_z_inv(self._z)*self._dz
-            self._dc=np.cumsum(ez_inv)-ez_inv
+            self._dc=jnp.cumsum(ez_inv)-ez_inv
             self._dc*=self.Dh
-        dc=np.interp(z,xp=self._z,fp=self._dc,left=0,right=np.nan)
+        dc=jnp.interp(z,xp=self._z,fp=self._dc,left=0,right=jnp.nan)
         return dc
 
     def astropy_comoving_distance(self,z=[0]):
@@ -192,11 +193,11 @@ class cosmology():
         Dc=self.comoving_distance(z)
         if self.Omk==0:
             return Dc
-        curvature_radius=self.Dh/np.sqrt(np.absolute(self.Omega_k))
+        curvature_radius=self.Dh/jnp.sqrt(jnp.absolute(self.Omega_k))
         if self.Omk>0:
-            return curvature_radius*np.sinh(Dc/curvature_radius)
+            return curvature_radius*jnp.sinh(Dc/curvature_radius)
         if self.Omk<0:
-            return curvature_radius*np.sin(Dc/curvature_radius)
+            return curvature_radius*jnp.sin(Dc/curvature_radius)
 
     def comoving_transverse_distance_z1z2(self,z1=[0],z2=[]): #transverse comoving distance between 2 redshift
         Dc1=self.comoving_distance(z1)
@@ -204,12 +205,12 @@ class cosmology():
         Dc=Dc2-Dc1
         if self.Omega_k==0:
             return Dc
-        curvature_radius=self.Dh/np.sqrt(np.absolute(self.Omega_k))
+        curvature_radius=self.Dh/jnp.sqrt(jnp.absolute(self.Omega_k))
         if self.Omega_k>0:
-            return curvature_radius*np.sinh(Dc/curvature_radius)
+            return curvature_radius*jnp.sinh(Dc/curvature_radius)
         if self.Omega_k<0:
             #warnings.warn('This formula for DM12 is apparently not valid for Omega_k<0')#http://arxiv.org/pdf/astro-ph/9603028v3.pdf... this function doesnot work if E(z)=0 between z1,z2
-            return curvature_radius*np.sin(Dc/curvature_radius)
+            return curvature_radius*jnp.sin(Dc/curvature_radius)
 
     def angular_diameter_distance(self,z=[0]):#angular diameter distance
         Dm=self.comoving_transverse_distance(z)
@@ -220,9 +221,9 @@ class cosmology():
 
     def DZ_approx(self,z=[0]):# linear growth factor.. only valid for LCDM
 #fitting formula (eq 67) given in lahav and suto:living reviews in relativity.. http://www.livingreviews.org/lrr-2004-8
-        if not hasattr(self,'_DZ0') and not np.all(z==0):
+        if not hasattr(self,'_DZ0') and not jnp.all(z==0):
             self._DZ0=1
-            self._DZ0=self.DZ_approx(z=np.atleast_1d([0]))
+            self._DZ0=self.DZ_approx(z=jnp.atleast_1d([0]))
         hr=self.E_z_inv(z)
         omega_z=self.Om*((1+z)**3)*((hr)**2)
         lamda_z=self.OmL*(hr**2)
@@ -231,14 +232,14 @@ class cosmology():
         return dz/self._DZ0   #check normalisation
 
     def DZ_int(self,z=[0],Ez_func=None): #linear growth factor.. full integral.. eq 63 in Lahav and suto
-        if not hasattr(self,'_DZ0_int') and not np.all(z==0):
+        if not hasattr(self,'_DZ0_int') and not jnp.all(z==0):
             self._DZ0_int=1
-            self._DZ0_int=self.DZ_int(z=np.atleast_1d([0]))
+            self._DZ0_int=self.DZ_int(z=jnp.atleast_1d([0]))
         def intf(z):
             return (1+z)/self.H_z(z=z,Ez_func=Ez_func)**3
         j=0
-        dz=np.zeros_like(z)
-        inf=np.inf
+        dz=jnp.zeros_like(z)
+        inf=jnp.inf
         #inf=1.e10
         for i in z:
             try:
@@ -250,7 +251,7 @@ class cosmology():
         return dz/self._DZ0_int #check for normalization
 
     def Omega_Z(self,z=[0]):
-        z=np.array(z)
+        z=jnp.array(z)
         omz=(self.H0**2/self.H_z(z)**2)*self.Om*(1+z)**3 #omega_z=rho(z)/rho_crit(z)
         return omz
 
@@ -258,12 +259,12 @@ class cosmology():
         return self.Omega_Z(z=z)**0.55 #fitting func
 
     def f_z0(self,z=[0]): #from full func f(z)=a/D(dD/da), =-(1+z)dD/dz.. full integral here but slow.. better to interpolate self.fz
-        fz=np.zeros_like(z)
+        fz=jnp.zeros_like(z)
         j=0
         for i in z:
-            z2=np.linspace(i-0.01,i+0.01,101)
+            z2=jnp.linspace(i-0.01,i+0.01,101)
             Dz=self.DZ_int(z=z2)
-            f2=-1.*(1+z2)/(Dz)*np.gradient(Dz,z2[1]-z2[0])
+            f2=-1.*(1+z2)/(Dz)*jnp.gradient(Dz,z2[1]-z2[0])
             fz[j]=f2[50]
             j+=1
         return fz
@@ -273,7 +274,7 @@ class cosmology():
 
     def Rho_crit(self):
         H0=H100 if cosmo_h is None else cosmo_h.H0
-        rc=3*H0**2/(8*np.pi*G2)
+        rc=3*H0**2/(8*jnp.pi*G2)
         rc=rc.to(u.Msun/u.pc**2/u.Mpc)# unit of Msun/pc^2/mpc
         return rc.value
 
@@ -299,11 +300,11 @@ class EH_pk(): #eisenstein_hu power spectra https://arxiv.org/pdf/astro-ph/97091
         
     def z_eq(self):
         self.z_eq=2.5*1.e4*self.Om_h2*(self.theta**-4)
-        self.k_eq=self.k_z(self.z_eq) #np.sqrt(2*z_eq*Om_h2*100**2)
+        self.k_eq=self.k_z(self.z_eq) #jnp.sqrt(2*z_eq*Om_h2*100**2)
         self.R_eq=self.R_z(self.z_eq)
             
     def k_z(self,z):
-        return np.sqrt(2*z*self.Om_h2*100**2/self.c**2)
+        return jnp.sqrt(2*z*self.Om_h2*100**2/self.c**2)
     
     def z_drag(self):
         b1=0.313*self.Om_h2**-0.419*(1+ 0.607*(self.Om_h2)**0.674)
@@ -319,14 +320,14 @@ class EH_pk(): #eisenstein_hu power spectra https://arxiv.org/pdf/astro-ph/97091
         self.ksilk = 1.6*(self.Ob_h2**0.52)*(self.Om_h2**0.73)*(1 + (10.4*self.Om_h2)**(-.95))
         
     def s_drag(self): #sound horizon
-        self.sd=2/3/self.k_eq*np.sqrt(6/self.R_eq)*np.log((np.sqrt(1+self.Rd)+np.sqrt(self.Rd+self.R_eq))/(1+np.sqrt(self.R_eq)))
+        self.sd=2/3/self.k_eq*jnp.sqrt(6/self.R_eq)*jnp.log((jnp.sqrt(1+self.Rd)+jnp.sqrt(self.Rd+self.R_eq))/(1+jnp.sqrt(self.R_eq)))
     
     
     def transfer_0(self,alpha_c,beta_c):
         q=self.k/13.41/self.k_eq
         e=2.71828
         C=14.2/alpha_c+386/(1+69.9*q**1.08)
-        T0=np.log(e+1.8*beta_c*q)
+        T0=jnp.log(e+1.8*beta_c*q)
         T0=T0/(T0+C*q**2)
         return T0
     
@@ -343,24 +344,24 @@ class EH_pk(): #eisenstein_hu power spectra https://arxiv.org/pdf/astro-ph/97091
         f=1./(1+(self.k*self.sd/5.4)**4)
         self.cdm_f=f
         self.transfer_c=f*self.transfer_0(1,beta_c)+(1-f)*self.transfer_0(alpha_c,beta_c)
-#         ac*(np.log(1.8*bc*q))/14.2/q**2
+#         ac*(jnp.log(1.8*bc*q))/14.2/q**2
         
     def transfer_baryon(self):
         def G_Y(y):
-            sy=np.sqrt(1+y)
-            return y*(-6*sy+(2+3*y)*np.log((sy+1)/(sy-1)))
+            sy=jnp.sqrt(1+y)
+            return y*(-6*sy+(2+3*y)*jnp.log((sy+1)/(sy-1)))
         alpha_b=2.07*self.k_eq*self.sd*(1+self.Rd)**(-3/4)*G_Y((1+self.z_eq)/(1+self.zd))
         beta_n=8.41*(self.Om_h2)**0.435
         self.beta_n=beta_n
         
-        beta_b=0.5+self.Omb/self.Om+(3-2*self.Omb/self.Om)*np.sqrt(1+(17.2*self.Om_h2)**2)
+        beta_b=0.5+self.Omb/self.Om+(3-2*self.Omb/self.Om)*jnp.sqrt(1+(17.2*self.Om_h2)**2)
         self.beta_b=beta_b
         
         ks=self.k*self.sd
         s_app=self.sd/(1+(beta_n/ks)**3)**(1./3)
         
-        self.transfer_b=self.transfer_0(1,1)/(1+(ks/5.2)**2)+alpha_b/(1+(beta_b/ks)**3)*np.exp(-(self.k/self.ksilk)**1.4)
-        self.transfer_b*=np.sin(self.k*s_app)/self.k/s_app
+        self.transfer_b=self.transfer_0(1,1)/(1+(ks/5.2)**2)+alpha_b/(1+(beta_b/ks)**3)*jnp.exp(-(self.k/self.ksilk)**1.4)
+        self.transfer_b*=jnp.sin(self.k*s_app)/self.k/s_app
         
     
     def transfer_total(self):
@@ -377,17 +378,17 @@ class EH_pk(): #eisenstein_hu power spectra https://arxiv.org/pdf/astro-ph/97091
     def pk(self):
         self.transfer_total()
         ns1=1-self.ns
-        delta_H=1#self.Omega_m**(-0.785-.05*np.log(self.Omega_m))*np.exp(-.95*ns1-0.169*ns1**2) #1.94*10**-5*
+        delta_H=1#self.Omega_m**(-0.785-.05*jnp.log(self.Omega_m))*jnp.exp(-.95*ns1-0.169*ns1**2) #1.94*10**-5*
         pk=self.k**self.ns*self.transfer_cb**2
         pk*=delta_H**2
         pk*=self.Ase9*1.e-9
-        pk*=2*np.pi**2
+        pk*=2*jnp.pi**2
         pk*=(self.c/self.h/100)**(3+self.ns)
         self.pk0=pk
         
 def Rho_crit(cosmo_h=None):
     H0=H100 if cosmo_h is None else cosmo_h.H0
-    rc=3*(H0*H0_unit)**2/(8*np.pi*G2*G2_unit)
+    rc=3*(H0*H0_unit)**2/(8*jnp.pi*G2*G2_unit)
     rc=rc.to(u.Msun/u.pc**2/u.Mpc)# unit of Msun/pc^2/mpc
     return rc.value
 

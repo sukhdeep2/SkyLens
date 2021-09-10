@@ -8,13 +8,15 @@ from skylens import *
 from skylens.utils import *
 from skylens.cosmology import *
 import numpy as np
+import jax
+import jax.numpy as jnp
 from scipy.interpolate import interp1d
 from scipy.integrate import quad as scipy_int1d
 from scipy.special import loggamma
 from dask import delayed
 from dask.distributed import Client,get_client
 
-d2r=np.pi/180.
+d2r=jnp.pi/180.
 
 class Tracer_utils():
     def __init__(self,shear_zbins=None,galaxy_zbins=None,kappa_zbins=None,logger=None,l=None,
@@ -24,7 +26,7 @@ class Tracer_utils():
         self.do_cov=do_cov
         #Gravitaional const to get Rho crit in right units
         self.G2=G.to(u.Mpc/u.Msun*u.km**2/u.second**2)
-        self.G2*=8*np.pi/3.
+        self.G2*=8*jnp.pi/3.
     
         self.SN={}
         self.scheduler_info=scheduler_info
@@ -66,8 +68,8 @@ class Tracer_utils():
             to compute the power spectra, p(k,z).
         """
         self.z_PS_max=0
-        z_max_all=np.array([self.z_bins[tracer]['zmax'] for tracer in self.tracers])
-        self.z_PS_max=np.amax(z_max_all).item() +0.01
+        z_max_all=jnp.array([self.z_bins[tracer]['zmax'] for tracer in self.tracers])
+        self.z_PS_max=jnp.amax(z_max_all).item() +0.01
 
     def set_zbins(self,z_bins={},tracer=None):
         """
@@ -110,7 +112,7 @@ class Tracer_utils():
             client=get_client(address=self.scheduler_info['address'])
         for tracer in self.tracers:
             self.z_win[tracer]={}
-            for i in np.arange(self.n_bins[tracer]):
+            for i in jnp.arange(self.n_bins[tracer]):
                 self.z_win[tracer][i]={}
                 for k in self.z_bins[tracer][i].keys():
                     if 'window' in k:
@@ -145,16 +147,17 @@ class Tracer_utils():
         n_bins=z_bins['n_bins']
         self.SN[tracer]=None
         if self.do_cov:
-            self.SN[tracer]=np.zeros((len(self.l),n_bins,n_bins))
-            for i in np.arange(n_bins):
-                self.SN[tracer][:,i,i]+=z_bins['SN'][tracer][:,i,i]
+            self.SN[tracer]=jnp.zeros((len(self.l),n_bins,n_bins))
+            for i in jnp.arange(n_bins):
+                self.SN[tracer]=jax.ops.index_add(self.SN[tracer], jax.ops.index[:,i,i],z_bins['SN'][tracer][:,i,i])
+                # self.SN[tracer][:,i,i]+=z_bins['SN'][tracer][:,i,i]
     
     def reset_z_bins(self):
         """
             Reset cosmology dependent values for each source bin
         """
         for tracer in self.tracers:
-            for i in np.arange(self.z_bins[tracer]['n_bins']):
+            for i in jnp.arange(self.z_bins[tracer]['n_bins']):
                 self.z_bins[tracer][i]['kernel']=None
                 self.z_bins[tracer][i]['kernel_int']=None
 
@@ -169,7 +172,7 @@ class Tracer_utils():
                 z_bins=gather_dict(z_bins,scheduler_info=self.scheduler_info)
         n_bins=z_bins['n_bins']
         kernel={}
-        for i in np.arange(n_bins):
+        for i in jnp.arange(n_bins):
             if delayed_compute:
                 kernel[i]=delayed(self.zkernel_func[tracer])(Ang_PS=Ang_PS,tracer=tracer,z_bin=z_bins[i])
             else:
@@ -196,13 +199,15 @@ def sigma_crit(zl=[],zs=[],cosmo_h=None):
     """
     ds=cosmo_h.comoving_transverse_distance(zs)
     dl=cosmo_h.comoving_transverse_distance(zl)
-    ddls=1.-np.multiply.outer(1./ds,dl)#(ds-dl)/ds
+    ddls=1.-jnp.outer(1./ds,dl)#(ds-dl)/ds
     x=ds==0
-    ddls[x,:]=0
+    # ddls[x,:]=0
+    ddls=ddls.at[x,:].set(0)
     w=sigma_crit_norm100*(1+zl)*dl
     sigma_c=1./(ddls*w)
     x=ddls<=0 #zs<zl
-    sigma_c[x]=np.inf
+    # sigma_c[x]=jnp.inf
+    sigma_c=sigma_c.at[x].set(jnp.inf)
     return sigma_c#.value
 
 
@@ -213,7 +218,7 @@ def NLA_amp_z(l,z=[],z_bin={},cosmo_h=None):
     """
     AI=z_bin['AI']
     AI_z=z_bin['AI_z']
-    return np.outer(AI*(1+z)**AI_z,np.ones_like(l)) #FIXME: This might need to change to account
+    return jnp.outer(AI*(1+z)**AI_z,jnp.ones_like(l)) #FIXME: This might need to change to account
 
 
 def constant_bias(l,z=[],z_bin={},cosmo_h=None):
@@ -222,22 +227,22 @@ def constant_bias(l,z=[],z_bin={},cosmo_h=None):
     """
     b=z_bin['b1']
 #         lb_m=z_bin['lm']
-    lm=np.ones_like(l)
+    lm=jnp.ones_like(l)
 #         x=self.l>lb_m  #if masking out modes based on kmax. lm is attribute of the z_bins, that is based on kmax.
 #         lm[x]=0        
-    return b*np.outer(np.ones_like(z),lm)
+    return b*jnp.outer(jnp.ones_like(z),lm)
 
 def linear_bias_z(l,z=[],z_bin={},cosmo_h=None):
     """
     linear Galaxy bias, assumed to be constant in ell and specified at every z.
     """
-    b=np.interp(z,z_bin['z'],z_bin['bz1'],left=0,right=0) #this is linear interpolation
+    b=jnp.interp(z,z_bin['z'],z_bin['bz1'],left=0,right=0) #this is linear interpolation
 
     lb_m=z_bin['lm']
-    lm=np.ones_like(l)
+    lm=jnp.ones_like(l)
 #         x=self.l>lb_m  #if masking out modes based on kmax. lm is attribute of the z_bins, that is based on kmax.
 #         lm[x]=0        
-    return np.outer(b,lm)
+    return jnp.outer(b,lm)
 
 def linear_bias_powerlaw(l,z_bin={},cosmo_h=None):
     """
@@ -247,20 +252,20 @@ def linear_bias_powerlaw(l,z_bin={},cosmo_h=None):
     b1=z_bin['b1']
     b2=z_bin['b2']
     lb_m=z_bin['lm']
-    lm=np.ones_like(l)+l/l[-1]
+    lm=jnp.ones_like(l)+l/l[-1]
 #         x=self.l>lb_m
 #         lm[x]=0        
-    return np.outer(b1*(1+z_bin['z'])**b2,lm) #FIXME: This might need to change to account
+    return jnp.outer(b1*(1+z_bin['z'])**b2,lm) #FIXME: This might need to change to account
 
 def spin_factor(l,tracer=None):
     """
     Spin of tracers. Needed for wigner transforms and pseudo-cl calculations.
     """
     if tracer is None:
-        return np.nan
+        return jnp.nan
     if tracer=='galaxy':
         s=0
-        return np.ones_like(l,dtype='float32')
+        return jnp.ones_like(l,dtype='float32')
 
     if tracer=='shear':
         s=2 #there is (-1)**s factor, so sign is same of +/- 2 spin
@@ -269,10 +274,11 @@ def spin_factor(l,tracer=None):
 
     F=loggamma(l+s+1)
     F-=loggamma(l-s+1)
-    F=np.exp(1./s*F) # units should be l**2, hence sqrt for s=2... comes from angular derivative of the potential
+    F=jnp.exp(1./s*F) # units should be l**2, hence sqrt for s=2... comes from angular derivative of the potential
     F/=(l+0.5)**2 #when writing potential to delta_m, we get 1/k**2, which then results in (l+0.5)**2 factor
     x=l-s<0
-    F[x]=0
+    # F[x]=0
+    F=F.at[x].set(0)
 
     return F
 
@@ -290,19 +296,19 @@ def set_lensing_kernel(Ang_PS=None,tracer=None,z_bin=None,kernel=None):
     rho=Rho_crit100*cosmo_h.Om
     mag_fact=1
     spin_tracer=tracer
-#     for i in np.arange(n_bins):
+#     for i in jnp.arange(n_bins):
     if tracer=='galaxy':
         mag_fact=z_bin['mag_fact']
         spin_tracer='kappa'
     spin_fact=spin_factor(l,tracer=spin_tracer)
     kernel['Gkernel']=mag_fact*rho/sigma_crit(zl=zl,zs=z_bin['z'],
                                                 cosmo_h=cosmo_h)
-    kernel['Gkernel_int']=np.dot(z_bin['pzdz'],kernel['Gkernel'])
+    kernel['Gkernel_int']=jnp.dot(z_bin['pzdz'],kernel['Gkernel'])
     kernel['Gkernel_int']/=z_bin['Norm']
     kernel['Gkernel_int']*=z_bin['shear_m_bias']
     if z_bin['Norm']==0:#FIXME
         kernel['Gkernel_int'][:]=0
-    kernel['Gkernel_int']=np.outer(spin_fact,kernel['Gkernel_int'])
+    kernel['Gkernel_int']=jnp.outer(spin_fact,kernel['Gkernel_int'])
 #     del kernel['Gkernel']
     return kernel
 
@@ -329,7 +335,7 @@ def set_galaxy_kernel(Ang_PS=None,tracer=None,l=None,z_bin=None,kernel=None):
 
     spin_fact=spin_factor(l,tracer=tracer)
 
-    dzl=np.gradient(zl)
+    dzl=jnp.gradient(zl)
     cH=cosmo_h.Dh/cosmo_h.efunc(zl)
     cH=cH
     kernel['gkernel']=b_const*bias_func(l,z=zl,z_bin=z_bin,cosmo_h=cosmo_h)
@@ -337,23 +343,23 @@ def set_galaxy_kernel(Ang_PS=None,tracer=None,l=None,z_bin=None,kernel=None):
     kernel['gkernel']*=spin_fact
 
     if len(z_bin['pz'])==1: #interpolation doesnot work well when only 1 point
-        bb=np.digitize(z_bin['z'],zl)
+        bb=jnp.digitize(z_bin['z'],zl)
 
-        pz_zl=np.zeros_like(zl)
+        pz_zl=jnp.zeros_like(zl)
         if bb<len(pz_zl):
             pz_zl[bb]=z_bin['pz']  #assign to nearest zl
-            pz_zl/=np.sum(pz_zl*dzl)
+            pz_zl/=jnp.sum(pz_zl*dzl)
     else:
-        pz_zl=np.interp(zl,z_bin['z'],z_bin['pz'],left=0,right=0) #this is linear interpolation
-        if not np.sum(pz_zl*dzl)==0: #FIXME
-            pz_zl/=np.sum(pz_zl*dzl)
+        pz_zl=jnp.interp(zl,z_bin['z'],z_bin['pz'],left=0,right=0) #this is linear interpolation
+        if not jnp.sum(pz_zl*dzl)==0: #FIXME
+            pz_zl/=jnp.sum(pz_zl*dzl)
         else:
             print('Apparently empty bin',zl,z_bin['z'],z_bin['pz'])
 
     kernel['gkernel_int']=kernel['gkernel'].T*pz_zl #dzl multiplied later
-    kernel['gkernel_int']/=np.sum(pz_zl*dzl)
+    kernel['gkernel_int']/=jnp.sum(pz_zl*dzl)
 
-    if np.sum(pz_zl*dzl)==0: #FIXME
+    if jnp.sum(pz_zl*dzl)==0: #FIXME
         kernel['gkernel_int'][:]=0
     del kernel['gkernel']
     return kernel

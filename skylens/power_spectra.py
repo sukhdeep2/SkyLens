@@ -24,7 +24,8 @@ except:
 sys.path.insert(0,'./')
 
 from dask.distributed import Lock
-import numpy as np
+# import numpy as np
+import jax.numpy as jnp
 from scipy.interpolate import interp1d
 # from astropy.cosmology import Planck15 as cosmo
 from astropy import units as u
@@ -50,16 +51,16 @@ from skylens.cosmology import *
 # "owls_WML1V848","owls_WML4","illustris","mb2","eagle","HzAGN"
 
 
-Bins_z_HzAGN   = np.array([4.9285,4.249,3.7384,3.33445,
+Bins_z_HzAGN   = jnp.array([4.9285,4.249,3.7384,3.33445,
                            3.00295,1.96615,1.02715,0.519195,0.22878,0.017865,0.0])
-Bins_z_mb2     = np.array([3.5,3.25,2.8,2.45,2.1,2.0,1.8,1.7,1.6,1.4,1.2,1.1,1.0,0.8,0.7,
+Bins_z_mb2     = jnp.array([3.5,3.25,2.8,2.45,2.1,2.0,1.8,1.7,1.6,1.4,1.2,1.1,1.0,0.8,0.7,
                            0.6,0.4,0.35,0.2,0.0625,0.0])
-Bins_z_ill1    = np.array([3.5,3.49,3.28,3.08,2.90,2.73,2.44,2.1,2.0,1.82,1.74,1.6,1.41,
+Bins_z_ill1    = jnp.array([3.5,3.49,3.28,3.08,2.90,2.73,2.44,2.1,2.0,1.82,1.74,1.6,1.41,
                            1.21,1.04,1.0,0.79,0.7,0.6,0.4,0.35,0.2,0.0])
-Bins_z_eagle   = np.array([3.53,3.02,2.48,2.24,2.01,1.74,1.49,1.26,1.0,0.74,0.5,0.27,0.0])
-Bins_z_OWLS    = np.array([3.5,3.25,3.0,2.75,2.25,2.00,1.75,1.50,1.25,
+Bins_z_eagle   = jnp.array([3.53,3.02,2.48,2.24,2.01,1.74,1.49,1.26,1.0,0.74,0.5,0.27,0.0])
+Bins_z_OWLS    = jnp.array([3.5,3.25,3.0,2.75,2.25,2.00,1.75,1.50,1.25,
                            1.00,0.75,0.50,0.375,0.25,0.125,0.0])
-Bins_z_NOSN    = np.array([3.5,3.25,3.0,2.75,2.25,2.00,1.75,1.50,
+Bins_z_NOSN    = jnp.array([3.5,3.25,3.0,2.75,2.25,2.00,1.75,1.50,
                            1.25,1.00,0.75,0.50,0.375,0.25,0.0])
 
 zbin_logPkR = {"owls_AGN":Bins_z_OWLS,
@@ -115,7 +116,7 @@ class Power_Spectra(cosmology):
         self.pk_func=pk_func_default if pk_func is None else getattr(self,pk_func)
         print('power spectra function: ',self.pk_func)
         if not pk_params is None:
-            self.kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),
+            self.kh=jnp.logspace(jnp.log10(pk_params['kmin']),jnp.log10(pk_params['kmax']),
             pk_params['nk'])
             if pk_params.get('halofit_version') is None:
                 pk_params['halofit_version']='takahashi'
@@ -126,7 +127,7 @@ class Power_Spectra(cosmology):
             if pk_params.get('pk_func'):
                 pk_func=getattr(self,pk_params['pk_func'])
         if pk_lock is not None:
-            ri=np.random.uniform(0.5,4,size=1)[0]
+            ri=jnp.random.uniform(0.5,4,size=1)[0]
             time.sleep(0.2*ri) #prevents threads from deadlocking while trying to acquire the lock
             while pk_lock.locked():
                 time.sleep(0.1*ri)
@@ -176,7 +177,7 @@ class Power_Spectra(cosmology):
     def eh_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
         if not cosmo_params:
             cosmo_params=self.cosmo_params
-        kh=self.kh#np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),pk_params['nk'])
+        kh=self.kh#jnp.logspace(jnp.log10(pk_params['kmin']),jnp.log10(pk_params['kmax']),pk_params['nk'])
         k=kh*cosmo_params['h']
         eh=EH_pk(cosmo_params=cosmo_params,k=k)
         eh.pk()
@@ -195,22 +196,22 @@ class Power_Spectra(cosmology):
                                   Omega_b=cosmo_params['Omb'],m_nu=cosmo_params['mnu'],
                                   A_s=cosmo_params['Ase9']*1.e-9,n_s=cosmo_params['ns'],
                                   transfer_function='boltzmann_camb', matter_power_spectrum='halofit')
-        kh=self.kh#np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),pk_params['nk'])
+        kh=self.kh#jnp.logspace(jnp.log10(pk_params['kmin']),jnp.log10(pk_params['kmax']),pk_params['nk'])
         k=kh*cosmo_params['h']
         nz=len(z)
-        ps=np.zeros((nz,len(k)))
+        ps=jnp.zeros((nz,len(k)))
         ps0=[]
         z0=9.#PS(z0) will be rescaled using growth function when CCL fails.
 
         pyccl_pkf=pyccl.linear_matter_power
         if pk_params['non_linear']==1:
             pyccl_pkf=pyccl.nonlin_matter_power
-        for i in np.arange(nz):
+        for i in jnp.arange(nz):
 #             try:
                 ps[i]= pyccl_pkf(cosmo_ccl,k,1./(1+z[i]))
 #             except Exception as err:
 #                 self.logger.error ('CCL err %s %s',err,z[i])
-#                 if not np.any(ps0):
+#                 if not jnp.any(ps0):
 #                     ps0=pyccl.linear_matter_power(cosmo_ccl,kh,1./(1.+z0))
 #                 Dz=self.DZ_int(z=[z0,z[i]])
 #                 ps[i]=ps0*(Dz[1]/Dz[0])**2
@@ -237,9 +238,9 @@ class Power_Spectra(cosmology):
 
         pars.InitPower.set_params(ns=cosmo_params['ns'], r=0,As =cosmo_params['Ase9']*1.e-9) #
         if return_s8:
-            z_t=np.sort(np.unique(np.append([0],z).flatten()))
+            z_t=jnp.sort(jnp.unique(jnp.append([0],z).flatten()))
         else:
-            z_t=np.array(z)
+            z_t=jnp.array(z)
         pars.set_matter_power(redshifts=z_t,kmax=pk_params['kmax'],silent=self.silence_camb)
 
         if pk_params['non_linear']==1:
@@ -253,8 +254,9 @@ class Power_Spectra(cosmology):
         kh, z2, pk =results.get_matter_power_spectrum(minkh=pk_params['kmin'],
                                                         maxkh=pk_params['kmax'],
                                                         npoints =pk_params['nk'])
-        if not np.all(z2==z_t):
-            raise Exception('CAMB changed z order',z2,z_mocks)
+        z2=jnp.array(z2)
+        if not jnp.all(z2==z_t):
+            raise Exception('CAMB changed z order',z2,z_t)
 
         if return_s8:
             s8=results.get_sigma8()
@@ -270,7 +272,7 @@ class Power_Spectra(cosmology):
         Because CAMB used to complain when z array was too long.
         """
         i=0
-        pk=None #np.array([])
+        pk=None #jnp.array([])
         z_step=140 #camb cannot handle more than 150 redshifts
         nz=len(z)
 
@@ -278,7 +280,7 @@ class Power_Spectra(cosmology):
             p=self.camb_pk(z=z[i:i+z_step],pk_params=pk_params,cosmo_params=cosmo_params,return_s8=return_s8)
             pki=p[0]
             kh=p[1]
-            pk=np.vstack((pk,pki)) if pk is not None else pki
+            pk=jnp.vstack((pk,pki)) if pk is not None else pki
             i+=z_step
 
         if return_s8:
@@ -326,7 +328,7 @@ class Power_Spectra(cosmology):
             raise Exception('Class crashed')
 
         k=self.kh*h
-        pkC=np.array([[cosmoC.pk(ki,zj) for ki in k ]for zj in z])
+        pkC=jnp.array([[cosmoC.pk(ki,zj) for ki in k ]for zj in z])
         pkC*=h**3
         s8=cosmoC.sigma8()
         cosmoC.struct_cleanup()
@@ -359,12 +361,12 @@ class Power_Spectra(cosmology):
         data_dir = "./Pk_ratio/"
         infile_logPkRatio = data_dir + "logPkRatio_" + scenario + ".dat"
         Arr2D_logPkratio = pd.read_csv(infile_logPkRatio,sep='\s+')
-        Bins_log_k_Mpc = np.array(Arr2D_logPkratio["logk"])
+        Bins_log_k_Mpc = jnp.array(Arr2D_logPkratio["logk"])
         del Arr2D_logPkratio["logk"]
-        Arr2D_logPkratio = np.array(Arr2D_logPkratio)
+        Arr2D_logPkratio = jnp.array(Arr2D_logPkratio)
         f_logPkRatio = interpolate.interp2d(zbin_logPkR[scenario], Bins_log_k_Mpc, Arr2D_logPkratio, kind='linear')
 
-        PkR    = 10**(f_logPkRatio(z,np.log10(kh)))
+        PkR    = 10**(f_logPkRatio(z,jnp.log10(kh)))
         pkbary = pk*PkR.T
 
         if return_s8:
@@ -379,12 +381,13 @@ class Power_Spectra(cosmology):
         Response function used in calculation of super sample covariance.
         eq 2.5, R1, Barriera+ 2017
         """
-        G1=26./21.*np.ones_like(k)
+        G1=26./21.*jnp.ones_like(k)
         x=k>k_NonLinear
 #         G1[x]*=k_NonLinear/k[x]
         B1=0.75
-        G1[x]=B1+(G1[x]-B1)*(k_NonLinear/k[x])**0.5
-        dpk=np.gradient(np.log(pk),axis=axis)/np.gradient(np.log(k),axis=0)
+        # G1[x]=B1+(G1[x]-B1)*(k_NonLinear/k[x])**0.5
+        G1=G1.at[x].set(B1+(G1[x]-B1)*(k_NonLinear/k[x])**0.5)
+        dpk=jnp.gradient(jnp.log(pk),axis=axis)/jnp.gradient(jnp.log(k),axis=0)
         R=1 - 1./3*dpk + G1
         return R
 
@@ -392,11 +395,12 @@ class Power_Spectra(cosmology):
         """
         Response function used in calculation of super sample covariance.
         """
-        GK=8./7.*np.ones_like(k)
+        GK=8./7.*jnp.ones_like(k)
         x=k>k_NonLinear
         BK=2.2
-        GK[x]=BK+(GK[x]-BK)*(k_NonLinear/k[x])**0.5
-        dpk=np.gradient(np.log(pk),axis=axis)/np.gradient(np.log(k),axis=0)
+        # GK[x]=BK+(GK[x]-BK)*(k_NonLinear/k[x])**0.5
+        GK=GK.at[x].set(BK+(GK[x]-BK)*(k_NonLinear/k[x])**0.5)
+        dpk=jnp.gradient(jnp.log(pk),axis=axis)/jnp.gradient(jnp.log(k),axis=0)
 #         R=12./13*G1-dpk
         R=GK-dpk
         return R

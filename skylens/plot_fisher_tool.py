@@ -1,4 +1,5 @@
-import numpy as np
+# import numpy as np
+import jax.numpy as np
 from matplotlib.patches import Ellipse
 import matplotlib.pyplot as plt
 from scipy.stats import norm

@@ -1,5 +1,6 @@
 import sys, os, gc, threading, subprocess,pickle,multiprocessing,dask,time
 import numpy as np
+import jax.numpy as jnp
 from dask.distributed import Client,get_client,wait
 from distributed import LocalCluster
 from collections.abc import Mapping #to check for dicts
@@ -70,7 +71,7 @@ def get_size_pickle(obj):
         Get the size of an object via pickle.
     """
     yy=pickle.dumps(obj)
-    return np.around(sys.getsizeof(yy)/1.e6,decimals=3)
+    return jnp.around(sys.getsizeof(yy)/1.e6,decimals=3)
 
 def dict_size_pickle(dic,print_prefact='',depth=2): #useful for some memory diagnostics
     """
@@ -189,9 +190,9 @@ def wait_futures(futures,sleep_time=.05,threshold=0.5):
     while not all_done:
         time.sleep(sleep_time)
         if isinstance(futures,dict):
-            all_done=np.mean([futures[k].status=='finished' for k in futures.keys()])>threshold
+            all_done=jnp.mean(jnp.array([futures[k].status=='finished' for k in futures.keys()]))>threshold
         else:
-            all_done=np.mean([future.status=='finished' for future in futures])>threshold
+            all_done=jnp.mean(jnp.array([future.status=='finished' for future in futures]))>threshold
 
 def gather_dict(dic,scheduler_info=None): 
     """
@@ -290,16 +291,16 @@ def get_l_bins(l_min=2,l_max=1000,N_bins=20,binning_scheme='linear',max_modes=No
     n_modes=n_modes_max-n_modes_min
     
     if binning_scheme=='log':
-        n_modes_bin=np.logspace(np.log10(n_modes_min),np.log10(n_modes_max),N_bins+1)
+        n_modes_bin=jnp.logspace(jnp.log10(n_modes_min),jnp.log10(n_modes_max),N_bins+1)
     if binning_scheme=='linear':
-        n_modes_bin=np.linspace(n_modes_min,n_modes_max,N_bins+1)
+        n_modes_bin=jnp.linspace(n_modes_min,n_modes_max,N_bins+1)
     if binning_scheme=='constant':
-        n_modes_bin=np.ones(N_bins+1)*np.int(n_modes/N_bins)
+        n_modes_bin=jnp.ones(N_bins+1)*jnp.int(n_modes/N_bins)
     
     def bin_norm(n_modes_bin,n_modes):
         n_modes_bin=n_modes_bin/n_modes_bin.sum()
         n_modes_bin*=n_modes
-        n_modes_bin=np.int32(n_modes_bin)
+        n_modes_bin=jnp.int32(n_modes_bin)
         n_modes_bin[n_modes_bin==0]+=1
         return n_modes_bin
     
@@ -312,10 +313,10 @@ def get_l_bins(l_min=2,l_max=1000,N_bins=20,binning_scheme='linear',max_modes=No
         
     n_modes_bin=bin_norm(n_modes_bin,n_modes)
     
-    l_bins=np.zeros(N_bins+1)
+    l_bins=jnp.zeros(N_bins+1)
     l_bins[0]=l_min
     l_bins[-1]=l_max
-    for i in np.arange(N_bins):
+    for i in jnp.arange(N_bins):
         n_mode_i=0
         l_i=l_bins[i]+1
         while n_mode_i<n_modes_bin[i]:
@@ -326,4 +327,4 @@ def get_l_bins(l_min=2,l_max=1000,N_bins=20,binning_scheme='linear',max_modes=No
         l_bins[i+1]=l_i
     if l_bins[-1]<l_max:
         l_bins[-1]=l_max
-    return np.int32(l_bins)
+    return jnp.int32(l_bins)

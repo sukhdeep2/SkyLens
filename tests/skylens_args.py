@@ -99,8 +99,8 @@ wigner_files[2]= wig_home+'/dask_wig3j_l100_w100_2_reorder.zarr'
 do_cov=True
 SSV_cov=True
 tidal_SSV_cov=False
-Tri_cov=True
-sparse_cov=True #store covariances as sparse matrices
+Tri_cov=False
+sparse_cov=False #store covariances as sparse matrices
 do_sample_variance=True #if false, only shot noise is used in gaussian covariance
 xi_SN_analytical=True #use analytical expression for correlation function shot noise. if False, Cl shot noise is transformed.
 

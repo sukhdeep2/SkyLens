@@ -4,7 +4,7 @@ install:
 	make clean
 user:
 	make clean
-	python setup.py install --user
+	python3 setup.py install --user
 	make clean
 build:
 	python setup.py build

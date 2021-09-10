@@ -8,7 +8,8 @@ import sparse
 from skylens.wigner_transform import *
 from skylens.binning import *
 from skylens.cov_utils import *
-import numpy as np
+# import numpy as np
+import jax.numpy as jnp
 import healpy as hp
 from scipy.interpolate import interp1d
 import warnings,logging
@@ -25,6 +26,12 @@ import pickle
 import copy
 import psutil
 from itertools import islice
+from jax import jit
+import jax
+import logging
+
+logging.getLogger('numba').setLevel(logging.WARNING)
+logging.getLogger('jax').setLevel(logging.WARNING)
 
 class window_utils():
     def __init__(self,window_l=None,window_lmax=None,l=None,l_bins=None,l_cl=None,corrs=None,s1_s2s=None,use_window=None,#f_sky=None,cov_utils=None,
@@ -46,15 +53,15 @@ class window_utils():
         
         self.step=wigner_step
         if self.step is None:
-#             self.step=np.int32(200.*((2000./nl)**2)*(100./nwl)) #small step is useful for lower memory load
-            self.step=np.int32(nl/self.nworkers/2)
+#             self.step=jnp.int32(200.*((2000./nl)**2)*(100./nwl)) #small step is useful for lower memory load
+            self.step=jnp.int32(nl/self.nworkers/2)
             if nl/self.step<self.nworkers:
-                self.step=np.int32(nl/self.nworkers)
-            self.step=np.int32(min(self.step,nl+1))
-            self.step=np.int32(max(self.step,1))
+                self.step=jnp.int32(nl/self.nworkers)
+            self.step=jnp.int32(min(self.step,nl+1))
+            self.step=jnp.int32(max(self.step,1))
             
         print('Win gen: step size',self.step,nl,nwl,self.nworkers,self.use_window,self.Win is None)#,self.lms)    
-        self.lms=np.int32(np.arange(nl,step=self.step))
+        self.lms=jnp.int32(jnp.arange(nl,step=self.step))
         self.workers_lm={}
         worker_i=0
 
@@ -211,10 +218,10 @@ class window_utils():
         step=self.step
         wig_3j=zarr.open(self.wigner_files[m],mode='r')
         if sem_lock is None:
-            out=wig_3j.oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l_cl)]
+            out=wig_3j.oindex[jnp.int32(self.window_l),jnp.int32(self.l[lm:lm+step]),jnp.int32(self.l_cl)]
         else:
             with sem_lock:
-                out=wig_3j.oindex[np.int32(self.window_l),np.int32(self.l[lm:lm+step]),np.int32(self.l_cl)]
+                out=wig_3j.oindex[jnp.int32(self.window_l),jnp.int32(self.l[lm:lm+step]),jnp.int32(self.l_cl)]
         out=out.transpose(1,2,0)
         del wig_3j
         return out
@@ -253,14 +260,14 @@ class window_utils():
         """
         Here we set the spin dependent multiplicative factors (X+, X-).
         """
-        li1=np.int32(self.window_l).reshape(len(self.window_l),1,1)
-        li3=np.int32(self.l).reshape(1,1,len(self.l))
-        li2=np.int32(self.l[lm:lm+self.step]).reshape(1,len(self.l[lm:lm+self.step]),1)
+        li1=jnp.int32(self.window_l).reshape(len(self.window_l),1,1)
+        li3=jnp.int32(self.l).reshape(1,1,len(self.l))
+        li2=jnp.int32(self.l[lm:lm+self.step]).reshape(1,len(self.l[lm:lm+self.step]),1)
         mf=(-1.)**(li1+li2+li3)
         mf=mf.transpose(1,2,0)
         out={}
         out['mf_p']=(1.+mf)/2.
-        # out['mf_p']=np.int8((1.+mf)/2.)#.astype('bool')
+        # out['mf_p']=jnp.int8((1.+mf)/2.)#.astype('bool')
                               #bool doesn't help in itself, as it is also byte size in numpy.
                               #we donot need to store mf_n, as it is simply a 0-1 flip or "not" when written as bool
                               #using bool or int does cost somewhat in computation as numpy only computes with float 64 (or 32 
@@ -278,8 +285,8 @@ class window_utils():
         if not self.use_window:
             return
 
-        m_s=np.concatenate([np.abs(i).flatten() for i in self.s1_s2s.values()])
-        self.m_s=np.sort(np.unique(m_s))
+        m_s=jnp.concatenate([jnp.abs(jnp.array(i)).flatten() for i in self.s1_s2s.values()])
+        self.m_s=jnp.sort(jnp.unique(m_s))
 
         print('wigner_files:',self.wigner_files)
 
@@ -301,11 +308,11 @@ class window_utils():
             
         self.wig_s1s2s={}
         for corr in self.corrs:
-            mi=np.sort(np.absolute(self.s1_s2s[corr]).flatten())
+            mi=jnp.sort(jnp.absolute(jnp.array(self.s1_s2s[corr])).flatten())
             self.wig_s1s2s[corr]=str(mi[0])+str(mi[1])
         print('wigner done',self.wig_3j.keys())
         return wig_3j_2
-
+    
     def coupling_matrix_large(self,win,wig_3j_2,mf_pm,bin_wt,W_pm,lm,cov,cl_bin_utils=None):
         """
         get the large coupling matrices from windows power spectra, wigner functions and spin dependent 
@@ -321,10 +328,14 @@ class window_utils():
 
         M={}
         for k in win.keys():
-            M[k]=wig@(win[k]*(2*self.window_l+1))
-            M[k]/=4.*np.pi
-            if not cov:
-                M[k]*=self.MF[lm:lm+self.step,:] #FIXME: not used in covariance?
+            mf=self.MF[lm:lm+self.step,:]
+            if cov:
+                mf[:]=1
+            M[k]=coupling_M(wig,win[k],self.window_l,mf)
+            # M[k]=wig@(win[k]*(2*self.window_l+1))
+            # M[k]/=4.*jnp.pi
+            # if not cov:
+            #     M[k]*=self.MF[lm:lm+self.step,:] #FIXME: not used in covariance?
 
             if self.bin_window:# and bin_wt is not None:
                 M[k]=self.binnings.bin_2d_coupling(M=M[k],bin_utils=cl_bin_utils,
@@ -335,22 +346,13 @@ class window_utils():
 #             del wig
         return M
 
-    def multiply_window(self,win1,win2):
-        """
-        Take product of two windows which maybe partially overlapping and mask it properly.
-        """
-        W=win1*win2
-        x=np.logical_or(win1==hp.UNSEEN, win2==hp.UNSEEN)
-        W[x]=hp.UNSEEN
-        return W
-
     def mask_comb(self,win1,win2): 
         """
         combined the mask from two windows which maybe partially overlapping.
         Useful for some covariance calculations, specially SSC, where we assume a uniform window.
         """
         W=win1*win2
-        x=np.logical_or(win1==hp.UNSEEN, win2==hp.UNSEEN)
+        x=jnp.logical_or(win1==hp.UNSEEN, win2==hp.UNSEEN)
         W[x]=hp.UNSEEN
         W[~x]=1. #mask = 0,1
         fsky=(~x).mean()
@@ -402,7 +404,7 @@ class window_utils():
         if self.bin_window:
             nl=len(self.l_bins)-1
 
-        for ii_t in np.arange(len(self.cl_keys)): #list(result[0].keys()):
+        for ii_t in jnp.arange(len(self.cl_keys)): #list(result[0].keys()):
             ii=0#because we are deleting below
             ckt=self.cl_keys[ii_t]
             
@@ -414,27 +416,31 @@ class window_utils():
             for k in result_ii.keys():
                 result0[k]=result_ii[k]
 
-            result0['M']=np.zeros((nl,nl))
+            result0['M']=jnp.zeros((nl,nl))
             if  result_ii['M_noise'] is not None:
-                result0['M_noise']=np.zeros((nl,nl))
+                result0['M_noise']=jnp.zeros((nl,nl))
             if corr==('shear','shear') and indxs[0]==indxs[1]:
-                result0['M_B_noise']=np.zeros((nl,nl))
-                result0['M_B']=np.zeros((nl,nl))
+                result0['M_B_noise']=jnp.zeros((nl,nl))
+                result0['M_B']=jnp.zeros((nl,nl))
 
-            for i_lm in np.arange(len(self.lms)):
-                lm=self.lms[i_lm]
+            for i_lm in jnp.arange(len(self.lms)):
+                lm=np.asscalar(self.lms[i_lm])
                 start_i=lm
                 end_i=lm+self.step
                 if self.bin_window:
                     start_i=0
                     end_i=nl
+                # print(lm,type(lm),type(result),type(result[0]),type(result[0][0]))
+                # result0['M'][start_i:end_i,:]+=result[lm][ii]['M'][lm]
+                result0['M']=result0['M'].at[start_i:end_i,:].set(result[lm][ii]['M'][lm])
+                # result0['M']=jax.ops.index_add(result0['M'],jax.ops.index[start_i:end_i,:],result[lm][ii]['M'][lm])
 
-                result0['M'][start_i:end_i,:]+=result[lm][ii]['M'][lm]
                 if  result_ii['M_noise'] is not None:
-                    result0['M_noise'][start_i:end_i,:]+=result[lm][ii]['M_noise'][lm]
+                    result0['M_noise']=result0['M_noise'].at[start_i:end_i,:].set(result[lm][ii]['M_noise'][lm])
+                    # result0['M_noise'][start_i:end_i,:]+=result[lm][ii]['M_noise'][lm]
                 if corr==('shear','shear') and indxs[0]==indxs[1]:
-                    result0['M_B_noise'][start_i:end_i,:]+=result[lm][ii]['M_B_noise'][lm]
-                    result0['M_B'][start_i:end_i,:]+=result[lm][ii]['M_B'][lm]
+                    result0['M_B_noise']=result0['M_B_noise'].at[start_i:end_i,:].set(result[lm][ii]['M_B_noise'][lm])
+                    result0['M_B']=result0['M_B'].at[start_i:end_i,:].set(result[lm][ii]['M_B'][lm])
 
                 del result[lm][ii]
 
@@ -467,14 +473,14 @@ class window_utils():
         for k in result_ii.keys():
             result0[k]=result_ii[k]
 
-        result0['M']=np.zeros((nl,nl))
+        result0['M']=jnp.zeros((nl,nl))
         if  result_ii['M_noise'] is not None:
-            result0['M_noise']=np.zeros((nl,nl))
+            result0['M_noise']=jnp.zeros((nl,nl))
         if corr==('shear','shear') and indxs[0]==indxs[1]:
-            result0['M_B_noise']=np.zeros((nl,nl))
-            result0['M_B']=np.zeros((nl,nl))
+            result0['M_B_noise']=jnp.zeros((nl,nl))
+            result0['M_B']=jnp.zeros((nl,nl))
 
-        for i_lm in np.arange(len(self.lms)):
+        for i_lm in jnp.arange(len(self.lms)):
             lm=self.lms[i_lm]
             start_i=lm
             end_i=lm+self.step
@@ -522,7 +528,7 @@ class window_utils():
         Set the spin factors that will be used in window calculations for two different covariances.
         when spins are not same, we set them to 0. Expressions are not well defined in this case. Should be ok for l>~50 ish
         """
-        s1s2=np.absolute(self.s1_s2s[corr]).flatten()
+        s1s2=jnp.absolute(jnp.array(self.s1_s2s[corr])).flatten()
         if s1s2[0]==s1s2[1]:
             return s1s2[0]
         else:
@@ -532,8 +538,8 @@ class window_utils():
         bin_wt={}
         if c_ell0 is None:
             return bin_wt
-        corr=[cov_keys[i] for i in np.arange(4)]
-        indxs=[cov_keys[i+4] for i in np.arange(4)]
+        corr=[cov_keys[i] for i in jnp.arange(4)]
+        indxs=[cov_keys[i+4] for i in jnp.arange(4)]
         bin_wt['cl13']=c_ell0[(corr[0],corr[2])][(indxs[0],indxs[2])]
         bin_wt['cl24']=c_ell0[(corr[1],corr[3])][(indxs[1],indxs[3])] 
         bin_wt['cl14']=c_ell0[(corr[0],corr[3])][(indxs[0],indxs[3])]
@@ -549,8 +555,8 @@ class window_utils():
         bin_wt={}
         if xi0 is None:
             return None
-        corr=[cov_keys[i] for i in np.arange(4)]
-        indxs=[cov_keys[i+4] for i in np.arange(4)]
+        corr=[cov_keys[i] for i in jnp.arange(4)]
+        indxs=[cov_keys[i+4] for i in jnp.arange(4)]
         bin_wt_xi={}
 
         bin_wt_xi['xi12']={s:xi0[(corr[0],corr[1])][s][(indxs[0],indxs[1])]for s in xi0[(corr[0],corr[1])].keys()}
@@ -590,11 +596,11 @@ class window_utils():
 
             corr=win0['corr1']+win0['corr2']
             s1s2s={}
-            s1s2s[1324]=np.sort(np.array([self.cov_s1s2s(corr=(corr[0],corr[2])), #13
+            s1s2s[1324]=jnp.sort(jnp.array([self.cov_s1s2s(corr=(corr[0],corr[2])), #13
                                           self.cov_s1s2s(corr=(corr[1],corr[3])) #24
                                          ]))
             s1s2s[1324]=str(s1s2s[1324][0])+str(s1s2s[1324][1])
-            s1s2s[1423]=np.sort(np.array([self.cov_s1s2s(corr=(corr[0],corr[3])), #14
+            s1s2s[1423]=jnp.sort(jnp.array([self.cov_s1s2s(corr=(corr[0],corr[3])), #14
                                         self.cov_s1s2s(corr=(corr[1],corr[2])) #23
                                         ]))
             s1s2s[1423]=str(s1s2s[1423][0])+str(s1s2s[1423][1])
@@ -607,36 +613,36 @@ class window_utils():
                     wig_i=wig_3j_2_1423
                     if self.bin_window: #FIXME: wrong weights for noise
                         #this is an approximation because we donot save unbinned covariance
-                        bin_wt['clcl']={'wt0':np.sqrt(win['bin_wt']['cl14']*win['bin_wt']['cl23'])} 
-                        bin_wt['clcl']['wt_b']=np.sqrt(win['bin_wt']['cl_b14']*win['bin_wt']['cl_b23'])
+                        bin_wt['clcl']={'wt0':jnp.sqrt(win['bin_wt']['cl14']*win['bin_wt']['cl23'])} 
+                        bin_wt['clcl']['wt_b']=jnp.sqrt(win['bin_wt']['cl_b14']*win['bin_wt']['cl_b23'])
 
-                        bin_wt['Ncl']={'wt0':np.sqrt(win['bin_wt']['cl23'])} 
-                        bin_wt['Ncl']['wt_b']=np.sqrt(win['bin_wt']['cl_b23'])
+                        bin_wt['Ncl']={'wt0':jnp.sqrt(win['bin_wt']['cl23'])} 
+                        bin_wt['Ncl']['wt_b']=jnp.sqrt(win['bin_wt']['cl_b23'])
 
-                        bin_wt['clN']={'wt0':np.sqrt(win['bin_wt']['cl14'])} 
-                        bin_wt['clN']['wt_b']=np.sqrt(win['bin_wt']['cl_b14'])
+                        bin_wt['clN']={'wt0':jnp.sqrt(win['bin_wt']['cl14'])} 
+                        bin_wt['clN']['wt_b']=jnp.sqrt(win['bin_wt']['cl_b14'])
 
-                        bin_wt['NN']={'wt0':np.ones_like(win['bin_wt']['cl14'])} 
-                        bin_wt['NN']['wt_b']=np.ones_like(win['bin_wt']['cl_b14'])
+                        bin_wt['NN']={'wt0':jnp.ones_like(win['bin_wt']['cl14'])} 
+                        bin_wt['NN']['wt_b']=jnp.ones_like(win['bin_wt']['cl_b14'])
 
                 else:
                     wig_i=wig_3j_2_1324
                     if self.bin_window:
                          #FIXME: this is an approximation because we donot save unbinned covariance
-                        bin_wt['clcl']={'wt0':np.sqrt(win['bin_wt']['cl13']*win['bin_wt']['cl24'])}
-                        bin_wt['clcl']['wt_b']=np.sqrt(win['bin_wt']['cl_b13']*win['bin_wt']['cl_b24'])
+                        bin_wt['clcl']={'wt0':jnp.sqrt(win['bin_wt']['cl13']*win['bin_wt']['cl24'])}
+                        bin_wt['clcl']['wt_b']=jnp.sqrt(win['bin_wt']['cl_b13']*win['bin_wt']['cl_b24'])
 
-                        bin_wt['Ncl']={'wt0':np.sqrt(win['bin_wt']['cl24'])}
-                        bin_wt['Ncl']['wt_b']=np.sqrt(win['bin_wt']['cl_b24'])
+                        bin_wt['Ncl']={'wt0':jnp.sqrt(win['bin_wt']['cl24'])}
+                        bin_wt['Ncl']['wt_b']=jnp.sqrt(win['bin_wt']['cl_b24'])
 
-                        bin_wt['clN']={'wt0':np.sqrt(win['bin_wt']['cl13'])}
-                        bin_wt['clN']['wt_b']=np.sqrt(win['bin_wt']['cl_b13'])
+                        bin_wt['clN']={'wt0':jnp.sqrt(win['bin_wt']['cl13'])}
+                        bin_wt['clN']['wt_b']=jnp.sqrt(win['bin_wt']['cl_b13'])
 
-                        bin_wt['NN']={'wt0':np.ones_like(win['bin_wt']['cl13'])}
-                        bin_wt['NN']['wt_b']=np.ones_like(win['bin_wt']['cl_b13'])
+                        bin_wt['NN']={'wt0':jnp.ones_like(win['bin_wt']['cl13'])}
+                        bin_wt['NN']['wt_b']=jnp.ones_like(win['bin_wt']['cl_b13'])
 
                 for k in bin_wt.keys():
-                    if not np.all(bin_wt[k]['wt_b']==0): #avoid NAN
+                    if not jnp.all(bin_wt[k]['wt_b']==0): #avoid NAN
                         bin_wt[k]['wt_b']=1./bin_wt[k]['wt_b']
                 for wp in win['W_pm'][corr_i]:
                     win_t=self.coupling_matrix_large(win[corr_i], wig_3j_2=wig_i,mf_pm=mf_pm,W_pm=wp,
@@ -657,7 +663,7 @@ class window_utils():
     def combine_coupling_cov_xi(self,result):
         dic={}
         i=0
-        for ii in self.cov_keys: #list(result.keys()):#np.arange(len(result)):
+        for ii in self.cov_keys: #list(result.keys()):#jnp.arange(len(result)):
             result0=result[i]
             corr1=result0['corr1']
             corr2=result0['corr2']
@@ -691,7 +697,7 @@ class window_utils():
         if self.bin_window:
             nl=len(self.l_bins)-1
         
-        for ii_t in np.arange(len(self.cov_keys)): #list(result[0].keys()):#np.arange(len(result)):
+        for ii_t in jnp.arange(len(self.cov_keys)): #list(result[0].keys()):#jnp.arange(len(result)):
             ii=0 #because we delete below
             result0={}
 #             print('combine_coupling_cov saved keys: ',result[0][ii].keys())
@@ -714,10 +720,10 @@ class window_utils():
                 for k in result[0][ii]['M'][corr_i].keys():
                     result0['M'][corr_i][k]={}
                     for wp in W_pm[corr_i]:
-                        result0['M'][corr_i][k][wp]=np.zeros((nl,nl))
+                        result0['M'][corr_i][k][wp]=jnp.zeros((nl,nl))
 
-            for i_lm in np.arange(len(self.lms)):
-                lm=self.lms[i_lm]
+            for i_lm in jnp.arange(len(self.lms)):
+                lm=np.asscalar(self.lms[i_lm])
                 start_i=self.lms[i_lm]
                 end_i=lm+self.step
                 if self.bin_window:
@@ -726,7 +732,8 @@ class window_utils():
                 for corr_i in [1324,1423]:
                     for wp in W_pm[corr_i]:
                         for k in result[lm][ii]['M'][corr_i].keys():
-                            result0['M'][corr_i][k][wp][start_i:end_i,:]+=result[lm][ii]['M'][corr_i][k][wp][lm]
+                            result0['M'][corr_i][k][wp]=result0['M'][corr_i][k][wp].at[start_i:end_i,:].set(result[lm][ii]['M'][corr_i][k][wp][lm])
+                            # result0['M'][corr_i][k][wp][start_i:end_i,:]+=result[lm][ii]['M'][corr_i][k][wp][lm]
 
                 del result[lm][ii]
 
@@ -775,12 +782,12 @@ class window_utils():
             for k in result[0]['M'][corr_i].keys():
                 result0['M'][corr_i][k]={}
                 for wp in W_pm[corr_i]:
-                    result0['M'][corr_i][k][wp]=np.zeros((nl,nl))
+                    result0['M'][corr_i][k][wp]=jnp.zeros((nl,nl))
 
 
         #win['M'][1324][k][wp]
 
-        for i_lm in np.arange(len(self.lms)):
+        for i_lm in jnp.arange(len(self.lms)):
             lm=self.lms[i_lm]
             start_i=self.lms[i_lm]
             end_i=lm+self.step
@@ -952,7 +959,7 @@ class window_utils():
                     client.replicate(win_cov_t, branching_factor=1) #less stable
                     Win_cov+=win_cov_t
                     win_cov_t=[]
-                print('set_window_cl: Win_cov size: ',get_size_pickle(Win_cov),np.shape(Win_cov))#,Win_cov)
+                print('set_window_cl: Win_cov size: ',get_size_pickle(Win_cov),jnp.shape(Win_cov))#,Win_cov)
             elif self.do_cov and use_bag:
                 Win_cov=client_func(Win_cov)
 #         self.Win_cov=Win_cov
@@ -1053,7 +1060,7 @@ class window_utils():
         return Win
     
     def reduce_win_cl(self,win,win2):
-        print(win,win2)
+        
         dic=win
         corr=win2['corr']
         corr2=corr[::-1]
@@ -1219,10 +1226,10 @@ def get_window_power_cl(corr_indxs,WU,c_ell0=None,c_ell_b=None,z_bin1=None,z_bin
     win['corr']=corr
     win['indxs']=indxs
     
-    s1s2=np.absolute(self.s1_s2s[corr]).flatten()
+    s1s2=jnp.absolute(jnp.array(self.s1_s2s[corr])).flatten()
         
     W_pm=0
-    if np.sum(s1s2)!=0:
+    if jnp.sum(s1s2)!=0:
         W_pm=2 #we only deal with E mode\
         if corr==('shearB','shearB'):
             W_pm=-2
@@ -1234,16 +1241,16 @@ def get_window_power_cl(corr_indxs,WU,c_ell0=None,c_ell_b=None,z_bin1=None,z_bin
 #         z_bin2=self.z_bins[corr[1]][indxs[1]]
 
     win[12]={} #to keep some naming uniformity with the covariance window
-    win[12]['cl']=hp.anafast(map1=z_bin1['window'],map2=z_bin2['window'],
-                             lmax=self.window_lmax)[self.window_l]
-
+    win[12]['cl']=jnp.asarray(hp.anafast(map1=z_bin1['window'],map2=z_bin2['window'],
+                             lmax=self.window_lmax))[self.window_l]
+    
     if corr[0]==corr[1] and indxs[0]==indxs[1]:
         map1=z_bin1['window_N']
         if map1 is None:
-            map1=np.sqrt(z_bin1['window'])
+            map1=jnp.sqrt(z_bin1['window'])
             mask=z_bin1['window']==hp.UNSEEN
             map1[mask]=hp.UNSEEN        
-        win[12]['N']=hp.anafast(map1=map1,lmax=self.window_lmax)[self.window_l]
+        win[12]['N']=jnp.asarray(hp.anafast(map1=map1,lmax=self.window_lmax))[self.window_l]
 
     win['binning_util']=None
     win['bin_wt']=None
@@ -1252,8 +1259,8 @@ def get_window_power_cl(corr_indxs,WU,c_ell0=None,c_ell_b=None,z_bin1=None,z_bin
         cl_b=c_ell_b[corr][indxs]
         win['bin_wt']={}
         win['bin_wt']['cl']={'wt_b':1./cl_b,'wt0':cl0}
-        win['bin_wt']['N']={'wt_b':np.ones_like(cl_b),'wt0':np.ones_like(cl0)}
-        if np.all(cl_b==0):#avoid nan
+        win['bin_wt']['N']={'wt_b':jnp.ones_like(cl_b),'wt0':jnp.ones_like(cl0)}
+        if jnp.all(cl_b==0):#avoid nan
             win['bin_wt']['cl']={'wt_b':cl_b*0,'wt0':cl0*0}
             win['bin_wt']['N']={'wt_b':cl_b*0,'wt0':cl0*0}
     win['W_pm']=W_pm
@@ -1300,7 +1307,7 @@ def get_window_power_cov(corr_indxs,WU,bin_wt_cl=None,bin_wt_xi=None,z_bins={},
             return W_pm#for xi estimators, there is no +/-. Note that this will result in wrong thing for pseudo-C_ell.
                 #FIXME: hence pseudo-C_ell and xi together are not supported right now
 
-        s=[np.sum(self.s1_s2s[corr1]),np.sum(self.s1_s2s[corr2])]
+        s=[jnp.sum(jnp.array(self.s1_s2s[corr1])),jnp.sum(jnp.array(self.s1_s2s[corr2]))]
 
         if s[0]==2 and s[1]==2: #gE,gE
             W_pm=[2]
@@ -1310,12 +1317,12 @@ def get_window_power_cov(corr_indxs,WU,bin_wt_cl=None,bin_wt_xi=None,z_bins={},
             W_pm=[2]
         elif 4 in s and 0 in s: #EE,gg
             W_pm=[2]
-            for i in np.arange(2):
+            for i in jnp.arange(2):
                 if indxs[cov_indxs[i][0]]==indxs[cov_indxs[i][1]] and s[i]==4: #auto correlation, include B modes
                     W_pm=[2,-2]
         elif s[0]==4 and s[1]==4: #EE,EE
             W_pm=[2]
-            for i in np.arange(2):
+            for i in jnp.arange(2):
                 if indxs[cov_indxs[i][0]]==indxs[cov_indxs[i][1]] and s[i]==4: #auto correlation, include B modes
                     W_pm=[2,-2]
 
@@ -1324,11 +1331,11 @@ def get_window_power_cov(corr_indxs,WU,bin_wt_cl=None,bin_wt_xi=None,z_bins={},
 
     s1s2s={}
 
-    s1s2s[1324]=np.array([self.cov_s1s2s(corr=(corr[0],corr[2])), #13
+    s1s2s[1324]=jnp.array([self.cov_s1s2s(corr=(corr[0],corr[2])), #13
                           self.cov_s1s2s(corr=(corr[1],corr[3])) #24
                           ])
 
-    s1s2s[1423]=np.array([self.cov_s1s2s(corr=(corr[0],corr[3])), #14
+    s1s2s[1423]=jnp.array([self.cov_s1s2s(corr=(corr[0],corr[3])), #14
                           self.cov_s1s2s(corr=(corr[1],corr[2])) #23
                         ])
 
@@ -1349,47 +1356,47 @@ def get_window_power_cov(corr_indxs,WU,bin_wt_cl=None,bin_wt_xi=None,z_bins={},
     win[1423]={}
     t2=time.time()   
     if self.do_pseudo_cl:
-        win[1324]['clcl']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin3['window']),
-                                 map2=self.multiply_window(z_bin2['window'],z_bin4['window']),
+        win[1324]['clcl']=jnp.asarray(hp.anafast(map1=multiply_window(z_bin1['window'],z_bin3['window']),
+                                 map2=multiply_window(z_bin2['window'],z_bin4['window']),
                                  lmax=self.window_lmax
-                        )[self.window_l]
+                        ))[self.window_l]
 
         if corr[0]==corr[2] and indxs[0]==indxs[2]: #noise X cl
-            win[1324]['Ncl']=hp.anafast(map1=self.multiply_window(z_bin1['window_N'],z_bin3['window_N']),
-                                 map2=self.multiply_window(z_bin2['window'],z_bin4['window']),
+            win[1324]['Ncl']=jnp.asarray(hp.anafast(map1=multiply_window(z_bin1['window_N'],z_bin3['window_N']),
+                                 map2=multiply_window(z_bin2['window'],z_bin4['window']),
                                  lmax=self.window_lmax
-                        )[self.window_l]
+                        ))[self.window_l]
         if corr[1]==corr[3] and indxs[1]==indxs[3]:#noise X cl
-            win[1324]['clN']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin3['window']),
-                                 map2=self.multiply_window(z_bin2['window_N'],z_bin4['window_N']),
+            win[1324]['clN']=jnp.asarray(hp.anafast(map1=multiply_window(z_bin1['window'],z_bin3['window']),
+                                 map2=multiply_window(z_bin2['window_N'],z_bin4['window_N']),
                                  lmax=self.window_lmax
-                        )[self.window_l]
+                        ))[self.window_l]
         if corr[0]==corr[2] and indxs[0]==indxs[2] and corr[1]==corr[3] and indxs[1]==indxs[3]: #noise X noise
-            win[1324]['NN']=hp.anafast(map1=self.multiply_window(z_bin1['window_N'],z_bin3['window_N']),
-                                 map2=self.multiply_window(z_bin2['window_N'],z_bin4['window_N']),
+            win[1324]['NN']=jnp.asarray(hp.anafast(map1=multiply_window(z_bin1['window_N'],z_bin3['window_N']),
+                                 map2=multiply_window(z_bin2['window_N'],z_bin4['window_N']),
                                  lmax=self.window_lmax
-                        )[self.window_l]
+                        ))[self.window_l]
 
-        win[1423]['clcl']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin4['window']),
-                                 map2=self.multiply_window(z_bin2['window'],z_bin3['window']),
+        win[1423]['clcl']=jnp.asarray(hp.anafast(map1=multiply_window(z_bin1['window'],z_bin4['window']),
+                                 map2=multiply_window(z_bin2['window'],z_bin3['window']),
                                  lmax=self.window_lmax
-                            )[self.window_l]
+                            ))[self.window_l]
 
         if corr[0]==corr[3] and indxs[0]==indxs[3]: #noise14 X cl
-            win[1423]['Ncl']=hp.anafast(map1=self.multiply_window(z_bin1['window_N'],z_bin4['window_N']),
-                                 map2=self.multiply_window(z_bin2['window'],z_bin3['window']),
+            win[1423]['Ncl']=jnp.asarray(hp.anafast(map1=multiply_window(z_bin1['window_N'],z_bin4['window_N']),
+                                 map2=multiply_window(z_bin2['window'],z_bin3['window']),
                                  lmax=self.window_lmax
-                        )[self.window_l]
+                        ))[self.window_l]
         if corr[1]==corr[2] and indxs[1]==indxs[2]:#noise23 X cl
-            win[1423]['clN']=hp.anafast(map1=self.multiply_window(z_bin1['window'],z_bin4['window']),
-                                 map2=self.multiply_window(z_bin2['window_N'],z_bin3['window_N']),
+            win[1423]['clN']=jnp.asarray(hp.anafast(map1=multiply_window(z_bin1['window'],z_bin4['window']),
+                                 map2=multiply_window(z_bin2['window_N'],z_bin3['window_N']),
                                  lmax=self.window_lmax
-                        )[self.window_l]
+                        ))[self.window_l]
         if corr[0]==corr[3] and indxs[0]==indxs[3] and corr[1]==corr[2] and indxs[1]==indxs[2]: #noise X noise
-            win[1423]['NN']=hp.anafast(map1=self.multiply_window(z_bin1['window_N'],z_bin4['window_N']),
-                                 map2=self.multiply_window(z_bin2['window_N'],z_bin3['window_N']),
+            win[1423]['NN']=jnp.asarray(hp.anafast(map1=multiply_window(z_bin1['window_N'],z_bin4['window_N']),
+                                 map2=multiply_window(z_bin2['window_N'],z_bin3['window_N']),
                                  lmax=self.window_lmax
-                        )[self.window_l]
+                        ))[self.window_l]
 
 
         win['binning_util']=None
@@ -1403,13 +1410,13 @@ def get_window_power_cov(corr_indxs,WU,bin_wt_cl=None,bin_wt_xi=None,z_bins={},
     win['f_sky1234'],mask1234=self.mask_comb(mask12,mask34)
     
     if self.SSV_cov:
-        win['mask_comb_cl']=hp.anafast(map1=mask12,
+        win['mask_comb_cl']=jnp.asarray(hp.anafast(map1=mask12,
                              map2=mask34,
                              lmax=self.window_lmax
-                        ) #based on 4.34 of https://arxiv.org/pdf/1711.07467.pdf
+                        )) #based on 4.34 of https://arxiv.org/pdf/1711.07467.pdf
     
-    win['Om_w12']=win['f_sky12']*4*np.pi
-    win['Om_w34']=win['f_sky34']*4*np.pi
+    win['Om_w12']=win['f_sky12']*4*jnp.pi
+    win['Om_w34']=win['f_sky34']*4*jnp.pi
     del mask12,mask34
     win['M']={1324:{},1423:{}}
 
@@ -1426,9 +1433,9 @@ def get_window_power_cov(corr_indxs,WU,bin_wt_cl=None,bin_wt_xi=None,z_bins={},
         cl12={}
         cl34={}
 
-        win['mask_comb_cl1234']=hp.anafast(map1=mask1234,
+        win['mask_comb_cl1234']=jnp.asarray(hp.anafast(map1=mask1234,
                              lmax=self.window_lmax
-                        )
+                        ))
         for k in cl12.keys():
             th,win['xi'][12][k]=self.WT.projected_correlation(cl=cl12[k],**WT_kwargs)
             th,win['xi'][34][k]=self.WT.projected_correlation(cl=cl34[k],**WT_kwargs)
@@ -1490,7 +1497,7 @@ def xi_cov_window(WU,WT_kwargs={},mask_xi=[],z_windows={}):
 #     return xis #FIXME: following takes too long and doesn't make much of a difference. Still needs to be stress tested.
     self=WU
     masks={}
-#     mask0=np.ones_like(z_windows[i],dtype='bool')
+#     mask0=jnp.ones_like(z_windows[i],dtype='bool')
     for i in z_windows.keys():
         mask=z_windows[i]==hp.UNSEEN
 #         mask0*=mask
@@ -1521,16 +1528,25 @@ def xi_cov_window(WU,WT_kwargs={},mask_xi=[],z_windows={}):
 
 # def window_4_cl(window1,window2,window3,window4,mask):
 #     z_windows0=z_windows[0]*1.
-#     mask0=np.ones_like(z_windows[i],dtype='bool')
+#     mask0=jnp.ones_like(z_windows[i],dtype='bool')
 #     for i in z_windows.keys():
 #         mask=z_windows[i]!=hp.UNSEEN
 #         mask0*=mask
 #         if i>0:
 #             z_windows0*=z_windows[i]
 #     z_windows0[~mask0]=hp.UNSEEN
-#     cli=hp.anafast(map1=z_windows0)
+#     cli=jnp.asarray(hp.anafast(map1=z_windows0)
 #     return cli
-
+# @jit
+def multiply_window(win1,win2):
+    """
+    Take product of two windows which maybe partially overlapping and mask it properly.
+    """
+    W=win1*win2
+    x=jnp.logical_or(win1==hp.UNSEEN, win2==hp.UNSEEN)
+    W[x]=hp.UNSEEN
+    return W
+# @jit
 def window_4_cl(window1,window2,mask3,mask4):
     z_windows_i=window1*1
     z_windows_i[mask3]=hp.UNSEEN
@@ -1540,5 +1556,14 @@ def window_4_cl(window1,window2,mask3,mask4):
     z_windows_j[mask3]=hp.UNSEEN
     z_windows_j[mask4]=hp.UNSEEN
 
-    cli=hp.anafast(map1=z_windows_i,map2=z_windows_j)
+    cli=jnp.asarray(hp.anafast(map1=z_windows_i,map2=z_windows_j))
     return cli
+
+# @jit
+def coupling_M(wig,win,window_l,MF):
+    # print('coupling_M:',wig.shape,win.shape,window_l.shape,MF.shape)
+    # M=wig@(win*(2*window_l+1))
+    M=jnp.dot(wig,win*(2*window_l+1))
+    M/=4.*jnp.pi
+    M*=MF
+    return M

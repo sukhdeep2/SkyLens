@@ -1,5 +1,6 @@
 from lensing_lensing import *
-import numpy as np
+# import numpy as np
+import jax.numpy as np
 
 def fisher():
   def __init__(self,):

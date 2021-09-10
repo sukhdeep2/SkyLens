@@ -5,7 +5,8 @@ Functions for LSST, DESI, DES, KiDS and CMB surveys.
 
 from scipy.stats import norm as gaussian
 import copy
-import numpy as np
+# import numpy as np
+import jax.numpy as np
 #from lensing_utils import *
 from skylens.tracer_utils import *
 from astropy.cosmology import Planck15 as cosmo

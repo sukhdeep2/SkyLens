@@ -4,6 +4,7 @@ This file contains a class with helper functions for covariance calculations.
 
 import os,sys,pickle
 import numpy as np
+import jax.numpy as jnp
 from scipy.interpolate import interp1d
 from scipy.integrate import quad as scipy_int1d
 from scipy.special import jn, jn_zeros
@@ -13,8 +14,8 @@ from skylens.cov_tri import *
 from skylens.utils import *
 import healpy as hp
 
-d2r=np.pi/180.
-sky_area=np.pi*4/(d2r)**2 #in degrees
+d2r=jnp.pi/180.
+sky_area=jnp.pi*4/(d2r)**2 #in degrees
 
 
 class Covariance_utils():
@@ -34,15 +35,15 @@ class Covariance_utils():
 
         self.set_window_params()
 
-        self.gaussian_cov_norm=(2.*l+1.)*np.gradient(l) #need Delta l here. Even when
+        self.gaussian_cov_norm=(2.*l+1.)*jnp.gradient(l) #need Delta l here. Even when
                                                         #binning later
                                                         #take care of f_sky later
-#         self.gaussian_cov_norm_2D=np.outer(np.sqrt(self.gaussian_cov_norm),np.sqrt(self.gaussian_cov_norm))
+#         self.gaussian_cov_norm_2D=jnp.outer(jnp.sqrt(self.gaussian_cov_norm),jnp.sqrt(self.gaussian_cov_norm))
         if self.Tri_cov:
             self.CTR=cov_matter_tri(k=self.l)
         if use_window and use_binned_l:
-            dl=np.sqrt(np.gradient(self.l))
-            self.dl_norm=np.outer(dl,dl)
+            dl=jnp.sqrt(jnp.gradient(self.l))
+            self.dl_norm=jnp.outer(dl,dl)
 #         dict_size_pickle(self.__dict__,print_prefact='cov utils self size: ',depth=2)
 
     def set_window_params(self): #FIXME: size issues for large computes
@@ -58,7 +59,7 @@ class Covariance_utils():
         if self.use_window:
             return
         if isinstance(self.f_sky,float):
-            self.Om_W=4*np.pi*self.f_sky
+            self.Om_W=4*jnp.pi*self.f_sky
             self.Win,self.Win0=self.window_func()
         else:
             self.Om_W={k1:{}for k1 in self.f_sky.keys()}
@@ -66,7 +67,7 @@ class Covariance_utils():
             self.Win0={k1:{}for k1 in self.f_sky.keys()}
             for k1 in self.f_sky.keys():
                 for k2 in self.f_sky[k1].keys():
-                    self.Om_W[k1][k2]=4*np.pi*self.f_sky[k1][k2]
+                    self.Om_W[k1][k2]=4*jnp.pi*self.f_sky[k1][k2]
                     self.Win[k1][k2],self.Win0[k1][k2]=self.window_func(self.Om_W[k1][k2])
 
     def window_func(self,Om_W=None):
@@ -76,7 +77,7 @@ class Covariance_utils():
         if Om_W is None:
             Om_W=self.Om_W
         if self.window_file is not None:
-            W=np.genfromtxt(self.window_file,names=('l','cl'))
+            W=jnp.genfromtxt(self.window_file,names=('l','cl'))
             window_l=W['l']
             self.Win=W['cl']
             win_i=interp1d(window_l,self.Win,bounds_error=False,fill_value=0)
@@ -85,13 +86,13 @@ class Covariance_utils():
 
         #same as eq. 5.4 of https://arxiv.org/pdf/1711.07467.pdf
         if self.window_l is None:
-            self.window_l=np.arange(100)
+            self.window_l=jnp.arange(100)
 
         l=self.window_l
-        theta_win=np.sqrt(Om_W/np.pi)
+        theta_win=jnp.sqrt(Om_W/jnp.pi)
         l_th=l*theta_win
         Win0=2*jn(1,l_th)/l_th
-        Win0=np.nan_to_num(Win0)
+        Win0=jnp.nan_to_num(Win0)
         Win0=Win0**2 #p-Cl equivalent
 #         Win0*=self.f_sky  #FIXME???? Missing 4pi? Using Om_w doesnot match healpix calculation.
         
@@ -119,7 +120,7 @@ class Covariance_utils():
             Om_w12=Win['Om_w12'] #[tracers][z_indx]
             Om_w34=Win['Om_w34'] #[tracers][z_indx]
             
-        sigma_win=np.dot(Win_cl*np.gradient(self.window_l)*(2*self.window_l+1),cls_lin.T)
+        sigma_win=jnp.dot(Win_cl*jnp.gradient(self.window_l)*(2*self.window_l+1),cls_lin.T)
         sigma_win/=Om_w12*Om_w34
         return sigma_win
 
@@ -127,8 +128,8 @@ class Covariance_utils():
         """
         convert covariance matrix into correlation matrix.
         """
-        diag=np.diag(cov)
-        return cov/np.sqrt(np.outer(diag,diag))
+        diag=jnp.diag(cov)
+        return cov/jnp.sqrt(jnp.outer(diag,diag))
 
     def get_SN(self,SN,tracers,z_indx):
         """
@@ -139,10 +140,10 @@ class Covariance_utils():
             especially on small scales.
         """
         SN2={}
-        SN2[13]=SN[(tracers[0],tracers[2])][:,z_indx[0], z_indx[2] ] if SN.get((tracers[0],tracers[2])) is not None else np.zeros_like(self.l)
-        SN2[24]=SN[(tracers[1],tracers[3])][:,z_indx[1], z_indx[3] ] if SN.get((tracers[1],tracers[3])) is not None else np.zeros_like(self.l)
-        SN2[14]=SN[(tracers[0],tracers[3])][:,z_indx[0], z_indx[3] ] if SN.get((tracers[0],tracers[3])) is not None else np.zeros_like(self.l)
-        SN2[23]=SN[(tracers[1],tracers[2])][:,z_indx[1], z_indx[2] ] if SN.get((tracers[1],tracers[2])) is not None else np.zeros_like(self.l)
+        SN2[13]=SN[(tracers[0],tracers[2])][:,z_indx[0], z_indx[2] ] if SN.get((tracers[0],tracers[2])) is not None else jnp.zeros_like(self.l)
+        SN2[24]=SN[(tracers[1],tracers[3])][:,z_indx[1], z_indx[3] ] if SN.get((tracers[1],tracers[3])) is not None else jnp.zeros_like(self.l)
+        SN2[14]=SN[(tracers[0],tracers[3])][:,z_indx[0], z_indx[3] ] if SN.get((tracers[0],tracers[3])) is not None else jnp.zeros_like(self.l)
+        SN2[23]=SN[(tracers[1],tracers[2])][:,z_indx[1], z_indx[2] ] if SN.get((tracers[1],tracers[2])) is not None else jnp.zeros_like(self.l)
 
         return SN2
 
@@ -171,13 +172,13 @@ class Covariance_utils():
         G={1324:0,1423:0}
         cv_indxs={1324:(13,24),1423:(14,23)}
         add_EB=1
-        if self.do_xi and np.all(np.array(tracers)=='shear'):
+        if self.do_xi and jnp.all(jnp.array(tracers)=='shear'):
             add_EB+=1
         
         
 #         if self.use_window and self.use_binned_l:
-#             dl=np.sqrt(np.gradient(self.l))
-#             dl_norm=np.outer(dl,dl)
+#             dl=jnp.sqrt(jnp.gradient(self.l))
+#             dl_norm=jnp.outer(dl,dl)
         dl_norm=self.dl_norm
         for corr_i in [1324,1423]:
             W_pm=Win['W_pm'][corr_i]
@@ -187,17 +188,17 @@ class Covariance_utils():
             for k in Win['M'][corr_i].keys():
                 for wp in W_pm:
                     CV2=CV
-                    for a_EB in np.arange(add_EB):
+                    for a_EB in jnp.arange(add_EB):
                         if wp<0 or a_EB>0:
                             CV2=CV_B
                         if k=='clcl': 
-                            G_t=np.outer(CV2[c1],CV2[c2])
+                            G_t=jnp.outer(CV2[c1],CV2[c2])
                         if k=='Ncl': 
-                            G_t=np.outer(SN2[c1],CV2[c2])
+                            G_t=jnp.outer(SN2[c1],CV2[c2])
                         if k=='clN': 
-                            G_t=np.outer(CV2[c1],SN2[c2])
+                            G_t=jnp.outer(CV2[c1],SN2[c2])
                         if k=='NN': 
-                            G_t=np.outer(SN2[c1],SN2[c2])
+                            G_t=jnp.outer(SN2[c1],SN2[c2])
                         if a_EB>0:
                             G_t*=Bmode_mf #need to -1 for xi+/- cross covariance
                         # if bin_window:
@@ -206,7 +207,7 @@ class Covariance_utils():
                             G[corr_i]+=G_t*Win['M'][corr_i][k][wp]
                         else:
                             G[corr_i]+=G_t*Win['M'][corr_i][k][wp]/dl_norm #FIXME: consider using factor of 2l+1 in window and cov separately.
-#                             G[corr_i]/=np.gradient(self.l)
+#                             G[corr_i]/=jnp.gradient(self.l)
 
         return G[1324],G[1423]
         
@@ -258,16 +259,16 @@ class Covariance_utils():
             return G1324,G1423
             
         G1324,G1423=get_G4(CV,SN2)
-        if self.do_xi and np.all(np.array(tracers)=='shear'):
+        if self.do_xi and jnp.all(jnp.array(tracers)=='shear'):
             CVB=self.get_CV_B_cl(cls,tracers,z_indx)
             G1324_B,G1423_B=get_G4(CVB,SN2)
             G1324+=G1324_B*Bmode_mf
             G1423+=G1423_B*Bmode_mf
 
-        G1423=np.diag(G1423)
-        G1324=np.diag(G1324)
+        G1423=jnp.diag(G1423)
+        G1324=jnp.diag(G1324)
         
-        Norm=np.pi*4
+        Norm=jnp.pi*4
         
         fs1324=1
         fs0=1
@@ -278,11 +279,11 @@ class Covariance_utils():
                 fs0=self.f_sky**2
                 fs1423=self.f_sky
             else:
-                fs1324=self.f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[2]][z_indx[0],z_indx[2]]*f_sky[tracers[1],tracers[3]][z_indx[1],z_indx[3]])
+                fs1324=self.f_sky[tracers][z_indx]#jnp.sqrt(f_sky[tracers[0],tracers[2]][z_indx[0],z_indx[2]]*f_sky[tracers[1],tracers[3]][z_indx[1],z_indx[3]])
                 fs0=self.f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]] * f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
-                fs1423=self.f_sky[tracers][z_indx]#np.sqrt(f_sky[tracers[0],tracers[3]][z_indx[0],z_indx[3]]*f_sky[tracers[1],tracers[2]][z_indx[1],z_indx[2]])
+                fs1423=self.f_sky[tracers][z_indx]#jnp.sqrt(f_sky[tracers[0],tracers[3]][z_indx[0],z_indx[3]]*f_sky[tracers[1],tracers[2]][z_indx[1],z_indx[2]])
         
-        gaussian_cov_norm_2D=np.outer(np.sqrt(self.gaussian_cov_norm),np.sqrt(self.gaussian_cov_norm))
+        gaussian_cov_norm_2D=jnp.outer(jnp.sqrt(self.gaussian_cov_norm),jnp.sqrt(self.gaussian_cov_norm))
         if not self.do_xi:
             G1324/=gaussian_cov_norm_2D/fs1324*fs0
             G1423/=gaussian_cov_norm_2D/fs1423*fs0
@@ -290,7 +291,7 @@ class Covariance_utils():
             G1324*=fs1324/fs0/Norm
             G1423*=fs1423/fs0/Norm
 
-        if np.all(np.array(tracers)=='shear') and Bmode_mf<0:
+        if jnp.all(jnp.array(tracers)=='shear') and Bmode_mf<0:
             G1324*=Bmode_mf
             G1423*=Bmode_mf
             
@@ -311,10 +312,10 @@ class Covariance_utils():
         G={1324:0,1423:0}
         cv_indxs={1324:(13,24),1423:(14,23)}
         
-        Norm=np.pi*4
+        Norm=jnp.pi*4
         
         add_EB=1
-        if np.all(np.array(tracers)=='shear'):
+        if jnp.all(jnp.array(tracers)=='shear'):
             add_EB+=1
         
         if Win is None:
@@ -336,32 +337,32 @@ class Covariance_utils():
             for k in Win['xi_cov'][corr_i].keys():
                 for wp in W_pm:
                     CV2=CV
-                    for a_EB in np.arange(add_EB):
+                    for a_EB in jnp.arange(add_EB):
                         if wp<0 or a_EB>0:
                             CV2=CV_B
                         if k=='clcl': 
-#                             G_t=np.outer(CV2[c1],CV2[c2])
+#                             G_t=jnp.outer(CV2[c1],CV2[c2])
                             G_t=CV2[c1]*CV2[c2]
                         elif k=='Ncl': 
-#                             G_t=np.outer(SN2[c1],CV2[c2])
+#                             G_t=jnp.outer(SN2[c1],CV2[c2])
                             G_t=SN2[c1]*CV2[c2]
                         elif k=='clN': 
-#                             G_t=np.outer(CV2[c1],SN2[c2])
+#                             G_t=jnp.outer(CV2[c1],SN2[c2])
                             G_t=CV2[c1]*SN2[c2]
                         elif k=='NN' and not self.xi_SN_analytical: 
-#                             G_t=np.outer(SN2[c1],SN2[c2])
+#                             G_t=jnp.outer(SN2[c1],SN2[c2])
                             G_t=SN2[c1]*SN2[c2]
                         
                         if k=='NN' and self.xi_SN_analytical:
 #                             if not self.use_binned_theta:
-#                                 G_t=np.diag(SN2[c1][0]*SN2[c2][0]/WT_kwargs['theta']['s1_s2']) #Fixme: wont' work with binned_theta
+#                                 G_t=jnp.diag(SN2[c1][0]*SN2[c2][0]/WT_kwargs['theta']['s1_s2']) #Fixme: wont' work with binned_theta
 #                             else:
-                                G_t=np.diag(SN2[c1][0]*SN2[c2][0]/WT_kwargs['wig_theta']/WT_kwargs['wig_grad_theta']) 
+                                G_t=jnp.diag(SN2[c1][0]*SN2[c2][0]/WT_kwargs['wig_theta']/WT_kwargs['wig_grad_theta']) 
                         else:
 #                             th,G_t=WT.projected_covariance2(cl_cov=G_t,**WT_kwargs)
                             th,G_t=self.WT.projected_covariance(cl_cov=G_t,**WT_kwargs)
                         if Win is not None:
-#                             G_t*=np.outer(Win['xi'][12][k],Win['xi'][34][k])
+#                             G_t*=jnp.outer(Win['xi'][12][k],Win['xi'][34][k])
                             G_t*=Win['xi_cov'][corr_i][k]
                             
                         G_t/=Norm
@@ -384,10 +385,10 @@ class Covariance_utils():
         G={1324:0,1423:0}
         cv_indxs={1324:(13,24),1423:(14,23)}
         
-        Norm=np.pi*4
+        Norm=jnp.pi*4
         
         add_EB=1
-        if self.do_xi and np.all(np.array(tracers)=='shear'):
+        if self.do_xi and jnp.all(jnp.array(tracers)=='shear'):
             add_EB+=1
         
         if isinstance(self.f_sky,float):
@@ -409,7 +410,7 @@ class Covariance_utils():
             for k in ['clcl','NN','Ncl','clN']:
                 CV2=CV
                 G_t_SNi=0
-                for a_EB in np.arange(add_EB):
+                for a_EB in jnp.arange(add_EB):
                     if a_EB>0:
                         CV2=CV_B
                     if k=='clcl': 
@@ -434,8 +435,8 @@ class Covariance_utils():
         
         th,G_t=self.WT.projected_covariance(cl_cov=G_t,**WT_kwargs)
         #print('cov utils xi_gaussina_cov',G_t.shape)
-        if np.any(G_t_SN!=0):
-            G_t+=np.diag(G_t_SN)
+        if jnp.any(G_t_SN!=0):
+            G_t+=jnp.diag(G_t_SN)
         G_t/=Norm
         if a_EB>0:
             G_t*=Bmode_mf #need to -1 for xi+/- cross covariance
@@ -480,9 +481,9 @@ class Covariance_utils():
             if self.tidal_SSV_cov:
                 clr=clz['clsR']+ clz['clsRK']/6.
 
-            sig_F=np.sqrt(sig_cL*sigma_win) #kernel is function of l as well due to spin factors
+            sig_F=jnp.sqrt(sig_cL*sigma_win) #kernel is function of l as well due to spin factors
             clr=clr*sig_F.T
-            cov['SSC']=np.dot(clr.T,clr)
+            cov['SSC']=jnp.dot(clr.T,clr)
 
         if self.Tri_cov:
             cov['Tri']=self.CTR.cov_tri_zkernel(P=clz['cls'],z_kernel=sig_cL/clz['chi']**2,chi=clz['chi']) #FIXME: check dimensions, get correct factors of length.. chi**2 is guessed from eq. A3 of https://arxiv.org/pdf/1601.05779.pdf ... note that cls here is in units of P(k)/chi**2
@@ -492,7 +493,7 @@ class Covariance_utils():
             else:
                 fs0=self.f_sky[tracers[0],tracers[1]][z_indx[0],z_indx[1]]
                 fs0*=self.f_sky[tracers[2],tracers[3]][z_indx[2],z_indx[3]]
-                fs0=np.sqrt(fs0)
+                fs0=jnp.sqrt(fs0)
     #             cov['Tri']/=self.cov_utils.gaussian_cov_norm_2D**2 #Since there is no dirac delta, there should be 2 factor of (2l+1)dl... eq. A3 of https://arxiv.org/pdf/1601.05779.pdf
             cov['Tri']/=fs0 #(2l+1)f_sky.. we didnot normalize gaussian covariance in trispectrum computation.
 
@@ -640,7 +641,7 @@ def xi_cov(CU,z_bins=None,cls_all=None,Win_cov=None,Win_cl1=None,Win_cl2=None,
 
     if self.WT.name=='Hankel' and s1_s2!=s1_s2_cross:
         n=len(self.theta_bins)-1
-        cov_xi['final']=np.zeros((n,n))
+        cov_xi['final']=jnp.zeros((n,n))
         return cov_xi
 
     SN1324=0
@@ -655,7 +656,7 @@ def xi_cov(CU,z_bins=None,cls_all=None,Win_cov=None,Win_cl1=None,Win_cl2=None,
         Win_cov=Win_cov[z_indx]
 
     bf=1
-    if np.all(np.array(tracers)=='shear') and not s1_s2==s1_s2_cross: #cross between xi+ and xi-
+    if jnp.all(jnp.array(tracers)=='shear') and not s1_s2==s1_s2_cross: #cross between xi+ and xi-
         bf=-1
 
     cov_xi['G']=self.xi_gaussian_cov(cls,SN,tracers,z_indx,Win_cov,WT_kwargs,bf)
@@ -700,7 +701,7 @@ def xi_cov(CU,z_bins=None,cls_all=None,Win_cov=None,Win_cl1=None,Win_cl2=None,
     if self.sparse_cov:
         for k in ['G','SSC','Tri','final']:
 #                 print('xi_cov',corr1,corr2,indxs1,indxs2,cov_xi[k].shape,self.WT.theta[(0,0)].shape)
-            if  np.atleast_1d(cov_xi[k]).ndim>1:
+            if  jnp.atleast_1d(cov_xi[k]).ndim>1:
                 cov_xi[k]=sparse.COO(cov_xi[k])
 
     return cov_xi
@@ -710,11 +711,11 @@ def get_cov_iter(corr1,corr2,stack_corr_indxs=None):
     corr1_indxs=stack_corr_indxs[(corr1[0],corr1[1])]
     corr2_indxs=stack_corr_indxs[(corr2[0],corr2[1])]
     if corr1==corr2:
-        cov_indxs_iter=[ k for l in [[corr1_indxs[i]+corr2_indxs[j] for j in np.arange(i,
-                            len(corr1_indxs))] for i in np.arange(len(corr2_indxs))] for k in l]
+        cov_indxs_iter=[ k for l in [[corr1_indxs[i]+corr2_indxs[j] for j in jnp.arange(i,
+                            len(corr1_indxs))] for i in jnp.arange(len(corr2_indxs))] for k in l]
     else:
-        cov_indxs_iter=[ k for l in [[corr1_indxs[i]+corr2_indxs[j] for i in np.arange(
-                        len(corr1_indxs))] for j in np.arange(len(corr2_indxs))] for k in l]
+        cov_indxs_iter=[ k for l in [[corr1_indxs[i]+corr2_indxs[j] for i in jnp.arange(
+                        len(corr1_indxs))] for j in jnp.arange(len(corr2_indxs))] for k in l]
     return cov_indxs_iter
 
 def get_cl_cov_corr1_corr2(corr1,corr2,Win_cov=None,Win_cl=None,stack_corr_indxs=None,
@@ -750,7 +751,7 @@ def get_cl_cov_corr1_corr2(corr1,corr2,Win_cov=None,Win_cl=None,stack_corr_indxs
                                         )
                 i+=1
         cov_t=list(Cov_i(0,ncov))
-        cov={cov_indxs_iter[i]:cov_t[i] for i in np.arange(ncov)}
+        cov={cov_indxs_iter[i]:cov_t[i] for i in jnp.arange(ncov)}
         print('get_cov_corr1_corr2: ',corr1,corr2,' done')
         return cov
 
@@ -805,14 +806,14 @@ def get_xi_cov_corr1_corr2(corr1,corr2,Win_cov=None,Win_cl=None,stack_corr_indxs
                 i+=1
 
         cov_xi={}
-        for im1 in np.arange(len(s1_s2s_1)):
+        for im1 in jnp.arange(len(s1_s2s_1)):
             s1_s2=s1_s2s_1[im1]
             start2=0
             if corr1==corr2:
                 start2=im1
-            for im2 in np.arange(start2,len(s1_s2s_2)):
+            for im2 in jnp.arange(start2,len(s1_s2s_2)):
                 s1_s2_cross=s1_s2s_2[im2]
                 cov_t=list(Cov_i(0,ncov,s1_s2,s1_s2_cross))
-                cov_xi[s1_s2+s1_s2_cross]={cov_indxs_iter[i]:cov_t[i] for i in np.arange(ncov)}
+                cov_xi[s1_s2+s1_s2_cross]={cov_indxs_iter[i]:cov_t[i] for i in jnp.arange(ncov)}
         print('get_xi_cov_corr1_corr2: ',corr1,corr2,' done')
         return cov_xi

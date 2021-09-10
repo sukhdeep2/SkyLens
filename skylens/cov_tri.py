@@ -1,7 +1,8 @@
 """
 Matter trispectrum for covariance. Implementation of Harnois-Deraps&Pen 2011. 
 """
-import numpy as np
+# import numpy as np
+import jax.numpy as np
 #
 
 class cov_matter_tri():
@@ -74,7 +75,7 @@ class cov_matter_tri():
         # different parametrizations in Joachim's paper (above) vs code (below)
         U = alpha[l][1:] * k[:, None] ** delta[l][1:] \
                 * np.sin(beta[l][1:] * k[:, None] ** gamma[l][1:])
-        result += (lamda[l][1:] * U[:, None, :] * U[None, :, :]).sum(axis=-1)
+        result =result+ (lamda[l][1:] * U[:, None, :] * U[None, :, :]).sum(axis=-1)
 
         return result
     

@@ -1,6 +1,8 @@
 from scipy.interpolate import interp1d,interp2d,RectBivariateSpline
 import numpy as np
+import jax.numpy as jnp
 import itertools
+import copy
 
 class binning():
     def __init__(self,rmin=0.1,rmax=100,kmax=10,kmin=1.e-4,n_zeros=1000,n_zeros_step=1000,
@@ -11,30 +13,32 @@ class binning():
         bu={}
         bu['bin_center']=0.5*(r_bins[1:]+r_bins[:-1])
         bu['n_bins']=len(r_bins)-1
-        bu['bin_indx']=np.digitize(r,r_bins)-1
+        bu['bin_indx']=jnp.digitize(r,r_bins)-1
 
         bu['wt_b']=wt_b #these two are used for constructing asymmetric binned coupling matrix. see bin_2d_coupling
         bu['wt0']=wt0
         
-        binning_mat=np.zeros((len(r),bu['n_bins']))
-        for i in np.arange(len(r)):
+        binning_mat=jnp.zeros((len(r),bu['n_bins']))
+        for i in jnp.arange(len(r)):
             if bu['bin_indx'][i]<0 or bu['bin_indx'][i]>=bu['n_bins']:
                 continue
-            binning_mat[i,bu['bin_indx'][i]]=1.
+            # binning_mat[i,bu['bin_indx'][i]]=1.
+            binning_mat=binning_mat.at[i,bu['bin_indx'][i]].set(0)
         bu['binning_mat']=binning_mat
 
-        r2=np.sort(np.unique(np.append(r,r_bins))) #this takes care of problems around bin edges
-        dr=np.gradient(r2) #FIXME: can lead to shape errors if r is in r_bins
-        r2_idx=[i for i in np.arange(len(r2)) if r2[i] in r]
+        r2=jnp.sort(jnp.unique(jnp.append(r,r_bins))) #this takes care of problems around bin edges
+        dr=jnp.gradient(r2) #FIXME: can lead to shape errors if r is in r_bins
+        r2_idx=jnp.array([i for i in jnp.arange(len(r2)) if r2[i] in r])
         dr=dr[r2_idx]
         bu['r_dr']=r**(r_dim-1)*dr
         bu['r_dr']*=wt
-        bu['norm']=np.dot(bu['r_dr'],binning_mat)
+        bu['norm']=jnp.dot(bu['r_dr'],binning_mat)
 
         bu['binning_mat_r_dr']=bu['binning_mat']*bu['r_dr'][:,None]/bu['norm'][None,:]
         
-        x=np.logical_or(r_bins[1:]<=np.amin(r),r_bins[:-1]>=np.amax(r))
-        bu['norm'][x]=np.inf
+        x=jnp.logical_or(r_bins[1:]<=jnp.amin(r),r_bins[:-1]>=jnp.amax(r))
+        # bu['norm'][x]=jnp.inf
+        bu['norm']=bu['norm'].at[x].set(jnp.inf)
 #         print(bu['norm'])
 
         if mat_dims is not None:
@@ -44,27 +48,27 @@ class binning():
             for ndim in mat_dims:
                 s1=ls[0]
                 s2=ls[0]
-                r_dr_m=np.copy(bu['r_dr'])
-                norm_m=np.copy(bu['norm'])
-                for i in np.arange(ndim-1):
+                r_dr_m=copy.deepcopy(bu['r_dr'])
+                norm_m=copy.deepcopy(bu['norm'])
+                for i in jnp.arange(ndim-1):
                     s1=s2+','+ls[i+1]
                     s2+=ls[i+1]
-                    r_dr_m=np.einsum(s1+'->'+s2,r_dr_m,bu['r_dr'])#works ok for 2-d case
-                    norm_m=np.einsum(s1+'->'+s2,norm_m,bu['norm'])#works ok for 2-d case
+                    r_dr_m=jnp.einsum(s1+'->'+s2,r_dr_m,bu['r_dr'])#works ok for 2-d case
+                    norm_m=jnp.einsum(s1+'->'+s2,norm_m,bu['norm'])#works ok for 2-d case
                 bu['r_dr_m'][ndim]=r_dr_m
                 bu['norm_m'][ndim]=norm_m
         return bu
 
     def bin_1d(self,xi=[],bin_utils=None):
-        xi_b=np.dot(xi*bin_utils['r_dr'],bin_utils['binning_mat'])
+        xi_b=jnp.dot(xi*bin_utils['r_dr'],bin_utils['binning_mat'])
         xi_b/=bin_utils['norm']
         return xi_b
 
     def bin_2d(self,cov=[],bin_utils=None):
         #r_dr=bin_utils['r_dr']
-        #cov_r_dr=cov*bin_utils['r_dr_m'][2]#np.outer(r_dr,r_dr)
+        #cov_r_dr=cov*bin_utils['r_dr_m'][2]#jnp.outer(r_dr,r_dr)
         binning_mat=bin_utils['binning_mat']
-        cov_b=np.dot(binning_mat.T, np.dot(cov*bin_utils['r_dr_m'][2],binning_mat) )
+        cov_b=jnp.dot(binning_mat.T, jnp.dot(cov*bin_utils['r_dr_m'][2],binning_mat) )
         cov_b/=bin_utils['norm_m'][2]
         return cov_b
     
@@ -164,19 +168,19 @@ class binning():
     def bin_mat(self,r=[],mat=[],r_bins=[],r_dim=2,bin_utils=None):#works for cov and skewness
         ndim=len(mat.shape)
         n_bins=bin_utils['n_bins']
-        bin_idx=bin_utils['bin_indx']#np.digitize(r,r_bins)-1
+        bin_idx=bin_utils['bin_indx']#jnp.digitize(r,r_bins)-1
         r_dr=bin_utils['r_dr']
         r_dr_m=bin_utils['r_dr_m'][ndim]
 
-        mat_int=np.zeros([n_bins]*ndim,dtype='float64')
-        norm_int=np.zeros([n_bins]*ndim,dtype='float64')
+        mat_int=jnp.zeros([n_bins]*ndim,dtype='float64')
+        norm_int=jnp.zeros([n_bins]*ndim,dtype='float64')
 
-        mat_r_dr=mat*r_dr_m # same as cov_r_dr=cov*np.outer(r_dr,r_dr)
+        mat_r_dr=mat*r_dr_m # same as cov_r_dr=cov*jnp.outer(r_dr,r_dr)
         norm_ijk=bin_utils['norm_m'][ndim]
-        for indxs in itertools.product(np.arange(min(bin_idx),n_bins),repeat=ndim):
-            x={}#np.zeros_like(mat_r_dr,dtype='bool')
+        for indxs in itertools.product(jnp.arange(min(bin_idx),n_bins),repeat=ndim):
+            x={}#jnp.zeros_like(mat_r_dr,dtype='bool')
             mat_t=[]
-            for nd in np.arange(ndim):
+            for nd in jnp.arange(ndim):
                 slc = [slice(None)] * (ndim)
                 #x[nd]=bin_idx==indxs[nd]
                 slc[nd]=bin_idx==indxs[nd]
@@ -184,39 +188,39 @@ class binning():
                     mat_t=mat_r_dr[slc]
                 else:
                     mat_t=mat_t[slc]
-            mat_int[indxs]=np.sum(mat_t)
+            mat_int[indxs]=jnp.sum(mat_t)
         mat_int/=norm_ijk
         return mat_int
 
 
 def bin_1d(xi=[],bin_utils=None):
-    xi_b=np.dot(xi*bin_utils['r_dr'],bin_utils['binning_mat'])
+    xi_b=jnp.dot(xi*bin_utils['r_dr'],bin_utils['binning_mat'])
     xi_b/=bin_utils['norm']
     return xi_b
 
 
 #more basic binning code for testing.
 def bin_cov(r=[],cov=[],r_bins=[]):
-    bin_center=np.sqrt(r_bins[1:]*r_bins[:-1])
+    bin_center=jnp.sqrt(r_bins[1:]*r_bins[:-1])
     n_bins=len(bin_center)
-    cov_int=np.zeros((n_bins,n_bins),dtype='float64')
-    bin_idx=np.digitize(r,r_bins)-1
-    r2=np.sort(np.unique(np.append(r,r_bins))) #this takes care of problems around bin edges
-    dr=np.gradient(r2)
-    r2_idx=[i for i in np.arange(len(r2)) if r2[i] in r]
+    cov_int=jnp.zeros((n_bins,n_bins),dtype='float64')
+    bin_idx=jnp.digitize(r,r_bins)-1
+    r2=jnp.sort(jnp.unique(jnp.append(r,r_bins))) #this takes care of problems around bin edges
+    dr=jnp.gradient(r2)
+    r2_idx=[i for i in jnp.arange(len(r2)) if r2[i] in r]
     dr=dr[r2_idx]
     r_dr=r*dr
-    cov_r_dr=cov*np.outer(r_dr,r_dr)
-    for i in np.arange(min(bin_idx+1),n_bins):
+    cov_r_dr=cov*jnp.outer(r_dr,r_dr)
+    for i in jnp.arange(min(bin_idx+1),n_bins):
         xi=bin_idx==i
-        for j in np.arange(min(bin_idx),n_bins):
+        for j in jnp.arange(min(bin_idx),n_bins):
             xj=bin_idx==j
-            norm_ij=np.sum(r_dr[xi])*np.sum(r_dr[xj])
+            norm_ij=jnp.sum(r_dr[xi])*jnp.sum(r_dr[xj])
             if i==j:
                 print( i,j,norm_ij)
             if norm_ij==0:
                 continue
-            cov_int[i][j]=np.sum(cov_r_dr[xi,:][:,xj])/norm_ij
-    #cov_int=np.nan_to_num(cov_int)
-#         print np.diag(cov_r_dr)
+            cov_int[i][j]=jnp.sum(cov_r_dr[xi,:][:,xj])/norm_ij
+    #cov_int=jnp.nan_to_num(cov_int)
+#         print jnp.diag(cov_r_dr)
     return cov_int
