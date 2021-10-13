@@ -34,15 +34,16 @@ from scipy import interpolate
 import copy
 import time
 from skylens.cosmology import *
+import baccoemu #https://bacco.dipc.org/baccoemu_docs/index.html#quickstart
 
 cosmo_h=cosmo_planck.clone(H0=100)
 #c=c.to(u.km/u.second)
 
 cosmo_fid=dict({'h':cosmo_planck.h,'Omb':cosmo_planck.Ob0,'Omd':cosmo_planck.Om0-cosmo_planck.Ob0,'s8':0.817,'Om':cosmo_planck.Om0,
                 'Ase9':2.2,'mnu':cosmo_planck.m_nu[-1].value,'Omk':cosmo_planck.Ok0,'tau':0.06,'ns':0.965,
-                'OmR':cosmo_planck.Ogamma0+cosmo_planck.Onu0,'w':-1,'wa':0,'Tcmb':cosmo_planck.Tcmb0,'z_max':4,'use_astropy':True})
+                'OmR':cosmo_planck.Ogamma0+cosmo_planck.Onu0,'w':-1,'wa':0,'T_cmb':cosmo_planck.Tcmb0, 'Neff':cosmo_planck.Neff, 'z_max':4,'use_astropy':True})
 cosmo_fid['Oml']=1.-cosmo_fid['Om']-cosmo_fid['Omk']
-pk_params_default={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'class_pk','halofit_version':'takahashi'}
+pk_params_default={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'camb_pk','halofit_version':'takahashi'}
 
 # baryonic scenario option:
 # "owls_AGN","owls_DBLIMFV1618","owls_NOSN","owls_NOSN_NOZCOOL","owls_NOZCOOL","owls_REF","owls_WDENS"
@@ -111,7 +112,10 @@ class Power_Spectra(cosmology):
         if camb is None:
             pk_func_default=self.class_pk
         print('power spectra',pk_func)
-        self.pk_func=pk_func_default if pk_func is None else getattr(self,pk_func)
+        try:
+            self.pk_func = globals()[pk_func]
+        except:
+            self.pk_func=pk_func_default if pk_func is None else getattr(self,pk_func)
         if not pk_params is None:
             self.kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),
             pk_params['nk'])
@@ -122,7 +126,10 @@ class Power_Spectra(cosmology):
         pk_func=self.pk_func
         if pk_params is not None:
             if pk_params.get('pk_func'):
-                pk_func=getattr(self,pk_params['pk_func'])
+                try:
+                    pk_func = globals()[pk_func]
+                except:
+                    pk_func=getattr(self,pk_params['pk_func'])
         if pk_lock is not None:
             ri=np.random.uniform(0.5,4,size=1)[0]
             time.sleep(0.2*ri) #prevents threads from deadlocking while trying to acquire the lock
@@ -213,7 +220,7 @@ class Power_Spectra(cosmology):
 #                 Dz=self.DZ_int(z=[z0,z[i]])
 #                 ps[i]=ps0*(Dz[1]/Dz[0])**2
         return ps*cosmo_params['h']**3,kh   #factors of h to get in same units as camb output
-
+    
     def camb_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
         #Set up a new set of parameters for CAMB
         if cosmo_params is None:
@@ -292,11 +299,6 @@ class Power_Spectra(cosmology):
         h=cosmo_params['h']
         
         class_params= cosmo_params.copy()
-        #pop parameters that are defined in CAMB formalism and reinsert them in CLASS formalism
-        pop_list = ['Omb', 'Omd', 'Ase9', 'ns', 'w', 'wa', 'zmax', 'Neff', 'mnu']
-        [class_params.pop(key) for key in pop_list]
-        
-        #reinsert cosmology parameters in CAMB formalism
         if('omega_cdm' in class_params): #check if omega_cdm is provided;
             pass
         else:
@@ -318,6 +320,13 @@ class Power_Spectra(cosmology):
         if pk_params['non_linear']==1:
             class_params['non linear']='halofit'
 
+        #pop parameters that are defined in CAMB formalism
+        pop_list = ['Omb', 'Om', 'Omk', 'Omd', 'OmR',
+                    'Ase9', 'ns', 'w', 'wa', 'zmax', 
+                    'Neff', 'mnu', 's8', 'tau', 'z_max',
+                   'use_astropy', 'w0_fld', 'wa_fld']
+        [class_params.pop(key) for key in pop_list if key in class_params]
+        
         """class_params['N_ur']=3.04 #ultra relativistic species... neutrinos
         if cosmo_params['mnu']!=0:
             class_params['N_ur']-=1 #one massive neutrino
