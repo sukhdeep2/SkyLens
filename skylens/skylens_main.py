@@ -65,7 +65,7 @@ class Skylens():
             self.logger.setLevel(level=logging.DEBUG)
             logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s',
                                 level=logging.DEBUG, datefmt='%I:%M:%S')
-
+        
         if tracer_utils is None:
             self.tracer_utils=Tracer_utils(shear_zbins=self.shear_zbins,galaxy_zbins=self.galaxy_zbins,kappa_zbins=self.kappa_zbins,
                                             logger=self.logger,l=self.l_cl,scheduler_info=self.scheduler_info,
@@ -657,7 +657,8 @@ class Skylens():
         if zkernel is None:
             zkernel={}
             for tracer in tracers:
-                zkernel[tracer]=self.tracer_utils.set_kernels(Ang_PS=Ang_PS,tracer=tracer,z_bins=z_bins[tracer],delayed_compute=False)
+                zkernel[tracer]=self.tracer_utils.set_kernels(Ang_PS=Ang_PS,tracer=tracer,
+                                                          z_bins=z_bins[tracer],delayed_compute=False)
                 if 'galaxy' in tracers:
                     if bias_func is None:
                         bias_func='constant_bias'
@@ -687,7 +688,7 @@ class Skylens():
                 if self.use_window and self.do_pseudo_cl:
                     if not self.bin_window:
                         cl=self.cl_func[corr](zbin1=zkernel[corr[0]][i],zbin2=zkernel[corr[1]][j],
-                                                             corr=corr,cosmo_params=cosmo_params,clz=Ang_PS.clz)#Ang_PS=Ang_PS) 
+                                                             corr=corr,cosmo_params=cosmo_params, Ang_PS=Ang_PS) 
 
                         pcl=calc_pseudo_cl(cl,Win=Win['cl'][corr][(i,j)])
                         pcl_b+=[bin_cl_func(cl=pcl,use_binned_l=self.use_binned_l,bin_cl=self.bin_cl,cl_bin_utils=cl_bin_utils)]
