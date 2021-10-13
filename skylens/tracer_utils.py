@@ -144,6 +144,7 @@ class Tracer_utils():
         z_bins=self.get_z_bins(tracer=tracer)
         n_bins=z_bins['n_bins']
         self.SN[tracer]=None
+        
         if self.do_cov:
             self.SN[tracer]=np.zeros((len(self.l),n_bins,n_bins))
             for i in np.arange(n_bins):
