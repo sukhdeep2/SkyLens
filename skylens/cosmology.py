@@ -32,7 +32,7 @@ tol=1.e-9
 
 cosmo_fid=dict({'h':cosmo_planck.h,'Omb':cosmo_planck.Ob0,'Omd':cosmo_planck.Om0-cosmo_planck.Ob0, 's8':0.817,
                 'Ase9':2.2,'mnu':cosmo_planck.m_nu[-1].value,'Ok':cosmo_planck.Ok0,'tau':0.06,'ns':0.965, 'OmR':cosmo_planck.Ogamma0+cosmo_planck.Onu0,
-                'Tcmb':cosmo_planck.Tcmb0,'w':-1,'wa':0})
+                'T_cmb':cosmo_planck.Tcmb0, 'Neff':cosmo_planck.Neff, 'w':-1,'wa':0})
 
 class cosmology():
     def __init__(self,cosmo_params=cosmo_fid,dz=0.005,do_calcs=1,rtol=1.e-4,h_inv=True,use_astropy=True,
@@ -56,6 +56,7 @@ class cosmology():
     
     def set_cosmology(self,cosmo_params=None):
         if cosmo_params is None:
+            print("cosmo params none")
             return
         self.__dict__.update(cosmo_params) #assign all input args to the class as properties
         self.Om=self.Omb+self.Omd
@@ -93,6 +94,7 @@ class cosmology():
         #m_nu=self.astropy_cosmo.m_nu.value
         #m_nu[-1]=cosmo_params['mnu']
         #m_nu*=self.astropy_cosmo.m_nu.unit
+        print(cosmo_params)
         self.astropy_cosmo=cosmo(H0=cosmo_params['h']*100, Om0=self.Om,
                                                     Tcmb0 = cosmo_params['T_cmb'], Neff = cosmo_params['Neff'],
                                                     m_nu = (cosmo_params['mnu'] * u.eV).to(u.eV, equivalencies=u.mass_energy()),
@@ -292,7 +294,10 @@ class EH_pk(): #eisenstein_hu power spectra https://arxiv.org/pdf/astro-ph/97091
         self.__dict__.update(cosmo_params) #assign all input args to the class as properties
         self.k=k
         self.c=c
-        self.theta=self.Tcmb/2.7
+        try:
+            self.theta=self.Tcmb/2.7
+        except:
+            self.theta=self.T_cmb/2.7
         try:
             self.theta=self.theta.value
         except:
