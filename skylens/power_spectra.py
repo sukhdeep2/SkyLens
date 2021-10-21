@@ -34,7 +34,8 @@ from scipy import interpolate
 import copy
 import time
 from skylens.cosmology import *
-import baccoemu #https://bacco.dipc.org/baccoemu_docs/index.html#quickstart
+
+import baccoemu
 
 cosmo_h=cosmo_planck.clone(H0=100)
 #c=c.to(u.km/u.second)
@@ -112,10 +113,21 @@ class Power_Spectra(cosmology):
         if camb is None:
             pk_func_default=self.class_pk
         print('power spectra',pk_func)
-        try:
-            self.pk_func = globals()[pk_func]
-        except:
-            self.pk_func=pk_func_default if pk_func is None else getattr(self,pk_func)
+        print(isinstance(pk_params['pk_func'], str))
+        #print(globals().keys())
+        #print(globals()[pk_func])
+        #try:
+        #    self.pk_func = globals()[pk_func]
+        #except:
+        #    self.pk_func=pk_func_default if pk_func is None else getattr(self,pk_func)
+        if isinstance(pk_params['pk_func'], str):
+            self.pk_func=getattr(self,pk_params['pk_func'])
+        else:
+            self.pk_func = pk_params['pk_func']
+        
+        #if pk_params['pk_func'] == 'bacco_pk':
+        #    self.emulator = baccoemu.Matter_powerspectrum()
+        
         if not pk_params is None:
             self.kh=np.logspace(np.log10(pk_params['kmin']),np.log10(pk_params['kmax']),
             pk_params['nk'])
@@ -126,10 +138,14 @@ class Power_Spectra(cosmology):
         pk_func=self.pk_func
         if pk_params is not None:
             if pk_params.get('pk_func'):
-                try:
-                    pk_func = globals()[pk_func]
-                except:
+                #try:
+                #    pk_func = globals()[pk_func]
+                #except:
+                #    pk_func=getattr(self,pk_params['pk_func'])
+                if isinstance(pk_params['pk_func'], str):
                     pk_func=getattr(self,pk_params['pk_func'])
+                else:
+                    self.pk_func = pk_params['pk_func']
         if pk_lock is not None:
             ri=np.random.uniform(0.5,4,size=1)[0]
             time.sleep(0.2*ri) #prevents threads from deadlocking while trying to acquire the lock
@@ -189,7 +205,23 @@ class Power_Spectra(cosmology):
         DZ=self.DZ_approx(z=z)
         pk=pk0[None,:]*DZ[:,None]
         return pk*cosmo_params['h']**3,kh
-
+    
+    def bacco_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
+        params_bacco = {
+        'omega_matter' : cosmo_params['Om'],
+        'sigma8'       : cosmo_params['sigma8'],
+        'omega_baryon' : cosmo_params['Omb'],
+        'ns'           : cosmo_params['ns'],
+        'hubble'       : cosmo_params['h'],
+        'neutrino_mass': cosmo_params['mnu'],
+        'w0'           : cosmo_params['w'],
+        'wa'           : cosmo_params['wa'],
+        'expfactor'    : 1/(1 + z)     
+        }
+        emulator = baccoemu.Matter_powerspectrum()
+        k, pknl = emulator.get_nonlinear_pk(coordinates=params_bacco, baryonic_boost=False) 
+        return pknl, k
+    
     def ccl_pk(self,z,cosmo_params=None,pk_params=None,return_s8=False):
         if not cosmo_params:
             cosmo_params=self.cosmo_params
@@ -321,7 +353,7 @@ class Power_Spectra(cosmology):
             class_params['non linear']='halofit'
 
         #pop parameters that are defined in CAMB formalism
-        pop_list = ['Omb', 'Om', 'Omk', 'Omd', 'OmR',
+        pop_list = ['Omb', 'Om', 'Omk', 'Omd', 'OmR', 'Oml',
                     'Ase9', 'ns', 'w', 'wa', 'zmax', 
                     'Neff', 'mnu', 's8', 'tau', 'z_max',
                    'use_astropy', 'w0_fld', 'wa_fld']
