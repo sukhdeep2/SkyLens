@@ -24,7 +24,9 @@ import argparse
 
 if __name__=='__main__':
     
-    test_run=False
+    outp = {} #save output
+    
+    test_run=True
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--do_xi", "-do_xi",type=int, help="")
@@ -88,7 +90,7 @@ if __name__=='__main__':
     skylens_args['scheduler_info']=scheduler_info
     
     zs_bin=skylens_args['shear_zbins']
-    file_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/tests/imaster/'
+    file_home='/home/tkarim/SkyLens/scripts/tests/'
     if do_xi:
         fname_out='mcmc_dat_xi_{nz}_bl{bl}_bth{bth}_eh{eh_pk}.pkl'.format(nz=zs_bin['n_bins'],bl=np.int(use_binned_l),
                                                                               bth=np.int(use_binned_theta),eh_pk=int(eh_pk))

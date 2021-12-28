@@ -333,8 +333,11 @@ class Power_Spectra(cosmology):
         class_params= cosmo_params.copy()
         if('omega_cdm' in class_params): #check if omega_cdm is provided;
             pass
+        elif('Omd' in class_params): #check if provided in CAMB format
+            class_params['omega_cdm'] = cosmo_params['Omd']*h**2
         else:
-            class_params.update({'omega_cdm':(cosmo_params['Om']-cosmo_params['Omb'])*h**2})
+            #class_params.update({'omega_cdm':(cosmo_params['Om']-cosmo_params['Omb'])*h**2})
+            raise Exception('Omega_cdm not provided.')
             
         if(('P_k_max_1/Mpc' in class_params) | ('P_k_max_h/Mpc' in class_params)):
             pass
@@ -356,7 +359,7 @@ class Power_Spectra(cosmology):
         pop_list = ['Omb', 'Om', 'Omk', 'Omd', 'OmR', 'Oml',
                     'Ase9', 'ns', 'w', 'wa', 'zmax', 
                     'Neff', 'mnu', 's8', 'tau', 'z_max',
-                   'use_astropy', 'w0_fld', 'wa_fld']
+                   'use_astropy', 'w0_fld', 'wa_fld', 'pk_func']
         [class_params.pop(key) for key in pop_list if key in class_params]
         
         """class_params['N_ur']=3.04 #ultra relativistic species... neutrinos

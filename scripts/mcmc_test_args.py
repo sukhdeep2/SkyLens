@@ -4,11 +4,12 @@ from skylens.survey_utils import *
 
 """tracer pairs for correlations"""
 #tracers currently supported: galaxy,shear,kappa
-corr_ggl=('galaxy','shear')
+#corr_ggl=('galaxy','shear')
 corr_gg=('galaxy','galaxy')
-corr_ll=('shear','shear')
+#corr_ll=('shear','shear')
 
-corrs=[corr_ll,corr_ggl,corr_gg] #tracer pairs to use. This is passed to skylens
+#corrs=[corr_ll,corr_ggl,corr_gg] #tracer pairs to use. This is passed to skylens
+corrs = [corr_gg]
 
     
 """C_ell"""
@@ -61,9 +62,9 @@ clean_tracer_window=True #remove tracer windows from memory once coupling matric
 wigner_files={} #wigner file to get pseudo_cl coupling matrices.
                 #these can be gwenerated using Gen_wig_m0.py and Gen_wig_m2.py
                 #these are large files and are stored as compressed arrays, using zarr package.
-wig_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
-wigner_files[0]= wig_home+'dask_wig3j_l3500_w2100_0_reorder.zarr'
-wigner_files[2]= wig_home+'dask_wig3j_l3500_w2100_2_reorder.zarr'
+wig_home='/home/tkarim/SkyLens/temp/'
+wigner_files[0]= wig_home+'dask_wig3j_l2048_w4096_0_reorder.zarr/'
+#wigner_files[2]= wig_home+'dask_wig3j_l3500_w2100_2_reorder.zarr'
 
 """covariance"""
 do_cov=True
@@ -88,7 +89,7 @@ galaxy_zbins=shear_zbins
 from astropy.cosmology import Planck15 as cosmo
 cosmo_params=dict({'h':cosmo.h,'Omb':cosmo.Ob0,'Omd':cosmo.Om0-cosmo.Ob0,'s8':0.817,'Om':cosmo.Om0,
                 'Ase9':2.2,'mnu':cosmo.m_nu[-1].value,'Omk':cosmo.Ok0,'tau':0.06,'ns':0.965,
-                'OmR':cosmo.Ogamma0+cosmo.Onu0,'w':-1,'wa':0,'Tcmb':cosmo.Tcmb0})
+                'OmR':cosmo.Ogamma0+cosmo.Onu0,'w':-1,'wa':0,'T_cmb':cosmo.Tcmb0, 'Neff':cosmo.Neff})
 cosmo_params['Oml']=1.-cosmo_params['Om']-cosmo_params['Omk']
 pk_params={'non_linear':1,'kmax':30,'kmin':3.e-4,'nk':500,'scenario':'dmo','pk_func':'camb_pk_too_many_z','halofit_version':'takahashi'}
 

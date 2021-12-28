@@ -1,6 +1,6 @@
 import sys
 from skylens import *
-from survey_utils import *
+from skylens.survey_utils import *
 
 import seaborn as sns
 colors=sns.color_palette()
@@ -15,37 +15,41 @@ LC,scheduler_info=start_client(Scheduler_file=None,local_directory=None,ncpu=Non
 client=client_get(scheduler_info=scheduler_info)
 
 #set path to wigner-3j files.
-wig_home='/verafs/scratch/phy200040p/sukhdeep/physics2/skylens/temp/'
+#wig_home=
 wigner_files={}
-wigner_files[0]= wig_home+'dask_wig3j_l5000_w5000_0_reorder.zarr'
-wigner_files[2]= wig_home+'/dask_wig3j_l2200_w4400_2_reorder.zarr'
+wigner_files[0]= '/home/tkarim/SkyLens/temp/dask_wig3j_l2048_w4096_0_reorder.zarr/'
+#wigner_files[2]= wig_home+'/dask_wig3j_l2200_w4400_2_reorder.zarr'
 wigner_step=100
 
 #directory to save the figures
 fig_home='./figures/'
 
 #define correlation pairs
-corr_ggl=('galaxy','shear')
+corr_kk=('kappa', 'kappa')
+#corr_ggl=('galaxy','shear')
 corr_gg=('galaxy','galaxy')
-corr_ll=('shear','shear')
+corr_kg=('kappa', 'galaxy')
+#corr_ll=('shear','shear')
 
 #spin factors for different correlations.
 s1_s2s={}
 s1_s2s[corr_gg]=(0,0)
-s1_s2s[corr_ll]=[(2,2),(2,-2)]
-s1_s2s[corr_ggl]=(0,2)
+s1_s2s[corr_kk]=(0,0)
+s1_s2s[corr_kg]=(0,0)
+#s1_s2s[corr_ll]=[(2,2),(2,-2)]
+#s1_s2s[corr_ggl]=(0,2)
 
 #plot labels for different correlations
 corr_labels={corr:{} for corr in s1_s2s.keys()}
-corr_labels[corr_ll][(2,2)]=r'$\xi_+$'
-corr_labels[corr_ll][(2,-2)]=r'$\xi_-$'
-corr_labels[corr_gg][(0,0)]=r'$gg$'
-corr_labels[corr_ggl][(0,2)]=r'$g\gamma$'
+#corr_labels[corr_ll][(2,2)]=r'$\xi_+$'
+#corr_labels[corr_ll][(2,-2)]=r'$\xi_-$'
+#corr_labels[corr_gg][(0,0)]=r'$gg$'
+#corr_labels[corr_ggl][(0,2)]=r'$g\gamma$'
 
 #arguments to append to filenames for different correlations
 corr_fnames={corr:{} for corr in s1_s2s.keys()}
-corr_fnames[corr_ll][(2,2)]='llp'
-corr_fnames[corr_ll][(2,-2)]='llm'
+#corr_fnames[corr_ll][(2,2)]='llp'
+#corr_fnames[corr_ll][(2,-2)]='llm'
 corr_fnames[corr_gg][(0,0)]='gg'
 corr_fnames[corr_ggl][(0,2)]='ggl'
 
@@ -56,6 +60,7 @@ Tri_cov=False
 
 sparse_cov=True
 
+#USE CORRECT FSKY
 f_sky=0.3
 
 nz_PS=100
@@ -64,10 +69,10 @@ store_win=True
 
 bi=(0,0) #tracer bin indices for cross correlations. always zero because we only use 1 tomographic bin.
 
-z0_galaxy=0.5
-z0_shear=1
-ns0_galaxy=10
-ns0_shear=30
+#z0_galaxy=0.5
+#z0_shear=1
+#ns0_galaxy=10
+#ns0_shear=30
 
 def corr_matrix(cov_mat=[]): #correlation matrix
     diag=np.diag(cov_mat)

@@ -104,7 +104,8 @@ cosmo_params:  #if cosmo_params is passed as null, default is used, default=Plan
      OmR: cosmo.Ogamma0+cosmo.Onu0
      w: -1
      wa: 0
-     Tcmb: cosmo.Tcmb0
+     T_cmb: cosmo.Tcmb0
+     Neff: cosmo.Neff
 
 
 scheduler_info: null
